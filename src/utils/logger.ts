@@ -23,7 +23,7 @@ export const logger = {
   detail: (msg: string) => !logger.isSilent && logger.isVerbose && console.log(dimColor(`    ${msg}`)),
   divider: () => !logger.isSilent && console.log(dimColor('──────────────────────────────────────────────────')),
   warn: (msg: string) => !logger.isSilent && console.log(chalk.yellow.bold('! WARN:'), msg),
-  error: (msg: string) => console.error(chalk.red.bold('✖ ERROR:'), msg), // Still log errors? Or silence them too? 
+  error: (msg: string) => console.error(chalk.red.bold('✖ ERROR:'), msg),
   log: (msg: string) => !logger.isSilent && console.log(msg),
   emptyLine: () => !logger.isSilent && console.log(''),
 };
