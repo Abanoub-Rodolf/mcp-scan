@@ -8,9 +8,6 @@ import { logger } from './logger.js';
 
 const RULES_DIR = path.join(os.homedir(), '.mcp-scan', 'rules');
 
-/**
- * Loads custom rules from the rules directory.
- */
 export function loadCustomRules(): CustomRule[] {
   const rules: CustomRule[] = [];
   try {
@@ -41,9 +38,6 @@ export function loadCustomRules(): CustomRule[] {
   return rules;
 }
 
-/**
- * Evaluates custom rules against a server configuration.
- */
 export function evaluateCustomRules(server: ResolvedServer, rules: CustomRule[]): Finding[] {
   const findings: Finding[] = [];
 

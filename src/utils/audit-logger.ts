@@ -10,9 +10,6 @@ const AUDIT_LOG_FILE = path.join(AUDIT_LOG_DIR, 'audit.log');
 const FINGERPRINT_FILE = path.join(AUDIT_LOG_DIR, 'known-servers.json');
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
 
-/**
- * Logs a scan result to the persistent audit log.
- */
 export function logScan(report: ScanReport) {
   try {
     if (!fs.existsSync(AUDIT_LOG_DIR)) {
@@ -52,9 +49,6 @@ export function logScan(report: ScanReport) {
   } catch (_error) {}
 }
 
-/**
- * Checks server fingerprints and returns mutation findings.
- */
 export function checkFingerprints(results: ServerScanResult[]): Record<string, Finding[]> {
   const mutationFindings: Record<string, Finding[]> = {};
   try {
