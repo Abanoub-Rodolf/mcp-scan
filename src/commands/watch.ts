@@ -8,9 +8,6 @@ import { ScanReport, Finding } from '../types/scan-result.js';
 import chalk from 'chalk';
 import { sendWebhook, sendSlackWebhook } from '../utils/webhook.js';
 
-/**
- * Upgraded watch mode with debounce, diffing, and live dashboard.
- */
 export async function runWatch(options: { webhook?: string, slackWebhook?: string } = {}) {
   logger.brand('Starting enhanced watch mode...');
 
@@ -29,7 +26,6 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   const watchedDirs = new Set<string>();
 
   const performScan = async (changedPath?: string) => {
-    // Clear terminal for dashboard effect
     process.stdout.write('\x1b[2J\x1b[0;0H');
     
     logger.brand('mcp-scan DASHBOARD (Watch Mode)');
@@ -46,7 +42,6 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
         logger.high(`⚠ ${newFindings.length} NEW findings detected!`);
         newFindings.forEach(f => logger.log(chalk.red(`  [${f.finding.severity}] ${f.server}: ${f.finding.id}`)));
         
-        // Fire webhooks only on new findings
         if (options.webhook) await sendWebhook(options.webhook, currentReport);
         if (options.slackWebhook) await sendSlackWebhook(options.slackWebhook, currentReport);
       }
@@ -60,7 +55,6 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
         logger.info('No changes in security findings.');
       }
     } else {
-      // First run
       const total = currentReport.criticalCount + currentReport.highCount + currentReport.mediumCount + currentReport.lowCount;
       if (total === 0) {
         logger.pass('✓ All clear. No findings.');
@@ -74,7 +68,6 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
     lastReport = currentReport;
   };
 
-  // Initial scan
   await performScan();
 
   for (const configPath of validPaths) {
@@ -117,14 +110,12 @@ function diffReports(oldReport: ScanReport, newReport: ScanReport) {
     const oldIds = oldFindingsMap.get(serverKey) || [];
     const newIds = res.findings.map(f => `${f.id}:${f.severity}`);
 
-    // New
     for (const f of res.findings) {
       if (!oldIds.includes(`${f.id}:${f.severity}`)) {
         newFindings.push({ server: serverKey, finding: f });
       }
     }
 
-    // Resolved
     if (oldFindingsMap.has(serverKey)) {
         const oldResult = oldReport.results.find(r => `${r.toolName}:${r.serverName}` === serverKey);
         if (oldResult) {
