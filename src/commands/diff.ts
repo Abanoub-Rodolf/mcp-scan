@@ -4,11 +4,6 @@ import { ScanReport, ServerScanResult, Finding } from '../types/scan-result.js';
 import { logger } from '../utils/logger.js';
 import { SEVERITY_ORDER } from '../types/severity.js';
 
-/**
- * Runs the diff between two scan reports.
- * @param oldPath Path to the older scan report JSON.
- * @param newPath Path to the newer scan report JSON.
- */
 export async function runDiff(oldPath: string, newPath: string) {
   let oldReport: ScanReport;
   let newReport: ScanReport;
@@ -43,7 +38,6 @@ export async function runDiff(oldPath: string, newPath: string) {
     const resolved: { server: string, finding: Finding }[] = [];
     const unchanged: { server: string, findings: Finding[] }[] = [];
 
-    // Find added and changed servers
     for (const [key, newResult] of newServers) {
       const oldResult = oldServers.get(key);
       if (!oldResult) {
@@ -55,21 +49,18 @@ export async function runDiff(oldPath: string, newPath: string) {
         const oldFindingIds = new Set(oldResult.findings.map(f => `${f.id}:${f.severity}`));
         const newFindingIds = new Set(newResult.findings.map(f => `${f.id}:${f.severity}`));
 
-        // New findings (regressions)
         for (const f of newResult.findings) {
           if (!oldFindingIds.has(`${f.id}:${f.severity}`)) {
             regressions.push({ server: key, finding: f });
           }
         }
 
-        // Resolved findings
         for (const f of oldResult.findings) {
           if (!newFindingIds.has(`${f.id}:${f.severity}`)) {
             resolved.push({ server: key, finding: f });
           }
         }
         
-        // Unchanged findings
         const commonFindings = newResult.findings.filter(f => oldFindingIds.has(`${f.id}:${f.severity}`));
         if (commonFindings.length > 0) {
             unchanged.push({ server: key, findings: commonFindings });
@@ -77,14 +68,12 @@ export async function runDiff(oldPath: string, newPath: string) {
       }
     }
 
-    // Find removed servers
     for (const key of oldServers.keys()) {
       if (!newServers.has(key)) {
         removedServers.push(key);
       }
     }
 
-    // Print report
     if (addedServers.length > 0) {
       logger.info(`Servers Added (${addedServers.length}):`);
       addedServers.forEach(s => logger.log(chalk.green(`  + ${s}`)));
