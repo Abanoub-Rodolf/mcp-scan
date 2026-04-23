@@ -5,19 +5,11 @@ import { KNOWN_ENDPOINTS } from '../data/known-endpoints.js';
 export function scanNetworkEgress(server: ResolvedServer): Finding[] {
   const findings: Finding[] = [];
   
-  // 1. Improved Regex for URL patterns
   const urlRegex = /https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s"']*)?/g;
   const ipRegex = /\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g;
-  
-  // IPv6 addresses
   const ipv6Regex = /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/g;
-
-  // 2. Obfuscation Patterns
-  // base64 encoded 'http...' or 'https...'
-  const b64UrlRegex = /aHR0c[A-Za-z0-9+/=]+|c2h0dH[A-Za-z0-9+/=]+/g; 
-  // hex encoded 'http...'
+  const b64UrlRegex = /aHR0c[A-Za-z0-9+/=]+|c2h0dH[A-Za-z0-9+/=]+/g;
   const hexUrlRegex = /68747470[A-Fa-f0-9]+/g;
-  // reversed 'http' / 'https'
   const reversedUrlRegex = /\/\/:ptth|\/\/:sptth/g;
   
   const endpoints = new Set<string>();
@@ -48,8 +40,6 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
       if (hexUrlRegex.test(str)) endpoints.add('obfuscated:hex');
       if (reversedUrlRegex.test(str)) endpoints.add('obfuscated:reversed');
 
-      // Data-in-URL detection (heuristic)
-      // Look for long base64-like strings in query parameters
       const dataInUrlMatch = str.match(/[?&][a-zA-Z0-9_-]+=[a-zA-Z0-9+/]{32,}[=]{0,2}/);
       if (dataInUrlMatch && (str.includes('http') || str.includes('wss'))) {
           findings.push({
@@ -61,7 +51,6 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
       }
   };
 
-  // Check server configuration and args
   if (server.args) {
     for (const arg of server.args) {
       if (typeof arg !== 'string') continue;
@@ -71,7 +60,6 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
 
   const serverStr = JSON.stringify(server).toLowerCase();
   
-  // child_process + curl/wget/fetch bypass
   if (serverStr.includes('child_process') && (serverStr.includes('exec') || serverStr.includes('spawn')) && 
       (serverStr.includes('curl') || serverStr.includes('wget'))) {
       findings.push({
@@ -81,7 +69,6 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
       });
   }
 
-  // To simulate source code static analysis, check the entire JSON
   checkString(JSON.stringify(server));
 
   // Non-standard port detection
@@ -92,7 +79,6 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
   }
 
   if (/(https?|wss?):\/\/[a-zA-Z0-9.-]+:[0-9]{4,5}/.test(JSON.stringify(server))) {
-     // Ignore localhost ports
      const isLocalhostPort = /localhost:[0-9]+/.test(JSON.stringify(server)) || /127\.0\.0\.1:[0-9]+/.test(JSON.stringify(server));
      if (!isLocalhostPort) {
          findings.push({
