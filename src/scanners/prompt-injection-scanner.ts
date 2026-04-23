@@ -12,7 +12,6 @@ export function scanPromptInjection(server: ResolvedServer): Finding[] {
     'simulate being', 'jailbreak', 'dan mode', 'developer mode',
     'your true self', 'bypass your', 'disable safety',
   ];
-  // Unicode patterns with descriptions
   const unicodePatterns = [
     { char: '\u200B', name: 'U+200B (Zero Width Space)' },
     { char: '\uFEFF', name: 'U+FEFF (Byte Order Mark)' },
@@ -28,15 +27,11 @@ export function scanPromptInjection(server: ResolvedServer): Finding[] {
   ];
   const base64Regex = /[A-Za-z0-9+/]{50,}={0,2}/;
 
-  // Check server description and arguments
   const argsValues = server.args ? (Array.isArray(server.args) ? server.args : Object.values(server.args)) : [];
   const textToScan = [server.description, ...argsValues].filter(Boolean).join(' ');
 
   // String patterns
   for (const pattern of stringPatterns) {
-    // Create a regex that matches the pattern case-insensitively, 
-    // and allows for word variations (like ignores instead of ignore) by not using word boundaries
-    // but ensures the sequence of words is there.
     const regex = new RegExp(pattern.split(' ').join('.*'), 'i');
     if (regex.test(textToScan)) {
       findings.push({
@@ -60,7 +55,6 @@ export function scanPromptInjection(server: ResolvedServer): Finding[] {
     }
   }
 
-  // Base64 patterns (longer than 50 chars)
   const base64Matches = textToScan.match(base64Regex);
   if (base64Matches && base64Matches.length > 0) {
     findings.push({
