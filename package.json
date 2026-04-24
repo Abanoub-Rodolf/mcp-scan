@@ -40,7 +40,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://gitlab.com/rodolfboctor/mcp-scan.git"
+    "url": "git+https://gitlab.com/abanoub.rodolf/mcp-scan.git"
   },
   "keywords": [
     "mcp",
@@ -72,7 +72,7 @@
   "author": "Abanoub Rodolf Boctor <rodolf@thynkq.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://gitlab.com/rodolfboctor/mcp-scan/-/issues"
+    "url": "https://gitlab.com/abanoub.rodolf/mcp-scan/-/issues"
   },
   "homepage": "https://thynkq.com/products/mcp-scan",
   "dependencies": {
