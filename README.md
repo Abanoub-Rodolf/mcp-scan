@@ -24,8 +24,6 @@ MCP servers are the new attack surface for AI-powered development. They run sile
 
 mcp-scan was built after analyzing hundreds of publicly available MCP server configs and finding patterns that existing security tools miss: credential relay, prompt injection via tool descriptions, typosquatting near popular packages, and data sent to unexpected endpoints.
 
-**Featured in [Stytch Engineering Blog](https://stytch.com/blog/npm-audit-for-mcp-security)**: *"npm-audit for MCP security: A deep-dive on mcp-scan"*
-
 ---
 
 ## What It Detects
@@ -54,7 +52,7 @@ mcp-scan was built after analyzing hundreds of publicly available MCP server con
 
 ## Supported AI Tools
 
-mcp-scan automatically detects configurations for **16+ AI tool clients**:
+mcp-scan automatically detects configurations for **10+ AI tool clients**:
 
 | Category | Tools |
 |----------|-------|
