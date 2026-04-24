@@ -1,10 +1,8 @@
 # mcp-scan
 
-[![CI](https://github.com/rodolfboctor/mcp-scan/actions/workflows/ci.yml/badge.svg)](https://github.com/rodolfboctor/mcp-scan/actions/workflows/ci.yml)
 [![npm version](https://badge.fury.io/js/mcp-scan.svg)](https://badge.fury.io/js/mcp-scan)
 [![npm downloads](https://img.shields.io/npm/dw/mcp-scan)](https://www.npmjs.com/package/mcp-scan)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![GitHub Stars](https://img.shields.io/github/stars/rodolfboctor/mcp-scan?style=social)](https://github.com/rodolfboctor/mcp-scan/stargazers)
 
 **Open-source security scanner for Model Context Protocol (MCP) servers.**
 
@@ -105,18 +103,22 @@ npx mcp-scan@latest --ci --severity-threshold HIGH
 
 ## GitHub Actions Integration
 
-Add mcp-scan to your CI pipeline. Results appear in the **GitHub Security tab** via SARIF 2.1.0:
+Add mcp-scan to any CI pipeline via `npx`. Emits SARIF 2.1.0 which GitHub, GitLab, and most security tools pick up:
 
 ```yaml
+# GitHub Actions example
 steps:
   - uses: actions/checkout@v4
-
-  - name: Scan MCP configurations
-    uses: rodolfboctor/mcp-scan@v2
+  - uses: actions/setup-node@v4
     with:
-      severity-threshold: MEDIUM
-      sarif-upload: true
+      node-version: 20
+  - run: npx mcp-scan@latest --sarif mcp-scan.sarif --severity-threshold MEDIUM
+  - uses: github/codeql-action/upload-sarif@v3
+    with:
+      sarif_file: mcp-scan.sarif
 ```
+
+GitLab CI, CircleCI, or any runner works — `npx mcp-scan` is the portable entrypoint.
 
 ---
 
