@@ -12,7 +12,7 @@ MCP servers run with full access to your filesystem, API keys, and network. mcp-
 npx mcp-scan@latest
 ```
 
-No installation. No sign-up. No telemetry. Zero network requests during scanning.
+No installation. No sign-up. No telemetry. No data leaves your machine. Supply chain scanning makes registry lookups (disable with `--offline`).
 
 ---
 
@@ -50,7 +50,7 @@ mcp-scan was built after analyzing hundreds of publicly available MCP server con
 
 ## Supported AI Tools
 
-mcp-scan automatically detects configurations for **10+ AI tool clients**:
+mcp-scan automatically detects configurations for **16+ AI tool clients**:
 
 | Category | Tools |
 |----------|-------|
@@ -69,7 +69,7 @@ mcp-scan automatically detects configurations for **10+ AI tool clients**:
 - **Policy Engine** — Custom security rules in `.mcp-scan-policy.yml`
 - **Compliance Mapping** — SOC 2, GDPR, HIPAA, PCI-DSS, NIST 800-53
 - **SBOM Generation** — CycloneDX and SPDX output
-- **GitHub Action** — Scan on every PR with SARIF upload to GitHub Security tab
+- **CI/CD Integration** — Scan on every PR with SARIF output for GitHub, GitLab, and most security tools
 - **17+ Scanners** — Secrets, supply chain, prompt injection, data flow, and more
 
 ---
@@ -96,12 +96,12 @@ npx mcp-scan@latest sbom
 npx mcp-scan@latest policy
 
 # CI mode — exit 1 if findings above threshold
-npx mcp-scan@latest --ci --severity-threshold HIGH
+npx mcp-scan@latest --ci --severity high
 ```
 
 ---
 
-## GitHub Actions Integration
+## CI/CD Integration
 
 Add mcp-scan to any CI pipeline via `npx`. Emits SARIF 2.1.0 which GitHub, GitLab, and most security tools pick up:
 
@@ -112,7 +112,7 @@ steps:
   - uses: actions/setup-node@v4
     with:
       node-version: 20
-  - run: npx mcp-scan@latest --sarif mcp-scan.sarif --severity-threshold MEDIUM
+  - run: npx mcp-scan@latest --sarif mcp-scan.sarif --severity medium
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: mcp-scan.sarif
