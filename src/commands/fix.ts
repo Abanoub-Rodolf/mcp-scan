@@ -102,7 +102,7 @@ export async function runFix() {
 
            if (changed) {
               atomicWriteConfig(result.configPath, JSON.stringify(config, null, 2));
-              logger.pass('Fix applied successfully.');
+              logger.pass('fix applied');
               fixedCount++;
            } else {
               logger.error('Could not apply fix automatically.');
