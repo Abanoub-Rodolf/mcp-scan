@@ -1,6 +1,7 @@
 # Roadmap
 
 - ✅ **v2.0 Security Platform Upgrade** — Phases 1-8 (SHIPPED)
+- 🚧 **v2.1 Deep Audit & Quality** — Phase 14 (In Progress)
 - 🚧 **v3.0 Enterprise Shield & Runtime Guard** — Phases 9-13 (Planned)
 
 ---
@@ -70,6 +71,40 @@
 - Fully updated README, blog, social posts, ready for npm publish.
 
 </details>
+
+## v2.1 Deep Audit & Quality (In Progress)
+
+**Goal**: Comprehensive audit and improvement of the existing codebase before v3.0 work begins. No new features, no breaking changes.
+
+| # | Phase | Goal | Status |
+|---|-------|------|--------|
+| 14 | Deep Audit + Quality Improvement | Audit code quality, tests, docs, scanner correctness, output style | [ ] |
+
+### Phase 14: Deep Audit + Quality Improvement
+**Goal**: Audit everything — code quality, test coverage (golden-file CLI tests), README accuracy, scanner correctness, output message style, SEMVER-IMPACT.md tracking, TypeScript strictness, dependency hygiene, CI configuration.
+**Plans:** 8 plans
+
+Plans:
+- [ ] 14-01-PLAN.md — Fix all ESLint errors (10 errors across 5 files)
+- [ ] 14-02-PLAN.md — Fix 2 failing env-leak-scanner tests (scanner inner loop break)
+- [ ] 14-03-PLAN.md — Fix README runnable verbatim (--severity-threshold flag, network claims)
+- [ ] 14-04-PLAN.md — Reduce scanner false positives (phone regex, token keyword, IP exemption)
+- [ ] 14-05-PLAN.md — Replace 'successfully' messages with terse output (5 occurrences)
+- [ ] 14-06-PLAN.md — npm audit fix + SEMVER-IMPACT.md + ScanOptions completeness
+- [ ] 14-07-PLAN.md — Create .gitlab-ci.yml (lint/build/test/audit pipeline)
+- [ ] 14-08-PLAN.md — Golden-file CLI tests + ESM __dirname fix in e2e.test.ts
+
+**Success Criteria**:
+1. All tests pass including golden-file CLI tests (stdout/stderr/exit-code diffed)
+2. README runnable verbatim end-to-end
+3. Output messages terse, lowercase where idiomatic, no emoji, no AI tells
+4. SEMVER-IMPACT.md created with all API surface logged
+5. TypeScript strict mode with zero errors
+6. Zero npm audit high/critical vulnerabilities (blessed-contrib/lodash HIGH accepted — documented in SEMVER-IMPACT.md, mitigated via version override pin)
+7. Scanner false positive rate documented and reduced (CRITICAL/HIGH false positives eliminated)
+8. CI config validated and passing (.gitlab-ci.yml created)
+
+---
 
 ## v3.0 Enterprise Shield & Runtime Guard (Planned)
 
