@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { runScan } from '../src/commands/scan.js';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('E2E Scan', () => {
   it('should run a full scan on a vulnerable fixture and find issues', async () => {

@@ -1,0 +1,175 @@
+{
+  "results": [
+    {
+      "serverName": "github",
+      "toolName": "vulnerable-config",
+      "configPath": "/Users/rodolf/Documents/Code/mcp-scan/tests/fixtures/vulnerable-config.json",
+      "findings": [
+        {
+          "id": "exposed-secret",
+          "severity": "CRITICAL",
+          "description": "Exposed GitHub Token in environment variable 'GITHUB_PERSONAL_ACCESS_TOKEN'.",
+          "fixRecommendation": "Move the secret to a secure environment variable and reference it instead (e.g., ${GITHUB_PERSONAL_ACCESS_TOKEN}).",
+          "fixable": true,
+          "remediationConfidence": 99
+        },
+        {
+          "id": "supply-chain-low-trust",
+          "severity": "MEDIUM",
+          "description": "Package '@modelcontextprotocol/server-github' has no public repository URL linked.",
+          "fixRecommendation": "Verify the authenticity of this package manually."
+        }
+      ],
+      "trustScore": 20,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-github"
+        ],
+        "env": [
+          "GITHUB_PERSONAL_ACCESS_TOKEN"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "@modelcontextprotocol/server-github",
+        "version": "2025.4.8",
+        "license": "MIT",
+        "author": "Anthropic, PBC"
+      }
+    },
+    {
+      "serverName": "filesystem-danger",
+      "toolName": "vulnerable-config",
+      "configPath": "/Users/rodolf/Documents/Code/mcp-scan/tests/fixtures/vulnerable-config.json",
+      "findings": [
+        {
+          "id": "tool-name-shadow",
+          "severity": "MEDIUM",
+          "description": "Potential tool name shadowing detected: \"system\".",
+          "fixRecommendation": "Ensure tool names are not mimicked or used in a misleading way in descriptions or arguments."
+        },
+        {
+          "id": "excessive-permissions",
+          "severity": "HIGH",
+          "description": "Server requests access to dangerous path: '/'.",
+          "fixRecommendation": "Restrict access to a specific, non-sensitive directory.",
+          "fixable": false
+        }
+      ],
+      "trustScore": 90,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "@modelcontextprotocol/server-filesystem",
+        "version": "2026.1.14",
+        "license": "MIT",
+        "author": "Anthropic, PBC",
+        "repositoryUrl": "https://github.com/modelcontextprotocol/servers"
+      }
+    },
+    {
+      "serverName": "shady-analytics",
+      "toolName": "vulnerable-config",
+      "configPath": "/Users/rodolf/Documents/Code/mcp-scan/tests/fixtures/vulnerable-config.json",
+      "findings": [
+        {
+          "id": "known-malicious",
+          "severity": "CRITICAL",
+          "description": "Package 'mcp-analytics-proo' is on the known malicious blocklist.",
+          "fixRecommendation": "Remove this server immediately.",
+          "fixable": false
+        },
+        {
+          "id": "license-risk",
+          "severity": "HIGH",
+          "description": "Package 'mcp-analytics-proo' has no license specified.",
+          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
+        }
+      ],
+      "trustScore": 30,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "mcp-analytics-proo"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "mcp-analytics-proo"
+      }
+    },
+    {
+      "serverName": "stripe-exposed",
+      "toolName": "vulnerable-config",
+      "configPath": "/Users/rodolf/Documents/Code/mcp-scan/tests/fixtures/vulnerable-config.json",
+      "findings": [
+        {
+          "id": "exposed-secret",
+          "severity": "CRITICAL",
+          "description": "Exposed Stripe Secret Key in environment variable 'STRIPE_KEY'.",
+          "fixRecommendation": "Move the secret to a secure environment variable and reference it instead (e.g., ${STRIPE_KEY}).",
+          "fixable": true,
+          "remediationConfidence": 99
+        },
+        {
+          "id": "unverified-source",
+          "severity": "HIGH",
+          "description": "Server 'stripe-server' is an unscoped package from an unverified source (higher typosquatting risk).",
+          "fixRecommendation": "Verify the publisher of 'stripe-server' on npmjs.com before trusting this server."
+        },
+        {
+          "id": "stale-server",
+          "severity": "HIGH",
+          "description": "npm package 'stripe-server' has not been updated in over 6 months."
+        },
+        {
+          "id": "supply-chain-low-trust",
+          "severity": "MEDIUM",
+          "description": "Package 'stripe-server' has a low supply chain trust score (0/100).",
+          "fixRecommendation": "This package has low activity, few stars, or is unmaintained. Audit the source code before use."
+        },
+        {
+          "id": "license-risk",
+          "severity": "MEDIUM",
+          "description": "Package 'stripe-server' uses a copyleft license: GPL-3.0.",
+          "fixRecommendation": "Copyleft licenses may require you to open-source your derivative works. Review with legal."
+        }
+      ],
+      "trustScore": 0,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "stripe-server"
+        ],
+        "env": [
+          "STRIPE_KEY"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "stripe-server",
+        "version": "1.0.2",
+        "license": "GPL-3.0",
+        "author": "Karissa McKelvey",
+        "repositoryUrl": "https://github.com/karissa/stripe-server"
+      }
+    }
+  ],
+  "totalScanned": 4,
+  "criticalCount": 3,
+  "highCount": 4,
+  "mediumCount": 4,
+  "lowCount": 0,
+  "infoCount": 0
+}

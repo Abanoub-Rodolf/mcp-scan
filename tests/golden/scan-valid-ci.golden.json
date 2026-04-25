@@ -1,0 +1,66 @@
+{
+  "results": [
+    {
+      "serverName": "sqlite",
+      "toolName": "valid-config",
+      "configPath": "/Users/rodolf/Documents/Code/mcp-scan/tests/fixtures/valid-config.json",
+      "findings": [
+        {
+          "id": "exfiltration-vector",
+          "severity": "MEDIUM",
+          "description": "Tool argument contains a potential external network endpoint: '/tmp/test.db'.",
+          "fixRecommendation": "Review if this tool should be making outbound network calls to this endpoint."
+        }
+      ],
+      "trustScore": 100,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-sqlite",
+          "/tmp/test.db"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "@modelcontextprotocol/server-sqlite",
+        "version": "0.6.2",
+        "license": "MIT"
+      }
+    },
+    {
+      "serverName": "puppeteer",
+      "toolName": "valid-config",
+      "configPath": "/Users/rodolf/Documents/Code/mcp-scan/tests/fixtures/valid-config.json",
+      "findings": [
+        {
+          "id": "supply-chain-low-trust",
+          "severity": "MEDIUM",
+          "description": "Package '@modelcontextprotocol/server-puppeteer' has no public repository URL linked.",
+          "fixRecommendation": "Verify the authenticity of this package manually."
+        }
+      ],
+      "trustScore": 20,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-puppeteer"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "@modelcontextprotocol/server-puppeteer",
+        "version": "2025.5.12",
+        "license": "MIT",
+        "author": "Anthropic, PBC"
+      }
+    }
+  ],
+  "totalScanned": 2,
+  "criticalCount": 0,
+  "highCount": 0,
+  "mediumCount": 2,
+  "lowCount": 0,
+  "infoCount": 0
+}
