@@ -53,6 +53,7 @@ export function scanEnvLeak(server: ResolvedServer, serverFilePath: string): Fin
       } catch (error) {
         logger.warn(`Failed to read ${envPath}: ${error instanceof Error ? error.message : String(error)}`);
       }
+      break; // stop after first env file found in this directory
     }
     // Stop climbing once we find a directory with env files
     if (foundEnvInDir) break;

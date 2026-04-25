@@ -139,7 +139,7 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
                       break;
                   }
               }
-          } catch(e) {}
+          } catch(_e) {}
       }
       if (foundTempFiles) {
           findings.push({

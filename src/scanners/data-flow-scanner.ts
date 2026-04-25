@@ -1,12 +1,10 @@
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
-import { 
-  FILESYSTEM_SOURCES, 
-  NETWORK_SINKS, 
-  TEMP_STORAGE_PATTERNS, 
+import {
+  FILESYSTEM_SOURCES,
+  NETWORK_SINKS,
+  TEMP_STORAGE_PATTERNS,
   CREDENTIAL_ENV_PATTERNS,
-  DataFlowSource,
-  DataFlowSink
 } from '../data/data-flow-patterns.js';
 
 interface DataNode {
@@ -14,11 +12,6 @@ interface DataNode {
   name: string;
   category: 'filesystem' | 'network' | 'env' | 'clipboard' | 'database' | 'process' | 'unknown';
   description: string;
-}
-
-interface DataEdge {
-  from: string;
-  to: string;
 }
 
 /**
@@ -41,7 +34,7 @@ export function scanDataFlow(server: ResolvedServer, allServers: ResolvedServer[
     const toolProperties = tool.inputSchema?.properties ? JSON.stringify(tool.inputSchema.properties) : '';
     const combinedStr = `${toolName} ${toolDescription} ${toolProperties}`.toLowerCase();
     
-    let nodes: DataNode[] = [];
+    const nodes: DataNode[] = [];
     
     // 1. Identify Sources
     for (const source of FILESYSTEM_SOURCES) {
