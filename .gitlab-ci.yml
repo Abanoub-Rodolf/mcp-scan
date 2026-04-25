@@ -1,0 +1,72 @@
+default:
+  before_script:
+    - npm ci
+
+stages:
+  - quality
+  - build
+  - test
+  - audit
+
+variables:
+  NODE_VERSION: "20"
+
+.node-matrix:
+  parallel:
+    matrix:
+      - NODE_VERSION: ["18", "20", "22"]
+
+lint:
+  stage: quality
+  image: node:${NODE_VERSION}
+  extends: .node-matrix
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-${NODE_VERSION}"
+    paths:
+      - node_modules/
+  script:
+    - npm run lint
+
+build:
+  stage: build
+  image: node:${NODE_VERSION}
+  extends: .node-matrix
+  needs:
+    - lint
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-${NODE_VERSION}"
+    paths:
+      - node_modules/
+    policy: pull-push
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 hour
+  script:
+    - npm run build
+
+test:
+  stage: test
+  image: node:${NODE_VERSION}
+  extends: .node-matrix
+  needs:
+    - build
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-${NODE_VERSION}"
+    paths:
+      - node_modules/
+    policy: pull
+  script:
+    - npm test
+
+audit:
+  stage: audit
+  image: node:20
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-20"
+    paths:
+      - node_modules/
+    policy: pull
+  script:
+    - npm audit --audit-level=high
+  allow_failure: true
