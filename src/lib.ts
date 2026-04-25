@@ -23,4 +23,9 @@ export interface ScanOptions {
   version?: string;
   ugig?: boolean;
   ci?: boolean;
+  sbom?: boolean;
+  sarif?: string;
+  policy?: string;
+  offline?: boolean;
+  submit?: boolean;
 }
