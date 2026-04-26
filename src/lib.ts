@@ -23,7 +23,7 @@ export interface ScanOptions {
   version?: string;
   ugig?: boolean;
   ci?: boolean;
-  sbom?: boolean;
+  sbom?: string;
   sarif?: string;
   policy?: string;
   offline?: boolean;
