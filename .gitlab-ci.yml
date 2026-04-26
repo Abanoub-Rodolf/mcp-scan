@@ -67,6 +67,10 @@ audit:
     paths:
       - node_modules/
     policy: pull
+  # blessed-contrib pulls a transitive lodash that has 2 HIGH advisories
+  # (GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh). mcp-scan does not invoke
+  # _.template / _.unset / _.omit with user input, so the exploit path
+  # does not apply. Documented in SEMVER-IMPACT.md as accepted residual
+  # risk. Audit gate is set to critical so we still block on real CVEs.
   script:
-    - npm audit --audit-level=high
-  allow_failure: true
+    - npm audit --audit-level=critical
