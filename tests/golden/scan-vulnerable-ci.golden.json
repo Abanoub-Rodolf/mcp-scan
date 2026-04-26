@@ -1,10 +1,77 @@
 {
   "results": [
     {
+      "serverName": "filesystem-danger",
+      "toolName": "vulnerable-config",
+      "findings": [
+        {
+          "id": "excessive-permissions",
+          "severity": "HIGH",
+          "description": "Server requests access to dangerous path: '/'.",
+          "fixRecommendation": "Restrict access to a specific, non-sensitive directory.",
+          "fixable": false
+        },
+        {
+          "id": "license-risk",
+          "severity": "HIGH",
+          "description": "Package '@modelcontextprotocol/server-filesystem' has no license specified.",
+          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
+        },
+        {
+          "id": "tool-name-shadow",
+          "severity": "MEDIUM",
+          "description": "Potential tool name shadowing detected: \"system\".",
+          "fixRecommendation": "Ensure tool names are not mimicked or used in a misleading way in descriptions or arguments."
+        }
+      ],
+      "trustScore": 30,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "@modelcontextprotocol/server-filesystem"
+      }
+    },
+    {
       "serverName": "github",
       "toolName": "vulnerable-config",
-      "configPath": "/Users/rodolf/Documents/Code/mcp-scan/tests/fixtures/vulnerable-config.json",
       "findings": [
+        {
+          "id": "data-controls-consent-gap",
+          "severity": "MEDIUM",
+          "description": "Server handles PII but no consent mechanism or privacy policy reference detected.",
+          "fixRecommendation": "Implement explicit user consent for PII processing and link to a privacy policy."
+        },
+        {
+          "id": "data-controls-deletion-gap",
+          "severity": "MEDIUM",
+          "description": "Server handles PII but no user-initiated data deletion capability detected.",
+          "fixRecommendation": "Provide a tool or endpoint that allows users to request the deletion of their personal data."
+        },
+        {
+          "id": "data-controls-encryption-gap",
+          "severity": "HIGH",
+          "description": "Server handles PII but no encryption at rest detected for stored data.",
+          "fixRecommendation": "Encrypt sensitive data at rest using strong cryptographic standards (e.g., AES-256)."
+        },
+        {
+          "id": "data-controls-pii",
+          "severity": "CRITICAL",
+          "description": "Server handles PII/Sensitive data: API Key",
+          "fixRecommendation": "Implement strict data minimization. Ensure all PII is encrypted and handled according to privacy policies."
+        },
+        {
+          "id": "data-controls-retention-gap",
+          "severity": "MEDIUM",
+          "description": "Server handles PII but no data retention policy or auto-cleanup detected.",
+          "fixRecommendation": "Implement data retention policies (e.g., TTL, automatic cleanup of old records)."
+        },
         {
           "id": "exposed-secret",
           "severity": "CRITICAL",
@@ -14,13 +81,13 @@
           "remediationConfidence": 99
         },
         {
-          "id": "supply-chain-low-trust",
-          "severity": "MEDIUM",
-          "description": "Package '@modelcontextprotocol/server-github' has no public repository URL linked.",
-          "fixRecommendation": "Verify the authenticity of this package manually."
+          "id": "license-risk",
+          "severity": "HIGH",
+          "description": "Package '@modelcontextprotocol/server-github' has no license specified.",
+          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
         }
       ],
-      "trustScore": 20,
+      "trustScore": 30,
       "connection": {
         "command": "npx",
         "args": [
@@ -33,53 +100,12 @@
       },
       "metadata": {
         "source": "npm",
-        "packageName": "@modelcontextprotocol/server-github",
-        "version": "2025.4.8",
-        "license": "MIT",
-        "author": "Anthropic, PBC"
-      }
-    },
-    {
-      "serverName": "filesystem-danger",
-      "toolName": "vulnerable-config",
-      "configPath": "/Users/rodolf/Documents/Code/mcp-scan/tests/fixtures/vulnerable-config.json",
-      "findings": [
-        {
-          "id": "tool-name-shadow",
-          "severity": "MEDIUM",
-          "description": "Potential tool name shadowing detected: \"system\".",
-          "fixRecommendation": "Ensure tool names are not mimicked or used in a misleading way in descriptions or arguments."
-        },
-        {
-          "id": "excessive-permissions",
-          "severity": "HIGH",
-          "description": "Server requests access to dangerous path: '/'.",
-          "fixRecommendation": "Restrict access to a specific, non-sensitive directory.",
-          "fixable": false
-        }
-      ],
-      "trustScore": 90,
-      "connection": {
-        "command": "npx",
-        "args": [
-          "-y",
-          "@modelcontextprotocol/server-filesystem",
-          "/"
-        ]
-      },
-      "metadata": {
-        "source": "npm",
-        "packageName": "@modelcontextprotocol/server-filesystem",
-        "version": "2026.1.14",
-        "license": "MIT",
-        "author": "Anthropic, PBC",
-        "repositoryUrl": "https://github.com/modelcontextprotocol/servers"
+        "packageName": "@modelcontextprotocol/server-github"
       }
     },
     {
       "serverName": "shady-analytics",
       "toolName": "vulnerable-config",
-      "configPath": "/Users/rodolf/Documents/Code/mcp-scan/tests/fixtures/vulnerable-config.json",
       "findings": [
         {
           "id": "known-malicious",
@@ -111,7 +137,6 @@
     {
       "serverName": "stripe-exposed",
       "toolName": "vulnerable-config",
-      "configPath": "/Users/rodolf/Documents/Code/mcp-scan/tests/fixtures/vulnerable-config.json",
       "findings": [
         {
           "id": "exposed-secret",
@@ -122,30 +147,19 @@
           "remediationConfidence": 99
         },
         {
+          "id": "license-risk",
+          "severity": "HIGH",
+          "description": "Package 'stripe-server' has no license specified.",
+          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
+        },
+        {
           "id": "unverified-source",
           "severity": "HIGH",
           "description": "Server 'stripe-server' is an unscoped package from an unverified source (higher typosquatting risk).",
           "fixRecommendation": "Verify the publisher of 'stripe-server' on npmjs.com before trusting this server."
-        },
-        {
-          "id": "stale-server",
-          "severity": "HIGH",
-          "description": "npm package 'stripe-server' has not been updated in over 6 months."
-        },
-        {
-          "id": "supply-chain-low-trust",
-          "severity": "MEDIUM",
-          "description": "Package 'stripe-server' has a low supply chain trust score (0/100).",
-          "fixRecommendation": "This package has low activity, few stars, or is unmaintained. Audit the source code before use."
-        },
-        {
-          "id": "license-risk",
-          "severity": "MEDIUM",
-          "description": "Package 'stripe-server' uses a copyleft license: GPL-3.0.",
-          "fixRecommendation": "Copyleft licenses may require you to open-source your derivative works. Review with legal."
         }
       ],
-      "trustScore": 0,
+      "trustScore": 30,
       "connection": {
         "command": "npx",
         "args": [
@@ -158,17 +172,13 @@
       },
       "metadata": {
         "source": "npm",
-        "packageName": "stripe-server",
-        "version": "1.0.2",
-        "license": "GPL-3.0",
-        "author": "Karissa McKelvey",
-        "repositoryUrl": "https://github.com/karissa/stripe-server"
+        "packageName": "stripe-server"
       }
     }
   ],
   "totalScanned": 4,
-  "criticalCount": 3,
-  "highCount": 4,
+  "criticalCount": 4,
+  "highCount": 7,
   "mediumCount": 4,
   "lowCount": 0,
   "infoCount": 0
