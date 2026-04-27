@@ -29,7 +29,7 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
       'SSN': ['ssn', 'social security', 'tax id', 'national id'],
       'IPv4 Address': ['ipv4', 'client ip', 'ip address'],
       'Password': ['password', 'pwd', 'passphrase', 'pin code'],
-      'API Key': ['api_key', 'apikey', 'secret_key', 'token'],
+      'API Key': ['api_key', 'apikey', 'secret_key', 'api_token', 'access_token', 'auth_token', 'bearer_token', 'refresh_token', 'oauth_token'],
       'Address': ['street address', 'residential address', 'home address', 'mailing address'],
       'Date of Birth': ['date of birth', 'dob', 'birthday', 'birth date'],
       'Health Data': ['diagnosis', 'medical record', 'prescription', 'health data', 'phi', 'hipaa'],
@@ -139,7 +139,7 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
                       break;
                   }
               }
-          } catch(e) {}
+          } catch(_e) {}
       }
       if (foundTempFiles) {
           findings.push({

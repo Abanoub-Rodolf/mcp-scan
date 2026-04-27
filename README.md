@@ -6,13 +6,13 @@
 
 **Open-source security scanner for Model Context Protocol (MCP) servers.**
 
-MCP servers run with full access to your filesystem, API keys, and network. mcp-scan audits every MCP server configuration on your system — detecting leaked secrets, prompt injection risks, supply-chain vulnerabilities, and data flow issues before they become incidents.
+MCP servers run with full access to your filesystem, API keys, and network. mcp-scan audits every MCP server configuration on your system, detecting leaked secrets, prompt injection risks, supply-chain vulnerabilities, and data flow issues before they become incidents.
 
 ```bash
 npx mcp-scan@latest
 ```
 
-No installation. No sign-up. No telemetry. Zero network requests during scanning.
+No installation. No sign-up. No telemetry. No data leaves your machine. Supply chain scanning makes registry lookups (disable with `--offline`).
 
 ---
 
@@ -50,7 +50,7 @@ mcp-scan was built after analyzing hundreds of publicly available MCP server con
 
 ## Supported AI Tools
 
-mcp-scan automatically detects configurations for **10+ AI tool clients**:
+mcp-scan automatically detects configurations for **16+ AI tool clients**:
 
 | Category | Tools |
 |----------|-------|
@@ -63,14 +63,14 @@ mcp-scan automatically detects configurations for **10+ AI tool clients**:
 
 ## v2.0 Features
 
-- **Data Flow Analysis** — Trace where your data goes after MCP processes it
-- **Network Egress Monitor** — See every endpoint your servers contact
-- **Privacy Assessment** — One-command PII and compliance report
-- **Policy Engine** — Custom security rules in `.mcp-scan-policy.yml`
-- **Compliance Mapping** — SOC 2, GDPR, HIPAA, PCI-DSS, NIST 800-53
-- **SBOM Generation** — CycloneDX and SPDX output
-- **GitHub Action** — Scan on every PR with SARIF upload to GitHub Security tab
-- **17+ Scanners** — Secrets, supply chain, prompt injection, data flow, and more
+- **Data Flow Analysis**: Trace where your data goes after MCP processes it
+- **Network Egress Monitor**: See every endpoint your servers contact
+- **Privacy Assessment**: One-command PII and compliance report
+- **Policy Engine**: Custom security rules in `.mcp-scan-policy.yml`
+- **Compliance Mapping**: SOC 2, GDPR, HIPAA, PCI-DSS, NIST 800-53
+- **SBOM Generation**: CycloneDX and SPDX output
+- **CI/CD Integration**: Scan on every PR with SARIF output for GitHub, GitLab, and most security tools
+- **17+ Scanners**: Secrets, supply chain, prompt injection, data flow, and more
 
 ---
 
@@ -95,13 +95,13 @@ npx mcp-scan@latest sbom
 # Validate custom security policies
 npx mcp-scan@latest policy
 
-# CI mode — exit 1 if findings above threshold
-npx mcp-scan@latest --ci --severity-threshold HIGH
+# CI mode: exit 1 on CRITICAL or HIGH findings
+npx mcp-scan@latest --ci --severity high
 ```
 
 ---
 
-## GitHub Actions Integration
+## CI/CD Integration
 
 Add mcp-scan to any CI pipeline via `npx`. Emits SARIF 2.1.0 which GitHub, GitLab, and most security tools pick up:
 
@@ -112,13 +112,13 @@ steps:
   - uses: actions/setup-node@v4
     with:
       node-version: 20
-  - run: npx mcp-scan@latest --sarif mcp-scan.sarif --severity-threshold MEDIUM
+  - run: npx mcp-scan@latest --sarif mcp-scan.sarif --severity medium
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: mcp-scan.sarif
 ```
 
-GitLab CI, CircleCI, or any runner works — `npx mcp-scan` is the portable entrypoint.
+GitLab CI, CircleCI, or any runner works. `npx mcp-scan` is the portable entrypoint.
 
 ---
 
@@ -159,21 +159,21 @@ rules:
 
 ## Privacy & Security Architecture
 
-mcp-scan runs **entirely locally**. It reads config files from disk, performs all analysis in-process, and never sends data anywhere.
+mcp-scan runs locally on your machine. Config parsing, regex scanning, and all heuristics happen in-process. The only network calls are optional supply-chain registry lookups (npm), which can be disabled with `--offline`.
 
-- Zero network requests during scanning
+- Local config parsing and analysis only
 - No API keys required
-- No data leaves your machine
-- No account or sign-up needed
-- Fully open source — audit the code yourself
+- No telemetry, no account, no sign-up
+- Optional npm registry lookup for supply-chain scanning, off with `--offline`
+- Fully open source. Audit the code yourself.
 
 ---
 
 ## Roadmap
 
-- **v2.1** — Runtime Monitoring
-- **v2.2** — Sandboxed Execution
-- **v2.3** — Real-Time Alerting
+- **v2.1**: Runtime Monitoring
+- **v2.2**: Sandboxed Execution
+- **v2.3**: Real-Time Alerting
 
 ---
 
@@ -204,4 +204,4 @@ For security disclosures: see [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT — built by [Abanoub Rodolf Boctor](https://thynkq.com/about) · [ThynkQ](https://thynkq.com)
+MIT. Built by [Abanoub Rodolf Boctor](https://thynkq.com/about) · [ThynkQ](https://thynkq.com)

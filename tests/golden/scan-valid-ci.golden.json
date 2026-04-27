@@ -1,0 +1,59 @@
+{
+  "results": [
+    {
+      "serverName": "puppeteer",
+      "toolName": "valid-config",
+      "findings": [
+        {
+          "id": "license-risk",
+          "severity": "HIGH",
+          "description": "Package '@modelcontextprotocol/server-puppeteer' has no license specified.",
+          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
+        }
+      ],
+      "trustScore": 30,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-puppeteer"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "@modelcontextprotocol/server-puppeteer"
+      }
+    },
+    {
+      "serverName": "sqlite",
+      "toolName": "valid-config",
+      "findings": [
+        {
+          "id": "exfiltration-vector",
+          "severity": "MEDIUM",
+          "description": "Tool argument contains a potential external network endpoint: '/tmp/test.db'.",
+          "fixRecommendation": "Review if this tool should be making outbound network calls to this endpoint."
+        }
+      ],
+      "trustScore": 100,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-sqlite",
+          "/tmp/test.db"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "@modelcontextprotocol/server-sqlite"
+      }
+    }
+  ],
+  "totalScanned": 2,
+  "criticalCount": 0,
+  "highCount": 1,
+  "mediumCount": 1,
+  "lowCount": 0,
+  "infoCount": 0
+}

@@ -27,11 +27,10 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
       if (ips) {
           ips.forEach(ip => {
              // ignore localhost, common internal ranges, and version strings
-             const isPrivate = ip === '127.0.0.1' || ip === '0.0.0.0' || 
-                               ip.startsWith('10.') || 
-                               ip.startsWith('192.168.') || 
-                               ip.startsWith('172.16.') ||
-                               ip.startsWith('1.7.'); // Common version prefix in this project
+             const isPrivate = ip === '127.0.0.1' || ip === '0.0.0.0' ||
+                               ip.startsWith('10.') ||
+                               ip.startsWith('192.168.') ||
+                               ip.startsWith('172.16.');
              if (!isPrivate) endpoints.add(ip);
           });
       }

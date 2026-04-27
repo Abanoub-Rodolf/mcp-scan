@@ -1,0 +1,82 @@
+default:
+  before_script:
+    - npm ci
+
+stages:
+  - quality
+  - build
+  - test
+  - audit
+
+variables:
+  NODE_VERSION: "20"
+
+# Node 18 is excluded from the CI matrix because vitest@4 / vite@8 require
+# Node ^20.19.0 || >=22.12.0 (rolldown imports `node:util` `styleText`,
+# added in Node 20). Runtime dependencies of mcp-scan still work on Node 18,
+# which is why `engines: ">=18"` stays in package.json — the dev/test
+# toolchain just needs 20+.
+.node-matrix:
+  parallel:
+    matrix:
+      - NODE_VERSION: ["20", "22"]
+
+lint:
+  stage: quality
+  image: node:${NODE_VERSION}
+  extends: .node-matrix
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-${NODE_VERSION}"
+    paths:
+      - node_modules/
+  script:
+    - npm run lint
+
+build:
+  stage: build
+  image: node:${NODE_VERSION}
+  extends: .node-matrix
+  needs:
+    - lint
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-${NODE_VERSION}"
+    paths:
+      - node_modules/
+    policy: pull-push
+  artifacts:
+    paths:
+      - dist/
+      - data/
+    expire_in: 1 hour
+  script:
+    - npm run build
+
+test:
+  stage: test
+  image: node:${NODE_VERSION}
+  extends: .node-matrix
+  needs:
+    - build
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-${NODE_VERSION}"
+    paths:
+      - node_modules/
+    policy: pull
+  script:
+    - npm test
+
+audit:
+  stage: audit
+  image: node:20
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-20"
+    paths:
+      - node_modules/
+    policy: pull
+  # blessed-contrib pulls a transitive lodash that has 2 HIGH advisories
+  # (GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh). mcp-scan does not invoke
+  # _.template / _.unset / _.omit with user input, so the exploit path
+  # does not apply. Documented in SEMVER-IMPACT.md as accepted residual
+  # risk. Audit gate is set to critical so we still block on real CVEs.
+  script:
+    - npm audit --audit-level=critical

@@ -123,7 +123,7 @@ export function readAuditLog(count: number = 20): AuditLogEntry[] {
     const content = fs.readFileSync(AUDIT_LOG_FILE, 'utf8');
     const lines = content.trim().split('\n');
     return lines.slice(-count).reverse().map(line => {
-      try { return JSON.parse(line); } catch (e) { return null; }
+      try { return JSON.parse(line); } catch (_e) { return null; }
     }).filter(Boolean);
   } catch (_error) {
     return [];

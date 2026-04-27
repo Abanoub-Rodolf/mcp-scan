@@ -1,0 +1,185 @@
+{
+  "results": [
+    {
+      "serverName": "filesystem-danger",
+      "toolName": "vulnerable-config",
+      "findings": [
+        {
+          "id": "excessive-permissions",
+          "severity": "HIGH",
+          "description": "Server requests access to dangerous path: '/'.",
+          "fixRecommendation": "Restrict access to a specific, non-sensitive directory.",
+          "fixable": false
+        },
+        {
+          "id": "license-risk",
+          "severity": "HIGH",
+          "description": "Package '@modelcontextprotocol/server-filesystem' has no license specified.",
+          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
+        },
+        {
+          "id": "tool-name-shadow",
+          "severity": "MEDIUM",
+          "description": "Potential tool name shadowing detected: \"system\".",
+          "fixRecommendation": "Ensure tool names are not mimicked or used in a misleading way in descriptions or arguments."
+        }
+      ],
+      "trustScore": 30,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "@modelcontextprotocol/server-filesystem"
+      }
+    },
+    {
+      "serverName": "github",
+      "toolName": "vulnerable-config",
+      "findings": [
+        {
+          "id": "data-controls-consent-gap",
+          "severity": "MEDIUM",
+          "description": "Server handles PII but no consent mechanism or privacy policy reference detected.",
+          "fixRecommendation": "Implement explicit user consent for PII processing and link to a privacy policy."
+        },
+        {
+          "id": "data-controls-deletion-gap",
+          "severity": "MEDIUM",
+          "description": "Server handles PII but no user-initiated data deletion capability detected.",
+          "fixRecommendation": "Provide a tool or endpoint that allows users to request the deletion of their personal data."
+        },
+        {
+          "id": "data-controls-encryption-gap",
+          "severity": "HIGH",
+          "description": "Server handles PII but no encryption at rest detected for stored data.",
+          "fixRecommendation": "Encrypt sensitive data at rest using strong cryptographic standards (e.g., AES-256)."
+        },
+        {
+          "id": "data-controls-pii",
+          "severity": "CRITICAL",
+          "description": "Server handles PII/Sensitive data: API Key",
+          "fixRecommendation": "Implement strict data minimization. Ensure all PII is encrypted and handled according to privacy policies."
+        },
+        {
+          "id": "data-controls-retention-gap",
+          "severity": "MEDIUM",
+          "description": "Server handles PII but no data retention policy or auto-cleanup detected.",
+          "fixRecommendation": "Implement data retention policies (e.g., TTL, automatic cleanup of old records)."
+        },
+        {
+          "id": "exposed-secret",
+          "severity": "CRITICAL",
+          "description": "Exposed GitHub Token in environment variable 'GITHUB_PERSONAL_ACCESS_TOKEN'.",
+          "fixRecommendation": "Move the secret to a secure environment variable and reference it instead (e.g., ${GITHUB_PERSONAL_ACCESS_TOKEN}).",
+          "fixable": true,
+          "remediationConfidence": 99
+        },
+        {
+          "id": "license-risk",
+          "severity": "HIGH",
+          "description": "Package '@modelcontextprotocol/server-github' has no license specified.",
+          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
+        }
+      ],
+      "trustScore": 30,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-github"
+        ],
+        "env": [
+          "GITHUB_PERSONAL_ACCESS_TOKEN"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "@modelcontextprotocol/server-github"
+      }
+    },
+    {
+      "serverName": "shady-analytics",
+      "toolName": "vulnerable-config",
+      "findings": [
+        {
+          "id": "known-malicious",
+          "severity": "CRITICAL",
+          "description": "Package 'mcp-analytics-proo' is on the known malicious blocklist.",
+          "fixRecommendation": "Remove this server immediately.",
+          "fixable": false
+        },
+        {
+          "id": "license-risk",
+          "severity": "HIGH",
+          "description": "Package 'mcp-analytics-proo' has no license specified.",
+          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
+        }
+      ],
+      "trustScore": 30,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "mcp-analytics-proo"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "mcp-analytics-proo"
+      }
+    },
+    {
+      "serverName": "stripe-exposed",
+      "toolName": "vulnerable-config",
+      "findings": [
+        {
+          "id": "exposed-secret",
+          "severity": "CRITICAL",
+          "description": "Exposed Stripe Secret Key in environment variable 'STRIPE_KEY'.",
+          "fixRecommendation": "Move the secret to a secure environment variable and reference it instead (e.g., ${STRIPE_KEY}).",
+          "fixable": true,
+          "remediationConfidence": 99
+        },
+        {
+          "id": "license-risk",
+          "severity": "HIGH",
+          "description": "Package 'stripe-server' has no license specified.",
+          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
+        },
+        {
+          "id": "unverified-source",
+          "severity": "HIGH",
+          "description": "Server 'stripe-server' is an unscoped package from an unverified source (higher typosquatting risk).",
+          "fixRecommendation": "Verify the publisher of 'stripe-server' on npmjs.com before trusting this server."
+        }
+      ],
+      "trustScore": 30,
+      "connection": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "stripe-server"
+        ],
+        "env": [
+          "STRIPE_KEY"
+        ]
+      },
+      "metadata": {
+        "source": "npm",
+        "packageName": "stripe-server"
+      }
+    }
+  ],
+  "totalScanned": 4,
+  "criticalCount": 4,
+  "highCount": 7,
+  "mediumCount": 4,
+  "lowCount": 0,
+  "infoCount": 0
+}

@@ -90,9 +90,9 @@ export function applyPolicy(results: ServerScanResult[], policy: SecurityPolicy 
   if (!policy || !policy.rules || policy.rules.length === 0) return results;
 
   for (const result of results) {
-    let newFindings: Finding[] = [];
-    
-    for (let finding of result.findings) {
+    const newFindings: Finding[] = [];
+
+    for (const finding of result.findings) {
       let skip = false;
       
       for (const rule of policy.rules) {

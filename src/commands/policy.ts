@@ -55,7 +55,7 @@ rules:
       finding_id: "exposed-secret"
 `;
         fs.writeFileSync(file, yamlContent);
-        console.log(chalk.green(`Successfully initialized default policy at ${file}`));
+        console.log(chalk.green(`policy created: ${file}`));
     } else if (action === 'show') {
         const policy = loadYamlPolicy(file);
         if (!policy) {

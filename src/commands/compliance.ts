@@ -26,7 +26,7 @@ export async function runCompliance(options: { framework: string, output?: strin
     const generateReport = (fw: ComplianceFramework) => {
         let md = `\n${chalk.hex('#FFB833').bold('-- ' + fw.name + ' Compliance Report --')}\n\n`;
         let totalFindings = 0;
-        let totalControls = fw.controls.length;
+        const totalControls = fw.controls.length;
         let compliantControls = 0;
 
         let table = '';

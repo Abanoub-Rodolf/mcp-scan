@@ -12,7 +12,7 @@ export const PII_PATTERNS: PiiPattern[] = [
   },
   {
     name: 'Phone Number',
-    regex: /(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}\b/g,
+    regex: /(?<![a-zA-Z0-9])(?:\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}\b/g,
     mask: '[PHONE_MASKED]'
   },
   {

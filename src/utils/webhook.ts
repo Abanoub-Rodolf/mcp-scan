@@ -43,7 +43,7 @@ export async function sendTeamsWebhook(url: string, report: ScanReport) {
     if (!response.ok) {
       logger.error(`Teams Webhook: Failed to send to ${url}. Status: ${response.status} ${response.statusText}`);
     } else {
-      logger.pass(`Teams Webhook: Notification successfully sent.`);
+      logger.pass(`Teams Webhook: notification sent.`);
     }
   } catch (error) {
     logger.error(`Teams Webhook: Error sending to ${url}: ${error instanceof Error ? error.message : String(error)}`);
@@ -69,7 +69,7 @@ export async function sendWebhook(url: string, report: ScanReport) {
     if (!response.ok) {
       logger.error(`Webhook: Failed to send report to ${url}. Status: ${response.status} ${response.statusText}`);
     } else {
-      logger.pass(`Webhook: Report successfully sent to ${url}.`);
+      logger.pass(`Webhook: report sent to ${url}.`);
     }
   } catch (error) {
     logger.error(`Webhook: Error sending report to ${url}: ${error instanceof Error ? error.message : String(error)}`);
@@ -158,7 +158,7 @@ export async function sendSlackWebhook(url: string, report: ScanReport) {
     if (!response.ok) {
       logger.error(`Slack Webhook: Failed to send to ${url}. Status: ${response.status} ${response.statusText}`);
     } else {
-      logger.pass(`Slack Webhook: Notification successfully sent.`);
+      logger.pass(`Slack Webhook: notification sent.`);
     }
   } catch (error) {
     logger.error(`Slack Webhook: Error sending to ${url}: ${error instanceof Error ? error.message : String(error)}`);
