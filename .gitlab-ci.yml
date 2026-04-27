@@ -46,6 +46,7 @@ build:
   artifacts:
     paths:
       - dist/
+      - data/
     expire_in: 1 hour
   script:
     - npm run build
