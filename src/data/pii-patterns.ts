@@ -17,7 +17,7 @@ export const PII_PATTERNS: PiiPattern[] = [
   },
   {
     name: 'Credit Card',
-    regex: /\b(?:\d[ -]*?){13,16}\b/g,
+    regex: /\b\d(?:[ -]?\d){12,15}\b/g,
     mask: '[CREDIT_CARD_MASKED]'
   },
   {
@@ -32,7 +32,7 @@ export const PII_PATTERNS: PiiPattern[] = [
   },
   {
     name: 'IBAN',
-    regex: /\b[A-Z]{2}[0-9]{2}[A-Z0-9]{4}[0-9]{7}([A-Z0-9]?){0,16}\b/g,
+    regex: /\b[A-Z]{2}[0-9]{2}[A-Z0-9]{4}[0-9]{7}[A-Z0-9]{0,16}\b/g,
     mask: '[IBAN_MASKED]'
   },
   {

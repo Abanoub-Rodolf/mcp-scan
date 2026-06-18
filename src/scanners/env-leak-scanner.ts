@@ -12,7 +12,7 @@ const ENV_FILE_NAMES = ['.env', '.env.local', '.env.production', '.env.developme
 
 export function scanEnvLeak(server: ResolvedServer, serverFilePath: string): Finding[] {
   const findings: Finding[] = [];
-  const serverDir = path.dirname(serverFilePath);
+  const serverDir = path.dirname(path.resolve(serverFilePath));
 
   // Look for .env files in parent directories up to the project root
   let currentDir = serverDir;

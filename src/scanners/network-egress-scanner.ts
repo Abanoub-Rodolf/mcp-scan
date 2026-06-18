@@ -15,6 +15,7 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
   const endpoints = new Set<string>();
   
   const checkString = (str: string) => {
+      if (str.length > 10_000) str = str.slice(0, 10_000);
       const urls = str.match(urlRegex);
       if (urls) urls.forEach(u => endpoints.add(u));
       
