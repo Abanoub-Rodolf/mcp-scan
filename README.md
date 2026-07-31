@@ -57,7 +57,7 @@ mcp-scan automatically detects configurations for **17 AI tool clients**:
 | **AI Assistants** | Claude Desktop, Claude Code, Gemini CLI, Codex CLI |
 | **Editors** | VS Code, Cursor, Windsurf, Zed |
 | **AI Coding Tools** | Cline, Roo Code, Continue, Amp, Plandex |
-| **Other** | ChatGPT Desktop, GitHub Copilot |
+| **Other** | ChatGPT Desktop, GitHub Copilot, Kiro, Warp |
 
 ---
 
