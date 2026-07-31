@@ -50,7 +50,7 @@ mcp-scan was built after analyzing hundreds of publicly available MCP server con
 
 ## Supported AI Tools
 
-mcp-scan automatically detects configurations for **16+ AI tool clients**:
+mcp-scan automatically detects configurations for **17 AI tool clients**:
 
 | Category | Tools |
 |----------|-------|
@@ -70,7 +70,7 @@ mcp-scan automatically detects configurations for **16+ AI tool clients**:
 - **Compliance Mapping**: SOC 2, GDPR, HIPAA, PCI-DSS, NIST 800-53
 - **SBOM Generation**: CycloneDX and SPDX output
 - **CI/CD Integration**: Scan on every PR with SARIF output for GitHub, GitLab, and most security tools
-- **17+ Scanners**: Secrets, supply chain, prompt injection, data flow, and more
+- **16 scanners**: Secrets, supply chain, prompt injection, data flow, and more
 
 ---
 
