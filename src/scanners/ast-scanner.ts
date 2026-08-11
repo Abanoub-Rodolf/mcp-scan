@@ -34,15 +34,26 @@ export function scanAst(server: ResolvedServer, allowedDomains: string[] = []): 
   // 3. Detect network calls to external IPs/domains in tool args
   const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
   const domainRegex = /\b(?:https?:\/\/)?(?:[\w-]+\.)+[\w-]{2,}\b/;
-  
+  // Without a scheme, "index.js" and "example.com" have the same shape. A local file
+  // path arg (the common way to configure a stdio MCP server) would otherwise false-positive.
+  const fileExtensions = new Set([
+    'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'py', 'json', 'yaml', 'yml', 'sh', 'bash',
+    'exe', 'dll', 'so', 'dylib', 'txt', 'md', 'html', 'css', 'xml', 'csv', 'log', 'sql',
+    'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp', 'php', 'pl', 'ps1', 'bat', 'cmd',
+    'jar', 'war', 'zip', 'tar', 'gz', 'env', 'lock', 'toml', 'ini', 'cfg', 'conf',
+  ]);
+
   let hasNetworkEndpoint = false;
   let hasEnvVarInArgs = false;
 
   for (const arg of argsArray) {
     if (typeof arg !== 'string') continue;
-    
+
     const hasIp = ipRegex.test(arg);
-    const hasExternalDomain = domainRegex.test(arg) && !arg.includes('localhost') && !arg.includes('127.0.0.1') && !allowedDomains.some(d => arg.includes(d));
+    const domainMatch = arg.match(domainRegex);
+    const isFilePath = !!domainMatch && !/^https?:\/\//i.test(domainMatch[0]) &&
+      fileExtensions.has(domainMatch[0].split('.').pop()!.toLowerCase());
+    const hasExternalDomain = !!domainMatch && !isFilePath && !arg.includes('localhost') && !arg.includes('127.0.0.1') && !allowedDomains.some(d => arg.includes(d));
     
     if (hasIp || hasExternalDomain) {
       hasNetworkEndpoint = true;

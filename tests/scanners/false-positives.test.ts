@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { scanAst } from '../../src/scanners/ast-scanner.js';
 import { scanDataControls } from '../../src/scanners/data-controls-scanner.js';
 import { scanNetworkEgress } from '../../src/scanners/network-egress-scanner.js';
 import { PII_PATTERNS } from '../../src/data/pii-patterns.js';
@@ -63,6 +64,32 @@ describe('Scanner false-positive regressions', () => {
       const findings = scanDataControls(server);
       const apiKeyFinding = findings.find(f => f.id === 'data-controls-pii' && f.description.includes('API Key'));
       expect(apiKeyFinding).toBeDefined();
+    });
+  });
+
+  describe('ast-scanner domain regex', () => {
+    it('does not flag a local script path arg as an exfiltration vector', () => {
+      const findings = scanAst({
+        name: 'test', toolName: 't', configPath: 'p', command: 'node',
+        args: ['/path/to/mcp-server-starter-pro/dist/index.js'],
+      } as unknown as ResolvedServer);
+      expect(findings.find(f => f.id === 'exfiltration-vector')).toBeUndefined();
+    });
+
+    it('does not flag a python script path arg', () => {
+      const findings = scanAst({
+        name: 'test', toolName: 't', configPath: 'p', command: 'python3',
+        args: ['/path/to/server.py'],
+      } as unknown as ResolvedServer);
+      expect(findings.find(f => f.id === 'exfiltration-vector')).toBeUndefined();
+    });
+
+    it('still flags a bare external domain without a scheme', () => {
+      const findings = scanAst({
+        name: 'test', toolName: 't', configPath: 'p', command: 'node',
+        args: ['--host', 'api.malicious-tld.example'],
+      } as unknown as ResolvedServer);
+      expect(findings.some(f => f.id === 'exfiltration-vector')).toBe(true);
     });
   });
 
