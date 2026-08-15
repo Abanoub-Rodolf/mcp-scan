@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Security fixes (2026-08 audit)
+## [2.0.3] - 2026-08-15
+
+### Security fixes (end-to-end audit)
 - Stored XSS closed in HTML reports: every server-controlled string (tool descriptions, finding text, config paths) is now HTML-escaped.
 - Command injection closed in `mcp-scan doctor`: `which`/`where` now run via `spawnSync` with an argument array instead of a shell string.
 - Proxy no longer writes raw unmasked JSON-RPC payloads to disk: masking happens before logging, and the log dir honors `MCP_SCAN_LOG_DIR`.
