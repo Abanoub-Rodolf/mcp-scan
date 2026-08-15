@@ -43,6 +43,36 @@
       "toolName": "vulnerable-config",
       "findings": [
         {
+          "id": "data-controls-consent-gap",
+          "severity": "MEDIUM",
+          "description": "Server handles PII but no consent mechanism or privacy policy reference detected.",
+          "fixRecommendation": "Implement explicit user consent for PII processing and link to a privacy policy."
+        },
+        {
+          "id": "data-controls-deletion-gap",
+          "severity": "MEDIUM",
+          "description": "Server handles PII but no user-initiated data deletion capability detected.",
+          "fixRecommendation": "Provide a tool or endpoint that allows users to request the deletion of their personal data."
+        },
+        {
+          "id": "data-controls-encryption-gap",
+          "severity": "HIGH",
+          "description": "Server handles PII but no encryption at rest detected for stored data.",
+          "fixRecommendation": "Encrypt sensitive data at rest using strong cryptographic standards (e.g., AES-256)."
+        },
+        {
+          "id": "data-controls-pii",
+          "severity": "CRITICAL",
+          "description": "Server handles PII/Sensitive data: API Key",
+          "fixRecommendation": "Implement strict data minimization. Ensure all PII is encrypted and handled according to privacy policies."
+        },
+        {
+          "id": "data-controls-retention-gap",
+          "severity": "MEDIUM",
+          "description": "Server handles PII but no data retention policy or auto-cleanup detected.",
+          "fixRecommendation": "Implement data retention policies (e.g., TTL, automatic cleanup of old records)."
+        },
+        {
           "id": "exposed-secret",
           "severity": "CRITICAL",
           "description": "Exposed GitHub Token in environment variable 'GITHUB_PERSONAL_ACCESS_TOKEN'.",
@@ -147,9 +177,9 @@
     }
   ],
   "totalScanned": 4,
-  "criticalCount": 3,
-  "highCount": 6,
-  "mediumCount": 1,
+  "criticalCount": 4,
+  "highCount": 7,
+  "mediumCount": 4,
   "lowCount": 0,
   "infoCount": 0
 }

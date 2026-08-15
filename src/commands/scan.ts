@@ -21,7 +21,7 @@ import { scanNetworkEgress } from '../scanners/network-egress-scanner.js';
 import { scanDataControls } from '../scanners/data-controls-scanner.js';
 import { writeSarifReport } from '../utils/sarif-reporter.js';
 import { applyPolicy, loadYamlPolicy } from '../policy/engine.js';
-import { ScanReport, ServerScanResult } from '../types/scan-result.js';
+import { ScanReport, ServerScanResult, Finding } from '../types/scan-result.js';
 import { DetectedTool } from '../types/config.js';
 import { createSpinner } from '../utils/spinner.js';
 import { printJsonReport } from '../utils/json-reporter.js';
@@ -84,7 +84,10 @@ export async function runScan(options: { silent?: boolean, json?: boolean, verbo
   const seenServers = new Set<string>();
   
   const minSeverityLevel = (options.severity || policy?.maxSeverity || 'low').toUpperCase() as Severity;
-  const minSeverity = SEVERITY_ORDER[minSeverityLevel] || 0;
+  if (!(minSeverityLevel in SEVERITY_ORDER)) {
+    throw new Error(`Invalid severity '${options.severity}'. Valid values: ${Object.keys(SEVERITY_ORDER).join(', ').toLowerCase()}`);
+  }
+  const minSeverity = SEVERITY_ORDER[minSeverityLevel];
 
   for (const tool of tools) {
     if (!tool.exists) continue;
@@ -121,22 +124,43 @@ export async function runScan(options: { silent?: boolean, json?: boolean, verbo
 
       if (spinner) spinner.text = `Scanning ${server.name} in ${tool.name}...`;
 
-      let allFindings = [
-        ...scanSecrets(server),
-        ...scanEnvLeak(server, tool.configPath),
-        ...scanPromptInjection(server),
-        ...scanToolPoisoning(server),
-        ...scanPermissions(server),
-        ...scanRegistry(server),
-        ...scanTyposquat(server),
-        ...scanTransport(server, policy?.allowedDomains),
-        ...scanConfig(server),
-        ...scanAst(server, policy?.allowedDomains),
-        ...evaluateCustomRules(server, customRules),
-        ...scanDataFlow(server, activeServers),
-        ...scanNetworkEgress(server),
-        ...scanDataControls(server),
+      // A throwing scanner must not abort the whole scan. Each scanner runs
+      // isolated; a failure surfaces as a LOW finding instead of killing the
+      // run and hiding every other scanner's results.
+      const runScanner = async (name: string, fn: () => Finding[] | Promise<Finding[]>): Promise<Finding[]> => {
+        try {
+          return await fn();
+        } catch (err) {
+          return [{
+            id: 'scanner-error',
+            severity: 'LOW',
+            description: `Scanner ${name} failed on server '${server.name}': ${err instanceof Error ? err.message : String(err)}`,
+            fixRecommendation: 'Internal error in mcp-scan. Please report it with the offending config.'
+          }];
+        }
+      };
+
+      const scannerRuns: Array<[string, () => Finding[] | Promise<Finding[]>]> = [
+        ['secret', () => scanSecrets(server)],
+        ['env-leak', () => scanEnvLeak(server, tool.configPath)],
+        ['prompt-injection', () => scanPromptInjection(server)],
+        ['tool-poisoning', () => scanToolPoisoning(server)],
+        ['permissions', () => scanPermissions(server)],
+        ['registry', () => scanRegistry(server)],
+        ['typosquat', () => scanTyposquat(server)],
+        ['transport', () => scanTransport(server, policy?.allowedDomains)],
+        ['config', () => scanConfig(server)],
+        ['ast', () => scanAst(server, policy?.allowedDomains)],
+        ['policy', () => evaluateCustomRules(server, customRules)],
+        ['data-flow', () => scanDataFlow(server, activeServers)],
+        ['network-egress', () => scanNetworkEgress(server)],
+        ['data-controls', () => scanDataControls(server)],
       ];
+
+      let allFindings: Finding[] = [];
+      for (const [name, fn] of scannerRuns) {
+        allFindings.push(...await runScanner(name, fn));
+      }
 
       // Simple heuristic for package name from supply-chain-scanner
       let packageName = '';
@@ -171,18 +195,24 @@ export async function runScan(options: { silent?: boolean, json?: boolean, verbo
 
       let trustScore: number | undefined;
       let metadata: SupplyChainResult['metadata'];
-      if (options.verbose || options.sbom || options.ci || options.submit) {
-        const packageFindings = await scanPackageDeep(server, options.offline);
-        allFindings.push(...packageFindings);
+      // Package/CVE, supply-chain trust, and license checks always run; the
+      // README documents that supply-chain scanning makes registry lookups,
+      // disabled with --offline. Previously these were silently skipped for
+      // plain `mcp-scan` runs, so "Outdated Package" and "Supply Chain Risk"
+      // findings never appeared without --verbose/--ci/--sbom/--submit.
+      const packageFindings = await runScanner('package', () => scanPackageDeep(server, options.offline));
+      allFindings.push(...packageFindings);
 
-        const supplyChainResult = await scanSupplyChain(server, options.offline);
-        allFindings.push(...supplyChainResult.findings);
-        trustScore = supplyChainResult.trustScore;
-        metadata = supplyChainResult.metadata;
-        
-        const licenseFindings = scanLicense(metadata);
-        allFindings.push(...licenseFindings);
-      }
+      const supplyChainResult = await runScanner('supply-chain', async () => {
+        const result = await scanSupplyChain(server, options.offline);
+        trustScore = result.trustScore;
+        metadata = result.metadata;
+        return result.findings;
+      });
+      allFindings.push(...supplyChainResult);
+      
+      const licenseFindings = await runScanner('license', () => scanLicense(metadata));
+      allFindings.push(...licenseFindings);
 
       // Apply policy: Suppress Rules
       if (policy && policy.suppressRules) {
