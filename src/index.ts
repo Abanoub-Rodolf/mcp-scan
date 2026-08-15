@@ -101,7 +101,9 @@ Examples:
       await sendSlackWebhook(options.slackWebhook, report);
     }
 
-    if (report.criticalCount > 0 || report.highCount > 0) {
+    if (options.ci && (report.criticalCount > 0 || report.highCount > 0)) {
+      // Strict exit codes are a CI contract; a plain interactive scan
+      // reports findings without failing the shell.
       process.exitCode = 1;
     }
     if (options.submit) {
@@ -197,7 +199,10 @@ program
   .command('ci')
   .description('CI mode (JSON output, strict exit codes)')
   .option('--max-severity <level>', 'Maximum allowed severity before failing', 'high')
-  .option('--output <path>', 'Path to save JSON output')
+  .option('--output <path>', 'Path to save JSON output (defaults to stdout)')
+  .option('-c, --config <path>', 'Path to a specific MCP config file to scan')
+  .option('--policy <path>', 'Use custom security policy from YAML file')
+  .option('--offline', 'Skip all external network calls and use bundled CVE snapshot')
   .action(async (options) => {
     await runCi(options);
   });
@@ -236,8 +241,8 @@ program
   .description('Generate Software Bill of Materials (SBOM)')
   .option('--format <format>', 'SBOM format (cyclonedx or spdx)', 'cyclonedx')
   .option('--output <path>', 'Output file path', 'sbom.json')
-  .option('--include-deps', 'Include full dependency trees')
   .option('--include-findings', 'Include scan findings as vulnerabilities in SBOM')
+  .option('--offline', 'Skip all external network calls and use bundled CVE snapshot')
   .action(async (options) => {
     const { runSbom } = await import('./commands/sbom.js');
     await runSbom(options);
@@ -246,7 +251,8 @@ program
 program
   .command('privacy')
   .description('Generate a privacy impact assessment for all detected MCP servers')
-  .option('--format <format>', 'Output format (text or json)', 'text')
+  .option('--format <format>', 'Output format (text, json, or csv)', 'text')
+  .option('--output <path>', 'Save the report to a file')
   .option('--retention', 'Include data retention analysis')
   .action(async (options) => {
     const { runPrivacy } = await import('./commands/privacy.js');

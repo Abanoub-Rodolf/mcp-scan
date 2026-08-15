@@ -73,7 +73,11 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
                 aggregatedReport.totalScanned++;
             }
         }
-    } catch (_e) {}
+    } catch (err) {
+      // Silently swallowed per-file failures made configs vanish from the
+      // aggregated report with no way to know they were skipped.
+      logger.warn(`Skipping ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   aggregatedReport.totalDurationMs = Date.now() - startTime;

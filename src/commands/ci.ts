@@ -1,14 +1,38 @@
 import { runScan } from './scan.js';
 import { printJsonReport } from '../utils/json-reporter.js';
 import { SEVERITY_ORDER, Severity } from '../types/severity.js';
+import fs from 'fs';
 
-export async function runCi(options: { maxSeverity?: string, json?: boolean }) {
+export async function runCi(options: {
+  maxSeverity?: string,
+  json?: boolean,
+  output?: string,
+  config?: string,
+  policy?: string,
+  offline?: boolean,
+}) {
   const maxSeverityStr = (options.maxSeverity || 'high').toUpperCase() as Severity;
-  const maxSeverityThreshold = SEVERITY_ORDER[maxSeverityStr] || SEVERITY_ORDER.HIGH;
+  if (!(maxSeverityStr in SEVERITY_ORDER)) {
+    throw new Error(`Invalid max severity '${options.maxSeverity}'. Valid values: ${Object.keys(SEVERITY_ORDER).join(', ').toLowerCase()}`);
+  }
+  const maxSeverityThreshold = SEVERITY_ORDER[maxSeverityStr];
 
-  const report = await runScan({ silent: true, ci: true });
+  // Forward scan options so `ci` can target a config, use a policy file,
+  // or run fully offline - previously every flag except --max-severity
+  // was silently ignored.
+  const report = await runScan({
+    silent: true,
+    ci: true,
+    config: options.config,
+    policy: options.policy,
+    offline: options.offline,
+  });
 
-  printJsonReport(report);
+  if (options.output) {
+    fs.writeFileSync(options.output, JSON.stringify(report, null, 2));
+  } else {
+    printJsonReport(report);
+  }
 
   let shouldFail = false;
   if (report.criticalCount > 0 && maxSeverityThreshold <= SEVERITY_ORDER.CRITICAL) shouldFail = true;
@@ -21,5 +45,5 @@ export async function runCi(options: { maxSeverity?: string, json?: boolean }) {
   const totalFindings = report.criticalCount + report.highCount + report.mediumCount + report.lowCount;
   process.stderr.write(`mcp-scan: ${totalFindings} finding(s), exit code ${exitCode}\n`);
 
-  process.exit(exitCode);
+  process.exitCode = exitCode;
 }

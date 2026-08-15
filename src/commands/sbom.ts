@@ -9,10 +9,10 @@ import fs from 'fs';
 export async function runSbom(options: {
   format: 'cyclonedx' | 'spdx';
   output: string;
-  includeDeps?: boolean;
   includeFindings?: boolean;
+  offline?: boolean;
 }) {
-  const report = await runScan({ silent: true });
+  const report = await runScan({ silent: true, offline: options.offline });
 
   try {
     if (options.format === 'cyclonedx') {

@@ -51,7 +51,10 @@ export async function runAudit(serverName?: string) {
 
   // Run deep checks
   spinner.text = `Checking registry health for '${serverName}'...`;
-  const deepFindings = await scanPackageDeep(targetServer, baseReport.results[0].findings.some(f => f.description.includes('offline')));
+  // Use the audited server's own result - baseReport.results[0] was the
+  // first scanned server, which could be a different one entirely (and
+  // crashed when the scan produced zero results).
+  const deepFindings = await scanPackageDeep(targetServer, serverResult.findings.some(f => f.description.includes('offline')));
   
   serverResult.findings.push(...deepFindings);
   for (const f of deepFindings) {
