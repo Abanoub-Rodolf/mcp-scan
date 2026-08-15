@@ -22,6 +22,7 @@ import { scanDataControls } from '../scanners/data-controls-scanner.js';
 import { writeSarifReport } from '../utils/sarif-reporter.js';
 import { applyPolicy, loadYamlPolicy } from '../policy/engine.js';
 import { ScanReport, ServerScanResult, Finding } from '../types/scan-result.js';
+import { ScanOptions } from '../types/scan-options.js';
 import { DetectedTool } from '../types/config.js';
 import { createSpinner } from '../utils/spinner.js';
 import { printJsonReport } from '../utils/json-reporter.js';
@@ -32,7 +33,7 @@ import { runFix } from './fix.js';
 import { SEVERITY_ORDER, Severity } from '../types/severity.js';
 import { logger } from '../utils/logger.js';
 
-export async function runScan(options: { silent?: boolean, json?: boolean, verbose?: boolean, severity?: string, fix?: boolean, config?: string, version?: string, ugig?: boolean, ci?: boolean, sbom?: string, sarif?: string, policy?: string, offline?: boolean, submit?: boolean } = {}): Promise<ScanReport> {
+export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   const startTime = Date.now();
   
   const policy = loadPolicy();

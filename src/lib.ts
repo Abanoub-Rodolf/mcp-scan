@@ -1,31 +1,21 @@
 import { runScan } from './commands/scan.js';
 import { detectTools } from './config/detector.js';
-import { ScanReport, ServerScanResult, Finding } from './types/scan-result.js';
+import { generateHtmlReport } from './utils/html-reporter.js';
+import { generateSarif } from './utils/sarif-reporter.js';
+import { generateSbom, generateSpdx } from './utils/sbom-generator.js';
 
 export {
   runScan,
   detectTools,
+  generateHtmlReport,
+  generateSarif,
+  generateSbom,
+  generateSpdx,
 };
 
 export type {
   ScanReport,
   ServerScanResult,
   Finding,
-};
-
-export interface ScanOptions {
-  silent?: boolean;
-  json?: boolean;
-  verbose?: boolean;
-  severity?: string;
-  fix?: boolean;
-  config?: string;
-  version?: string;
-  ugig?: boolean;
-  ci?: boolean;
-  sbom?: string;
-  sarif?: string;
-  policy?: string;
-  offline?: boolean;
-  submit?: boolean;
-}
+  ScanOptions,
+} from './types/index.js';
