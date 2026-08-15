@@ -34,7 +34,7 @@ mcp-scan was built after analyzing hundreds of publicly available MCP server con
 | Credential Relay | HIGH | Environment variables or secrets passed to external APIs or processes |
 | Known Malicious Package | CRITICAL | Config references packages on the known-bad list |
 | Exposed Secret | CRITICAL | Hardcoded API keys, tokens, or passwords in config |
-| Prompt Injection | HIGH | Instructions embedded in tool names or descriptions |
+| Prompt Injection | HIGH | Instructions embedded in tool names, descriptions, or tool schema fields |
 | Obfuscated Network | HIGH | Server uses base64, hex, or reversed URLs to hide endpoints |
 | Data-in-URL Exfil | HIGH | Potential exfiltration via long strings in URL query parameters |
 | Typosquatting | HIGH | Package name closely resembles a trusted popular package |

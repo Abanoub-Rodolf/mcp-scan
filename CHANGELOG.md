@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security
+- Prompt-injection and tool-poisoning scanners now evaluate the full tool
+  catalog: tool names, descriptions, and nested JSON schema description/
+  enum values. The 2026 MCP threat model treats the catalog as part of
+  the prompt, so payloads hide in schema fields, not just descriptions.
+- SARIF output: rule table aligned with the ids scanners actually emit
+  (dead `malicious-package`/`typosquatting-package`/etc. keys removed),
+  `originalUriBaseIds` declared so `%SRCROOT%` resolves for GitHub code
+  scanning, POSIX URI separators on Windows, dead account URL fixed.
+- Compliance mappings aligned to emitted finding ids (`known-malicious`,
+  `typosquat-detection`, `supply-chain-low-trust`, `server-mutation`, ...)
+  so SOC 2 / GDPR / HIPAA / PCI-DSS / NIST controls actually match.
+
+### Fixed
+- Library API: `ScanOptions` is now a single source of truth shared by
+  the CLI, `runScan`, and the public entry; HTML/SARIF/SBOM generators
+  are exported from the library.
+- Proxy `--args` parsing respects quotes and commas instead of naive
+  split-on-space, so multi-word values work.
+- GitHub Action runner moved from the deprecated `node20` to `node24`;
+  pre-commit hook declares the npm dependency so the `mcp-scan` entry
+  resolves.
+- `audit` command uses exit codes instead of `process.exit`.
+
 ## [2.0.3] - 2026-08-15
 
 ### Security fixes (end-to-end audit)
