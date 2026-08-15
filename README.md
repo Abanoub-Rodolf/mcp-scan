@@ -2,6 +2,8 @@
 
 [![npm version](https://badge.fury.io/js/mcp-scan.svg)](https://badge.fury.io/js/mcp-scan)
 [![npm downloads](https://img.shields.io/npm/dw/mcp-scan)](https://www.npmjs.com/package/mcp-scan)
+[![GitHub stars](https://img.shields.io/github/stars/Abanoub-Rodolf/mcp-scan?style=social)](https://github.com/Abanoub-Rodolf/mcp-scan)
+[![CI](https://github.com/Abanoub-Rodolf/mcp-scan/actions/workflows/ci.yml/badge.svg)](https://github.com/Abanoub-Rodolf/mcp-scan/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 **Open-source security scanner for Model Context Protocol (MCP) servers.**
@@ -12,7 +14,7 @@ MCP servers run with full access to your filesystem, API keys, and network. mcp-
 npx mcp-scan@latest
 ```
 
-No installation. No sign-up. No telemetry. No data leaves your machine. Supply chain scanning makes registry lookups (disable with `--offline`).
+No installation. No sign-up. No telemetry. No data leaves your machine. Supply chain scanning makes registry lookups (npm, OSV.dev, GitHub API) - disable with `--offline`.
 
 ---
 
@@ -29,22 +31,22 @@ mcp-scan was built after analyzing hundreds of publicly available MCP server con
 | Check | Severity | Description |
 |-------|----------|-------------|
 | Data Exfiltration | CRITICAL | Tool reads filesystem/DB/clipboard and sends data to a network endpoint |
-| Credential Relay | CRITICAL | Environment variables or secrets passed to external APIs or processes |
+| Credential Relay | HIGH | Environment variables or secrets passed to external APIs or processes |
 | Known Malicious Package | CRITICAL | Config references packages on the known-bad list |
 | Exposed Secret | CRITICAL | Hardcoded API keys, tokens, or passwords in config |
 | Prompt Injection | HIGH | Instructions embedded in tool names or descriptions |
 | Obfuscated Network | HIGH | Server uses base64, hex, or reversed URLs to hide endpoints |
 | Data-in-URL Exfil | HIGH | Potential exfiltration via long strings in URL query parameters |
 | Typosquatting | HIGH | Package name closely resembles a trusted popular package |
-| Supply Chain Risk | HIGH | Low-trust package with no history, stars, or maintainers |
+| Supply Chain Risk | MEDIUM | Low-trust package with no history, stars, or maintainers |
 | PII Exposure | HIGH | Server handles sensitive personal data without proper controls |
-| Outdated Package | MEDIUM | Package has known vulnerabilities in the installed version |
-| Overly Broad Permissions | MEDIUM | Server requests filesystem or shell access it does not need |
+| Outdated Package | CRITICAL | Package has known vulnerabilities in the installed version |
+| Overly Broad Permissions | HIGH | Server requests filesystem or shell access it does not need |
 | Telemetry Tracking | MEDIUM | Server contacts known analytics or tracking domains |
 | Privacy Gaps | MEDIUM | Missing data retention, deletion, or encryption-at-rest policies |
-| Unverified Source | LOW | Package not from a verified registry or organization |
+| Unverified Source | HIGH | Package not from a verified registry or organization |
 | Data Minimization | LOW | Tool requests significantly more data fields than necessary |
-| Missing Transport | LOW | MCP server communicates over unencrypted transport |
+| Missing Transport | HIGH | MCP server communicates over unencrypted transport |
 
 ---
 
@@ -56,7 +58,7 @@ mcp-scan automatically detects configurations for **17 AI tool clients**:
 |----------|-------|
 | **AI Assistants** | Claude Desktop, Claude Code, Gemini CLI, Codex CLI |
 | **Editors** | VS Code, Cursor, Windsurf, Zed |
-| **AI Coding Tools** | Cline, Roo Code, Continue, Amp, Plandex |
+| **AI Coding Tools** | Cline, Roo Code, Continue.dev, Amp, Plandex |
 | **Other** | ChatGPT Desktop, GitHub Copilot, Kiro, Warp |
 
 ---
@@ -93,9 +95,9 @@ npx mcp-scan@latest compliance
 npx mcp-scan@latest sbom
 
 # Validate custom security policies
-npx mcp-scan@latest policy
+npx mcp-scan@latest policy validate
 
-# CI mode: exit 1 on CRITICAL or HIGH findings
+# CI mode: exit 1 on CRITICAL or HIGH findings (plain scans report without failing)
 npx mcp-scan@latest --ci --severity high
 ```
 
@@ -127,21 +129,39 @@ GitLab CI, CircleCI, or any runner works. `npx mcp-scan` is the portable entrypo
 Define your own rules in `.mcp-scan-policy.yml`:
 
 ```yaml
+version: 1
 rules:
-  - name: no-external-endpoints
-    description: Block servers contacting endpoints outside your org domain
+  - id: block-external-secrets
+    description: Block any server that leaks secrets to unknown endpoints
+    action: block
     match:
-      network_egress:
-        not_in_domain: "*.mycompany.com"
-    severity: HIGH
+      finding_id: ["exposed-secret", "exfiltration-vector"]
 
-  - name: require-approved-packages
-    description: Only allow packages from your approved list
+  - id: escalate-supply-chain
+    description: Treat low-trust packages as critical
+    action: override-severity
+    severity: critical
     match:
-      package:
-        not_in_allowlist: true
-    severity: CRITICAL
+      finding_id: supply-chain-low-trust
+
+  - id: allow-local-network
+    description: Skip unknown-endpoint findings for local development
+    action: skip
+    match:
+      finding_id: network-egress-unknown
+      category: ["localhost", "127.0.0.1"]
+
+  - id: warn-on-pii
+    description: Flag any server that handles card data
+    action: warn
+    match:
+      severity: critical
+      pii_types: ["Credit Card"]
 ```
+
+Rules need `id` + `action` (`block`, `warn`, `skip`, `override-severity`).
+Match keys: `server_name`, `finding_id`, `severity`, `category`, `license_type`, `pii_types`.
+Validate with `mcp-scan policy validate`.
 
 ---
 
@@ -159,12 +179,12 @@ rules:
 
 ## Privacy & Security Architecture
 
-mcp-scan runs locally on your machine. Config parsing, regex scanning, and all heuristics happen in-process. The only network calls are optional supply-chain registry lookups (npm), which can be disabled with `--offline`.
+mcp-scan runs locally on your machine. Config parsing, regex scanning, and all heuristics happen in-process. The only network calls are optional supply-chain lookups (npm registry, OSV.dev for CVEs, GitHub API for trust scoring), which can be disabled with `--offline`.
 
 - Local config parsing and analysis only
 - No API keys required
 - No telemetry, no account, no sign-up
-- Optional npm registry lookup for supply-chain scanning, off with `--offline`
+- Optional npm/OSV.dev/GitHub API lookups for supply-chain and CVE scanning, off with `--offline`
 - Fully open source. Audit the code yourself.
 
 ---
