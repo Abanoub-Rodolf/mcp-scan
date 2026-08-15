@@ -1,27 +1,96 @@
 import fs from 'fs';
 import path from 'path';
 import * as toml from 'smol-toml';
-import { McpConfig, ResolvedServer, McpScanPolicy } from '../types/config.js';
+import { McpConfig, ResolvedServer, McpScanPolicy, McpServerEntry } from '../types/config.js';
 import { logger } from '../utils/logger.js';
+
+/**
+ * Strips JSONC comments and trailing commas with a proper string-state
+ * machine. The old quote-count heuristic corrupted valid configs: a URL
+ * with a trailing ",}" inside a string lost characters, and a line with
+ * a URL plus a trailing double-slash comment failed to parse entirely
+ * because the heuristic found the URL's double-slash first. Only line
+ * and block comments outside string literals are removed, so 'http://x',
+ * escaped quotes, and commas inside strings survive byte-for-byte.
+ */
+function stripJsonc(content: string): string {
+  let out = '';
+  let i = 0;
+  const n = content.length;
+  let inString = false;
+  let escaped = false;
+
+  while (i < n) {
+    const c = content[i];
+    const next = content[i + 1];
+
+    if (inString) {
+      out += c;
+      if (escaped) {
+        escaped = false;
+      } else if (c === '\\') {
+        escaped = true;
+      } else if (c === '"') {
+        inString = false;
+      }
+      i++;
+      continue;
+    }
+
+    if (c === '"') {
+      inString = true;
+      out += c;
+      i++;
+      continue;
+    }
+
+    if (c === '/' && next === '/') {
+      while (i < n && content[i] !== '\n') i++;
+      continue;
+    }
+
+    if (c === '/' && next === '*') {
+      i += 2;
+      while (i < n && !(content[i] === '*' && content[i + 1] === '/')) i++;
+      i += 2;
+      continue;
+    }
+
+    if (c === ',') {
+      // Trailing comma before } or ] (skip whitespace and any comments
+      // that sit between the comma and the closing brace)
+      let j = i + 1;
+      for (;;) {
+        while (j < n && /\s/.test(content[j])) j++;
+        if (content[j] === '/' && content[j + 1] === '/') {
+          while (j < n && content[j] !== '\n') j++;
+          continue;
+        }
+        if (content[j] === '/' && content[j + 1] === '*') {
+          j += 2;
+          while (j < n && !(content[j] === '*' && content[j + 1] === '/')) j++;
+          j += 2;
+          continue;
+        }
+        break;
+      }
+      if (content[j] === '}' || content[j] === ']') {
+        i++;
+        continue;
+      }
+    }
+
+    out += c;
+    i++;
+  }
+
+  return out;
+}
 
 function parseJsonC(content: string) {
   // Remove BOM
   let json = content.replace(/^\uFEFF/, '');
-  // Remove block comments /* */
-  json = json.replace(/\/\*[\s\S]*?\*\//g, '');
-  // Remove line comments // (be careful not to remove in strings like http:// - basic heuristic)
-  // A perfect JSONC parser is complex, but this handles standard config comments
-  json = json.split('\n').map(line => {
-    const commentIdx = line.indexOf('//');
-    if (commentIdx === -1) return line;
-    // Check if it's inside a string (very basic check)
-    const before = line.substring(0, commentIdx);
-    const quotes = (before.match(/"/g) || []).length;
-    if (quotes % 2 !== 0) return line; // Inside a string
-    return before;
-  }).join('\n');
-  // Remove trailing commas
-  json = json.replace(/,\s*([\]}])/g, '$1');
+  json = stripJsonc(json);
   return JSON.parse(json);
 }
 
@@ -51,8 +120,28 @@ export function extractServers(toolName: string, configPath: string, config: Mcp
 
   const servers: ResolvedServer[] = [];
   for (const [name, entry] of Object.entries(config.mcpServers)) {
+    // Normalize shapes that appear in real-world configs: args as objects
+    // or with non-string values, env values that are numbers/booleans.
+    // Downstream scanners assume string arrays / string values; one odd
+    // entry must not abort the whole scan.
+    const normalized: McpServerEntry = { ...entry };
+
+    if (normalized.args !== undefined && !Array.isArray(normalized.args)) {
+      normalized.args = Object.values(normalized.args as any)
+        .filter((a): a is string | number => typeof a === 'string' || typeof a === 'number')
+        .map(String);
+    }
+
+    if (normalized.env) {
+      const env: Record<string, string> = {};
+      for (const [k, v] of Object.entries(normalized.env)) {
+        env[k] = typeof v === 'string' ? v : String(v);
+      }
+      normalized.env = env;
+    }
+
     servers.push({
-      ...entry,
+      ...normalized,
       name,
       toolName,
       configPath
