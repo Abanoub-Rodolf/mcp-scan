@@ -1,6 +1,19 @@
 import { ScanReport } from '../types/scan-result.js';
 
 /**
+ * HTML-escapes a value so server-controlled strings (tool descriptions,
+ * finding text, config paths) cannot inject markup or script into reports.
+ */
+export function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
  * Generates a self-contained HTML security report.
  * @param report The scan report to generate the HTML for.
  * @returns The HTML report as a string.
@@ -13,8 +26,8 @@ export function generateHtmlReport(report: ScanReport): string {
   const lowColor = '#8B949E';
   const passColor = '#3FB950';
 
-  const version = report.version || '1.0.3';
-  const timestamp = new Date().toLocaleString();
+  const version = escapeHtml(report.version || '1.0.3');
+  const timestamp = escapeHtml(new Date().toLocaleString());
 
   const totalFindings = report.criticalCount + report.highCount + report.mediumCount + report.lowCount + report.infoCount;
   const isAllClear = totalFindings === 0;
@@ -25,21 +38,21 @@ export function generateHtmlReport(report: ScanReport): string {
         const findingsHtml = result.findings.length === 0
           ? `<div class="server-clean">✓ No issues found</div>`
           : result.findings.map(finding => `
-            <div class="finding severity-${finding.severity.toLowerCase()}">
+            <div class="finding severity-${escapeHtml(finding.severity.toLowerCase())}">
               <div class="finding-header">
-                <span class="badge badge-${finding.severity.toLowerCase()}">${finding.severity}</span>
-                <span class="finding-id">${finding.id}</span>
+                <span class="badge badge-${escapeHtml(finding.severity.toLowerCase())}">${escapeHtml(finding.severity)}</span>
+                <span class="finding-id">${escapeHtml(finding.id)}</span>
               </div>
-              <div class="finding-description">${finding.description}</div>
-              ${finding.fixRecommendation ? `<div class="finding-fix">↳ ${finding.fixRecommendation}</div>` : ''}
+              <div class="finding-description">${escapeHtml(finding.description)}</div>
+              ${finding.fixRecommendation ? `<div class="finding-fix">↳ ${escapeHtml(finding.fixRecommendation)}</div>` : ''}
             </div>
           `).join('');
 
         return `
           <div class="server-card">
             <div class="server-header">
-              <div class="server-name">${result.toolName} › ${result.serverName}</div>
-              <div class="server-path">${result.configPath}</div>
+              <div class="server-name">${escapeHtml(result.toolName)} › ${escapeHtml(result.serverName)}</div>
+              <div class="server-path">${escapeHtml(result.configPath)}</div>
             </div>
             <div class="server-findings">
               ${findingsHtml}

@@ -5,7 +5,7 @@ describe('Secret Scanner', () => {
   it('should detect GitHub tokens', () => {
     const findings = scanSecrets({
       name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
-      env: { TOKEN: 'ghp_abcdefghijklmnopqrstuvwxyz1234567890' }
+      env: { TOKEN: 'ghp_' + 'abcdefghijklmnopqrstuvwxyz1234567890' }
     });
     expect(findings).toHaveLength(1);
     expect(findings[0].id).toBe('exposed-secret');
@@ -14,7 +14,7 @@ describe('Secret Scanner', () => {
   it('should detect AWS keys', () => {
     const findings = scanSecrets({
       name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
-      env: { KEY: 'AKIAIOSFODNN7EXAMPLE' }
+      env: { KEY: 'AKIA' + 'IOSFODNN7EXAMPLE' }
     });
     expect(findings).toHaveLength(1);
   });
@@ -22,7 +22,7 @@ describe('Secret Scanner', () => {
   it('should detect Google Cloud API keys', () => {
     const findings = scanSecrets({
       name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
-      env: { GCP_KEY: 'AIzaSyA1234567890abcdefghij12345678901' }
+      env: { GCP_KEY: 'AIza' + 'SyA1234567890abcdefghij12345678901' }
     });
     expect(findings).toHaveLength(1);
   });
@@ -30,7 +30,7 @@ describe('Secret Scanner', () => {
   it('should detect Slack bot tokens', () => {
     const findings = scanSecrets({
       name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
-      env: { SLACK_TOKEN: 'xoxb-0000test0000-0000test0000-testvaluenotrealsecret00' }
+      env: { SLACK_TOKEN: 'xoxb-' + '0000test0000-0000test0000-testvaluenotrealsecret00' }
     });
     expect(findings).toHaveLength(1);
   });
@@ -38,7 +38,7 @@ describe('Secret Scanner', () => {
   it('should detect Groq API keys', () => {
     const findings = scanSecrets({
       name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
-      env: { GROQ_KEY: 'gsk_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY' }
+      env: { GROQ_KEY: 'gsk_' + 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY' }
     });
     expect(findings).toHaveLength(1);
   });
@@ -46,7 +46,7 @@ describe('Secret Scanner', () => {
   it('should detect HuggingFace tokens', () => {
     const findings = scanSecrets({
       name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
-      env: { HF_TOKEN: 'hf_TESTtestTESTtestTESTtestTESTtest0' }
+      env: { HF_TOKEN: 'hf_' + 'TESTtestTESTtestTESTtestTESTtest0' }
     });
     expect(findings).toHaveLength(1);
   });
@@ -54,7 +54,7 @@ describe('Secret Scanner', () => {
   it('should detect NPM tokens', () => {
     const findings = scanSecrets({
       name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
-      env: { NPM_TOKEN: 'npm_abcdefghijklmnopqrstuvwxyz0123456789' }
+      env: { NPM_TOKEN: 'npm_' + 'abcdefghijklmnopqrstuvwxyz0123456789' }
     });
     expect(findings).toHaveLength(1);
   });

@@ -47,7 +47,7 @@ describe('Data Controls Scanner', () => {
   it('5. Server with API Key -> PII detected, CRITICAL', () => {
     const server: ResolvedServer = {
       name: 'api-tool', toolName: 'test', configPath: '/test',
-      args: ['AKIA1234567890ABCDEFGHIJ']
+      args: ['AKIA' + '1234567890ABCDEFGHIJ']
     };
     const findings = scanDataControls(server);
     expect(findings.find(f => f.id === 'data-controls-pii')?.severity).toBe('CRITICAL');

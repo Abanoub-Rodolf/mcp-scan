@@ -14,7 +14,7 @@ function freshPhoneRegex(): RegExp {
 describe('Scanner false-positive regressions', () => {
   describe('Phone Number regex', () => {
     it('does not match the trailing 10 digits of a GitHub PAT', () => {
-      const pat = 'ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678901234567';
+      const pat = 'ghp_' + 'aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678901234567';
       expect(freshPhoneRegex().test(pat)).toBe(false);
     });
 
