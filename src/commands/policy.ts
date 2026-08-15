@@ -14,29 +14,6 @@ export async function runPolicyAction(action: string, file: string = '.mcp-scan-
             process.exitCode = 1;
             return;
         }
-        const defaultPolicy = {
-            version: 1,
-            rules: [
-                {
-                    id: 'allow-localhost',
-                    description: 'Allow connections to localhost for development',
-                    action: 'skip',
-                    match: {
-                        finding_id: 'network-egress-unknown',
-                        category: ['localhost', '127.0.0.1']
-                    }
-                },
-                {
-                    id: 'block-all-secrets',
-                    description: 'Escalate all exposed secrets to critical',
-                    action: 'override-severity',
-                    severity: 'critical',
-                    match: {
-                        finding_id: 'exposed-secret'
-                    }
-                }
-            ]
-        };
         // Write the policy directly as YAML; an earlier version wrote a
         // JSON-to-YAML mangled file first, so an interruption between the
         // two writes left a corrupt policy on disk.
