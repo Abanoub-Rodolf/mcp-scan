@@ -227,6 +227,20 @@ brew install mcp-scan
 
 ---
 
+## Paid next steps
+
+`mcp-scan` itself is free and MIT. When a scan finds something that needs a
+decision, two paid options exist — neither is required to use the scanner:
+
+- **MCP Risk Review** — a human-led, 48-hour review of a real MCP setup by the
+  maintainer, with a clear go / fix / escalate recommendation. See
+  [thynkq.com/pricing#specialist-review](https://thynkq.com/pricing#specialist-review).
+- **mcp-scan Pro waitlist** — hosted reports, policy packs, and buyer-safe risk
+  summaries for teams that need a shareable artifact after a local scan. Join at
+  [thynkq.com/products/mcp-scan#mcp-pro-waitlist](https://thynkq.com/products/mcp-scan#mcp-pro-waitlist).
+
+---
+
 ## Contributing
 
 Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
