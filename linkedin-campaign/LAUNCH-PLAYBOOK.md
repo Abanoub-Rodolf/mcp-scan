@@ -7,7 +7,7 @@
 - [ ] Cancel the currently scheduled text-only LinkedIn post (Tue Mar 24, 8:30 AM)
 - [ ] Export carousel PDF at 2x resolution (2160x2700px per page, under 5MB total)
 - [ ] Test PDF upload to LinkedIn in a draft post — verify no quality degradation
-- [ ] Add GitHub repo to LinkedIn Featured section: github.com/rodolfboctor/mcp-scan
+- [ ] Add GitHub repo to LinkedIn Featured section: github.com/Abanoub-Rodolf/mcp-scan
 - [ ] Update LinkedIn headline to include "Creator of mcp-scan" (see headline note below)
 - [ ] Set GitHub social preview image (see GITHUB-PREVIEW-SPEC.md)
 - [ ] Enable GitHub Discussions on the repo

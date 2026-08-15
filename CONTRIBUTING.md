@@ -7,7 +7,7 @@ Thank you for your interest in contributing to mcp-scan. This document provides 
 Follow these steps to get started with the codebase:
 
 ```bash
-git clone https://github.com/rodolfboctor/mcp-scan.git
+git clone https://github.com/Abanoub-Rodolf/mcp-scan.git
 cd mcp-scan
 npm install
 npm test        # Run vitest unit tests

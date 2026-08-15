@@ -8,7 +8,7 @@ All drafts are ready to post manually. Do NOT post these automatically.
 
 **Title:** Show HN: mcp-scan – security scanner for MCP server configurations
 
-**URL:** https://github.com/rodolfboctor/mcp-scan
+**URL:** https://github.com/Abanoub-Rodolf/mcp-scan
 
 **Timing note:** Best posted on weekday mornings, 8-10am ET. Show HN posts must start with "Show HN:".
 
@@ -39,7 +39,7 @@ Output formats: CLI table, JSON, SARIF (GitHub Security tab), HTML report, Cyclo
 
 One command: `npx mcp-scan`
 
-GitHub: https://github.com/rodolfboctor/mcp-scan
+GitHub: https://github.com/Abanoub-Rodolf/mcp-scan
 npm: https://www.npmjs.com/package/mcp-scan
 
 GitHub Action included for CI/CD integration.
@@ -66,7 +66,7 @@ It auto-detects configs for Claude Desktop, Cursor, VS Code, Windsurf, and 6 oth
 
 One command: `npx mcp-scan`
 
-https://github.com/rodolfboctor/mcp-scan
+https://github.com/Abanoub-Rodolf/mcp-scan
 
 ---
 
@@ -84,7 +84,7 @@ Supports Claude Desktop, Cursor, VS Code, Windsurf, Codex CLI, Zed, GitHub Copil
 
 `npx mcp-scan`
 
-GitHub: https://github.com/rodolfboctor/mcp-scan
+GitHub: https://github.com/Abanoub-Rodolf/mcp-scan
 
 ---
 
@@ -100,7 +100,7 @@ MCP servers run with full filesystem access. Most users never audit their config
 
 10 AI clients. 13 scanners. SARIF + GitHub Action for CI.
 
-github.com/rodolfboctor/mcp-scan
+github.com/Abanoub-Rodolf/mcp-scan
 
 ---
 

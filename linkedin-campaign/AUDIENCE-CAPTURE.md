@@ -30,7 +30,7 @@ Alternative: Loops.so (free tier) or ConvertKit (free up to 1,000)
 
 ## 2. GITHUB DISCUSSIONS (Set up tonight)
 
-1. Go to github.com/rodolfboctor/mcp-scan/settings
+1. Go to github.com/Abanoub-Rodolf/mcp-scan/settings
 2. Scroll to Features, enable "Discussions"
 3. Create two categories:
    - "Security Advisories" — for publishing findings
@@ -47,7 +47,7 @@ Alternative: Loops.so (free tier) or ConvertKit (free up to 1,000)
 LinkedIn Featured section is premium real estate that shows up on your profile before your experience section. Right now you have none.
 
 Add these two items:
-1. **GitHub repo link:** "mcp-scan — Security scanner for MCP server configs" → github.com/rodolfboctor/mcp-scan
+1. **GitHub repo link:** "mcp-scan — Security scanner for MCP server configs" → github.com/Abanoub-Rodolf/mcp-scan
 2. **Email signup:** "Get MCP security advisories" → your Buttondown link
 
 To add Featured section on LinkedIn:
@@ -90,7 +90,7 @@ Currently: No custom preview image. GitHub shows a generic default when anyone s
 To create and set the preview image, see GITHUB-PREVIEW-SPEC.md.
 
 To set it on GitHub:
-1. Go to github.com/rodolfboctor/mcp-scan/settings
+1. Go to github.com/Abanoub-Rodolf/mcp-scan/settings
 2. Scroll to "Social preview"
 3. Upload the 1280x640px image
 

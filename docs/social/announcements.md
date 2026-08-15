@@ -12,7 +12,7 @@
 
 6/ GitHub Action now supports SARIF upload. Findings show up directly in the Security tab.
 
-7/ `npx mcp-scan@latest` to try it. GitHub: github.com/rodolfboctor/mcp-scan
+7/ `npx mcp-scan@latest` to try it. GitHub: github.com/Abanoub-Rodolf/mcp-scan
 
 **LinkedIn Post:**
 
@@ -31,7 +31,7 @@ What else is new:
 
 17 scanners total. 200+ tests. Free and open source.
 
-github.com/rodolfboctor/mcp-scan
+github.com/Abanoub-Rodolf/mcp-scan
 
 #MCP #Security #OpenSource
 

@@ -37,4 +37,4 @@ v2.1 will add runtime monitoring (proxy that intercepts live MCP traffic). v2.2 
 npx mcp-scan@latest
 ```
 
-Source: [github.com/rodolfboctor/mcp-scan](https://github.com/rodolfboctor/mcp-scan)
+Source: [github.com/Abanoub-Rodolf/mcp-scan](https://github.com/Abanoub-Rodolf/mcp-scan)

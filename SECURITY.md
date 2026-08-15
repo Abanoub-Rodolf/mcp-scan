@@ -25,7 +25,7 @@ We will acknowledge your report within 48 hours. For critical vulnerabilities, w
 
 - mcp-scan CLI tool.
 - mcp-scan npm package.
-- rodolfboctor/mcp-scan GitHub Action.
+- Abanoub-Rodolf/mcp-scan GitHub Action.
 
 ## Out of scope
 

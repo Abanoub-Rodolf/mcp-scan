@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run mcp-scan
-        uses: rodolfboctor/mcp-scan@v1
+        uses: Abanoub-Rodolf/mcp-scan@v2
         with:
           severity: 'high'
           fail-on-findings: 'true'

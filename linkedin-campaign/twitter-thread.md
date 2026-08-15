@@ -73,7 +73,7 @@ Building in public. #buildinpublic
 **Tweet 7 — CTA**
 Try it: npx mcp-scan
 
-Star the repo if it's useful: github.com/rodolfboctor/mcp-scan
+Star the repo if it's useful: github.com/Abanoub-Rodolf/mcp-scan
 
 What did you find?
 

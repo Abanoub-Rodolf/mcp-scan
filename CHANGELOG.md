@@ -6,24 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security fixes (2026-08 audit)
+- Stored XSS closed in HTML reports: every server-controlled string (tool descriptions, finding text, config paths) is now HTML-escaped.
+- Command injection closed in `mcp-scan doctor`: `which`/`where` now run via `spawnSync` with an argument array instead of a shell string.
+- Proxy no longer writes raw unmasked JSON-RPC payloads to disk: masking happens before logging, and the log dir honors `MCP_SCAN_LOG_DIR`.
+- Secret scanner: prefix-less formats (Pinecone/Heroku UUIDs, Cloudflare/Railway/Together bare strings) are only reported when the env var key names the provider; added `github_pat_`, `rk_live_`, `whsec_` formats; non-string env values no longer crash scans; URL-decoded values are matched; `server.url` credentials are scanned.
+- PII scanner: fixed the `/g` + `.test()` lastIndex bug that silently disabled PII detection from the second server on; credit cards require a Luhn-valid number; private/loopback IPs are excluded; bare 24-64 char "API key" detection removed; keyword terms are word-boundary and restricted to descriptive text.
+- CVE scanner: OSV findings with CVSS v4 vectors or plain numeric scores are no longer silently dropped; upgrade advice was inverted and is fixed; offline snapshot severity mapping is exhaustive.
+- `--ci` is the only mode that exits 1 on CRITICAL/HIGH findings; a plain interactive scan reports without failing the shell.
+- Scanner failures are isolated per scanner (LOW `scanner-error` finding) instead of aborting the whole run.
+
+### Fixed
+- JSONC parser: state-machine comment/trailing-comma stripping no longer corrupts URLs containing `,}` or `//` inside strings.
+- `fix` command preserves file permissions, symlinks, and keeps a timestamped backup instead of making 0600 files world-readable.
+- `ci --output` works and `ci` forwards `--config`/`--policy`/`--offline`; `privacy --output` is now a real option; dead `sbom --include-deps` flag removed.
+- `audit` deep-checks the audited server, not the first scanned one; `report` surfaces per-file failures instead of swallowing them.
+- CVE snapshot regenerated from live OSV/npm data (74 packages, real advisories, no test fixture, fresh `updatedAt`).
+
 ### Added
-- Scan `.env.local`, `.env.production`, `.env.development`, and `.env.staging` variants in env-leak scanner.
-- Screen capture and keychain access classified as sensitive data sources in data-flow analysis.
-- Email egress (SMTP, nodemailer) classified as a network sink in data-flow analysis.
-- 8 additional AI provider API endpoints: together, cohere, perplexity, deepseek, fireworks, voyage, stability, elevenlabs.
-- 8 additional suspicious tunneling/inspection endpoints: serveo.net, bore.pub, localhost.run, tunnelmole, telebit, pipedream, requestbin, beeceptor.
-- 7 additional telemetry endpoints: heap.io, fullstory.com, intercom.io, customer.io, braze, analytics.google.com, rudderstack.
-- IPv6 address and MAC address PII masking patterns.
-- Passport number and US driver license PII detection patterns.
-- GDPR Art.13 (Transparency) and Art.33 (Breach Notification) control mappings.
-- HIPAA 164.308(a)(1) (Security Management) and 164.312(c)(1) (Integrity) control mappings.
-- SOC 2 CC9.1 (Risk Mitigation) and A1.1 (Availability) control mappings.
-- NIST RS.MI-1 (Incident Mitigation) and PR.IP-1 (Baseline Configuration) control mappings.
-- PCI DSS Req 6 (System Protection) and Req 12 (Security Policies) control mappings.
-- `/etc`, `/var`, `/usr` added to dangerous filesystem paths.
-- `.kube`, `.docker`, `.npmrc`, `.netrc`, ssh key files added to sensitive path detection.
-- Bearer, cert, pem, keypair, and signing-key patterns added to credential env var detection.
-- 13 additional trusted community MCP servers: airtable, asana, jira, confluence, linear, notion, twilio, sendgrid, mailchimp.
+- GitHub Actions CI matrix for Node 20/22 with job timeouts, an npm audit gate, and an npm publish workflow with provenance on version tags.
+- Test suite is hermetic: scans redirect the audit store (`MCP_SCAN_HOME`) to a temp dir, CI tests run `--offline`, and a regression test covers the env-leak relative-path hang.
+
+## [2.0.2] - 2026-04-27
+
+### Fixed
+- Hermetic, machine-portable golden-file tests (no absolute paths, no timestamps).
+- Pinned `lodash` to 4.17.21 exactly; npm audit gate set to critical-only (blessed-contrib's transitive lodash advisories are documented as accepted residual risk in SEMVER-IMPACT.md).
+- Include `data/` in GitLab CI build artifacts; drop Node 18 from the CI matrix (vitest 4 requires Node 20+).
+- `.env.local`, `.env.production`, `.env.development`, `.env.staging` variants scanned by the env-leak scanner.
+- Data-controls scanner: restored token-class API Key keywords.
+- Library API: `sbom` option is a path string, not a boolean.
+- Repository URLs pointed at the GitLab user namespace.
+
+## [2.0.1] - 2026-03-28
+
+### Changed
+- Version bump for npm SEO metadata; v2.0 platform shipped as 2.0.x.
+
+## [2.0.0] - 2026-03-28
+
+### Added
+- **Data Flow Analyzer**: traces data from sensitive sources (filesystem, clipboard, keychain, screen capture) to network sinks (HTTP, email/SMTP), with cross-server flow detection.
+- **Network Egress Monitor**: flags suspicious endpoints, obfuscated URLs (base64/hex/reversed), raw IPs, non-standard ports, and telemetry/tracking domains; 8 additional AI provider endpoints, 8 tunneling endpoints, and 7 telemetry endpoints.
+- **Privacy Assessment**: PII detection (email, phone, cards, SSN, IBAN, IPv4/IPv6, MAC, passport, driver license, NPI, VAT, AWS account), data minimization checks, and `mcp-scan privacy` reports.
+- **Compliance Mapping**: SOC 2 (CC6.1, CC6.6, CC6.7, CC7.1, CC9.1, A1.1), GDPR (Art. 13, 25, 32, 33), HIPAA (164.308, 164.312), PCI-DSS (Req 6, 10, 11, 12), NIST 800-53 (CA-7, RA-5, SA-11, SI-2, RS.MI-1, PR.IP-1) with per-framework scores.
+- **SARIF 2.1.0 output** for GitHub/GitLab code scanning, plus a GitHub Action (`Abanoub-Rodolf/mcp-scan`).
+- **Policy Engine**: `.mcp-scan-policy.yml` rules (skip, block, warn, override-severity) and `.mcp-scan.json` project config.
+- **SBOM generation**: CycloneDX v1.5 and SPDX 2.3 output.
+- Scanner and data expansions: `/.etc`, `/var`, `/usr` dangerous paths; `.kube`, `.docker`, `.npmrc`, `.netrc`, ssh keys sensitive paths; bearer/cert/pem/keypair credential env patterns; IPv6/MAC PII masking; 13 additional trusted community servers; entropy-based secret detection; tool-poisoning and capability-injection scanner.
+- `.env` file variants, offline mode with a bundled CVE snapshot, webhook/Slack alerting, `mcp-scan history`, `mcp-scan diff`, `mcp-scan doctor`, `mcp-scan report`, `mcp-scan audit`, watch mode with delta reporting, and a blessed TUI dashboard.
 
 ## [1.7.0] - 2026-03-24
 
