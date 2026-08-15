@@ -197,6 +197,10 @@ mcp-scan runs locally on your machine. Config parsing, regex scanning, and all h
 - **v2.2**: Sandboxed Execution for scanned servers
 - **v2.3**: Real-Time Alerting
 
+## Read
+
+- [The State of MCP Security](https://thynkq.com/writing/state-of-mcp-security-2026-08): ecosystem size, real scan data from a workstation and the official registry, and the incidents behind the headlines.
+
 ---
 
 ## Installation
