@@ -5,6 +5,8 @@
 [![GitHub stars](https://img.shields.io/github/stars/Abanoub-Rodolf/mcp-scan?style=social)](https://github.com/Abanoub-Rodolf/mcp-scan)
 [![CI](https://github.com/Abanoub-Rodolf/mcp-scan/actions/workflows/ci.yml/badge.svg)](https://github.com/Abanoub-Rodolf/mcp-scan/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Abanoub-Rodolf/mcp-scan/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Abanoub-Rodolf/mcp-scan)
+[![npm provenance](https://img.shields.io/badge/npm%20provenance-signed-brightgreen)](https://docs.npmjs.com/generating-provenance-statements)
 
 **Open-source security scanner for Model Context Protocol (MCP) servers.**
 
