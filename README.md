@@ -193,8 +193,8 @@ mcp-scan runs locally on your machine. Config parsing, regex scanning, and all h
 
 ## Roadmap
 
-- **v2.1**: Runtime Monitoring
-- **v2.2**: Sandboxed Execution
+- **v2.1**: Runtime Monitoring (proxy that inspects live MCP traffic)
+- **v2.2**: Sandboxed Execution for scanned servers
 - **v2.3**: Real-Time Alerting
 
 ---
