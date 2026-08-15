@@ -1,61 +1,107 @@
+# mcp-scan launch announcements (v2.0.3 / v2.0.4)
+
+All copy below reflects the shipped 2.0.3/2.0.4 state. Verified facts: 246 tests, 16 scanners, 19 commands, 5 compliance frameworks, 2 SBOM formats, tool-catalog injection coverage, OIDC provenance publishing, SARIF GitHub Action, zero telemetry. The full audit record: https://github.com/Abanoub-Rodolf/mcp-scan/blob/main/docs/AUDIT-2026-08-15.md
+
+---
+
 **Twitter/X Thread:**
 
-1/ mcp-scan v2.0 is out. It went from a config scanner to a full security platform for MCP servers. 4 new scanners, compliance mapping, SBOM generation, and a YAML policy engine.
+1/ mcp-scan 2.0.3 is out — and this release hardened the scanner itself. We ran a full end-to-end security audit of mcp-scan and fixed what we found. Stored XSS in HTML reports. Command injection in `doctor`. A proxy that logged raw traffic to disk. All closed.
 
-2/ The big one: Data Flow Analyzer. It traces where your data goes. If an MCP server reads your files and also has network access, you'll know about it before it phones home.
+2/ The interesting part: MCP threat models changed. Tool catalogs are part of the prompt now. Tool names, descriptions, and nested JSON-schema fields all enter model context at tools/list time — so injection payloads hide in schemas, not just descriptions.
 
-3/ Network Egress Monitor flags every outbound endpoint your servers talk to. Raw IPs, obfuscated URLs, known telemetry domains. All surfaced.
+3/ Our prompt-injection and tool-poisoning scanners now recursively scan the whole schema.tools structure, keys included. Regression tests prove payloads buried in a nested inputSchema description get caught.
 
-4/ `mcp-scan compliance --framework soc2` maps your findings to SOC 2, GDPR, HIPAA, PCI-DSS, and NIST controls. `mcp-scan privacy` generates a privacy impact report.
+4/ Also fixed: CVE scanner was silently dropping CVSS v4 scores and the upgrade advisor recommended upgrades exactly when they fixed nothing. Compliance mappings and the SARIF rule table had dead finding IDs — now generated from the real emitted set, no drift.
 
-5/ Policy Engine: define your security rules in `.mcp-scan-policy.yml`. Block packages, suppress rules, set severity thresholds. SBOM output in CycloneDX v1.5 and SPDX 2.3.
+5/ Distribution got hardened too: npm publishing now runs on OIDC trusted publishing — no tokens, full provenance attestation on every release. 2.0.4 is provenance-signed.
 
-6/ GitHub Action now supports SARIF upload. Findings show up directly in the Security tab.
-
-7/ `npx mcp-scan@latest` to try it. GitHub: github.com/Abanoub-Rodolf/mcp-scan
+6/ 246 tests, 16 scanners, zero telemetry. `npx mcp-scan@latest` to scan your Claude/Cursor/Windsurf/VS Code MCP configs. github.com/Abanoub-Rodolf/mcp-scan
 
 **LinkedIn Post:**
 
-mcp-scan v2.0 is live.
+mcp-scan 2.0.3: we audited our own scanner, and it found real problems.
 
-When I built the first version, it checked MCP configs for hardcoded secrets and known malicious packages. Useful, but limited. The real question was always: where does my data actually go when I connect an AI tool to an MCP server?
+A full end-to-end security audit of mcp-scan's 16 scanners, 19 commands, and CLI core surfaced issues we're now shipping fixes for:
 
-v2.0 answers that. The new Data Flow Analyzer maps source-to-sink paths in your MCP server configs. If a server can read your filesystem and also make HTTP requests, that gets flagged. If credential env vars are exposed to a network-capable server, that's a CRITICAL finding.
+- Stored XSS in HTML reports (server-controlled strings interpolated unescaped)
+- Command injection in `mcp-scan doctor`
+- A proxy that logged raw unmasked traffic to disk
+- A CVE scanner silently dropping CVSS v4 scores
+- Compliance/SARIF mappings referencing finding IDs the scanners never emitted
 
-What else is new:
-- Network Egress Monitor: detects all outbound endpoints
-- Compliance mapping: SOC 2, GDPR, HIPAA, PCI-DSS, NIST
-- Policy engine: custom rules in YAML
-- SBOM generation: CycloneDX + SPDX
-- Privacy impact assessments
+The deeper finding is about the MCP threat model itself: tool catalogs are part of the prompt. Tool names, descriptions, and nested JSON-schema values enter model context at tools/list time, so injection payloads hide in schemas. Our prompt-injection and tool-poisoning scanners now recursively scan the entire tool catalog, keys included, with regression tests proving schema-embedded payloads are caught.
 
-17 scanners total. 200+ tests. Free and open source.
+246 tests passing. npm publishing now runs on OIDC trusted publishing with full provenance attestation. Zero telemetry — nothing leaves your machine.
 
-github.com/Abanoub-Rodolf/mcp-scan
+Audit record: github.com/Abanoub-Rodolf/mcp-scan/blob/main/docs/AUDIT-2026-08-15.md
 
-#MCP #Security #OpenSource
+`npx mcp-scan@latest`
 
-**Reddit Post (r/cybersecurity):**
+#MCP #AISecurity #LLMSecurity #OpenSource #Infosec
 
-**Title:** mcp-scan v2.0: open-source security platform for MCP servers (data flow analysis, compliance mapping, SBOM)
+**Reddit Post (r/cybersecurity / r/MCP / r/LocalLLaMA):**
 
-I maintain mcp-scan, an open-source security scanner for Model Context Protocol servers. Just shipped v2.0.
+**Title:** We audited our own MCP security scanner — and found stored XSS, command injection, and a CVE scanner dropping data. mcp-scan 2.0.3 fixes all of it.
 
-The short version: MCP lets AI tools (Claude, Cursor, Windsurf, etc.) connect to external servers that can read your files, run commands, and make network requests. mcp-scan tells you what those servers are actually doing with your data.
+I maintain mcp-scan, an open-source scanner that audits MCP server configs across Claude Desktop, VS Code, Cursor, Windsurf, and 12 more clients. I ran a full end-to-end audit of the tool itself. Here's what it found:
 
-New in v2.0:
+**Security fixes:**
+- Stored XSS in HTML reports: server-controlled strings interpolated unescaped
+- Command injection in `mcp-scan doctor` (which ran through a shell)
+- Proxy logged raw unmasked traffic to disk (now configurable via MCP_SCAN_LOG_DIR)
+- CVE scanner silently dropped CVSS v4 and plain numeric scores; upgrade advisor recommended upgrades exactly when they fixed nothing
+- Secret scanner flagged UUIDs and bare token-length strings as CRITICAL (false positives eliminated)
+- PII cascade bugs: Luhn validation, private-IP exclusion, `/g` lastIndex silent-detection
 
-* **Data Flow Analyzer** - traces paths from sensitive sources (filesystem, env vars) to external sinks (HTTP endpoints). Flags read-and-send patterns.
-* **Network Egress Monitor** - lists every outbound endpoint. Catches raw IPs, obfuscated URLs, known telemetry.
-* **Compliance mapping** - maps findings to SOC 2, GDPR, HIPAA, PCI-DSS, NIST control IDs.
-* **Policy engine** - `.mcp-scan-policy.yml` for custom rules (block packages, suppress findings, enforce severity thresholds).
-* **SBOM generation** - CycloneDX v1.5 and SPDX 2.3.
-* **Privacy command** - PII detection and privacy impact reports.
+**The threat-model insight:** in 2026, the tool catalog is part of the prompt. Tool names, descriptions, and nested JSON-schema description/enum values enter model context at tools/list time. Injection payloads hide in schema fields, not just server descriptions. Our prompt-injection and tool-poisoning scanners now recursively scan the entire schema.tools structure, keys included — with regression tests proving schema-embedded payloads are caught.
 
-17 scanners, 200+ tests, zero telemetry. MIT licensed.
+**Also shipped:** OIDC trusted publishing with provenance attestation on npm (no tokens, verifiable builds), SARIF output for GitHub code scanning, standalone-bundled GitHub Action (was crashing with "Cannot find module semver").
 
-Interested in feedback on the data flow analysis specifically. The static analysis is heuristic-based right now (matching known package names and config patterns). Considering adding actual AST traversal of server source code for v2.1.
+246 tests passing, 16 scanners, 19 commands, compliance mapping to SOC 2/GDPR/HIPAA/PCI-DSS/NIST, SBOM in CycloneDX/SPDX. Zero telemetry.
 
-GitHub: [link]
+Full audit record with every finding and fix: https://github.com/Abanoub-Rodolf/mcp-scan/blob/main/docs/AUDIT-2026-08-15.md
 
-`npx mcp-scan` to try it.
+`npx mcp-scan@latest` to try it. Feedback welcome — especially on the tool-catalog scanning approach.
+
+**Hacker News (Show HN draft):**
+
+**Title:** Show HN: mcp-scan 2.0.3 – I audited my own MCP security scanner and fixed what it found
+
+We scan MCP server configs for Claude Desktop, VS Code, Cursor, Windsurf + 12 more clients: secrets, prompt injection, supply-chain, data-flow, network egress, compliance mapping (SOC 2/GDPR/HIPAA/PCI-DSS/NIST), SBOM.
+
+This release is the result of auditing the scanner itself:
+- Stored XSS in HTML reports, command injection in `doctor`, proxy logging raw traffic — all closed
+- CVE scanner was silently dropping CVSS v4 scores; upgrade advice was inverted
+- Compliance/SARIF mappings referenced finding IDs scanners never emit — now generated from the real set
+
+The interesting part is the MCP threat model. Tool catalogs enter model context at tools/list time — names, descriptions, nested JSON-schema fields. So injection payloads hide in schemas. The prompt-injection and tool-poisoning scanners now recursively scan the whole tool catalog, keys included, with regression tests for schema-embedded payloads.
+
+Distribution: npm publishing now runs on OIDC trusted publishing with provenance attestation — 2.0.4 is provenance-signed, no tokens anywhere.
+
+246 tests, zero telemetry, MIT. `npx mcp-scan@latest`. Audit record: https://github.com/Abanoub-Rodolf/mcp-scan/blob/main/docs/AUDIT-2026-08-15.md
+
+---
+
+**B站 / 小红书 (中文):**
+
+**标题：** 我把自己的 MCP 安全扫描器审计了一遍，发现了存储型 XSS 和命令注入
+
+mcp-scan 2.0.3 发布。这个开源工具扫描 Claude Desktop、VS Code、Cursor、Windsurf 等 17 款 AI 客户端的 MCP 服务器配置，检测密钥泄露、提示注入、供应链风险。
+
+这次我们对工具本身做了完整的安全审计并修复了发现的问题：
+- HTML 报告存储型 XSS（服务端可控字符串未转义）
+- `mcp-scan doctor` 命令注入（which 走了 shell）
+- 代理把原始流量明文写入磁盘（现在可用 MCP_SCAN_LOG_DIR 配置）
+- CVE 扫描器静默丢弃 CVSS v4 分数，升级建议方向颠倒
+- 合规映射和 SARIF 规则表引用了扫描器从不发出的 finding ID（已改为从真实 ID 生成）
+
+更重要的发现是 MCP 威胁模型的变化：2026 年工具目录本身就是提示词的一部分。工具名、描述、嵌套 JSON schema 的 description/enum 都会在 tools/list 时进入模型上下文，注入载荷藏在 schema 字段里而不是 server.description。prompt-injection 和 tool-poisoning 扫描器现在递归扫描整个 schema.tools（含 key），并有回归测试证明 schema 内嵌载荷能被命中。
+
+246 个测试通过，零遥测，MIT 协议。npm 发布已切换到 OIDC 可信发布，2.0.4 带 provenance 签名。
+
+审计全文：https://github.com/Abanoub-Rodolf/mcp-scan/blob/main/docs/AUDIT-2026-08-15.md
+
+`npx mcp-scan@latest`
+
+#MCP #AI安全 #LLM安全 #开源 #安全审计
