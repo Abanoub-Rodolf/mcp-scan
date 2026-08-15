@@ -1,5 +1,6 @@
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
+import { findEncodedInstruction } from '../utils/encoded-text.js';
 
 /**
  * Scanner for Tool Poisoning & Capability Injection attacks.
@@ -23,11 +24,16 @@ export function scanToolPoisoning(server: ResolvedServer): Finding[] {
     });
   }
 
-  // 2. Instructions calling other tools or exfiltrating data
-  const exfiltrationKeywords = ['exfiltrate', 'send to', 'upload', 'POST', 'leak', 'steal', 'delete_everything', 'delete all', 'forward to', 'exfil', 'transmit credentials', 'send credentials'];
-  const callOtherToolsKeywords = ['call tool', 'use tool', 'then call', 'follow by calling', 'invoke tool', 'chain to'];
+  // 2. Instructions calling other tools or exfiltrating data.
+  // Strong signals are flagged directly; generic verbs (send, upload,
+  // POST) only count when in proximity to a data noun, so ordinary
+  // file/DB tool descriptions ("queries a postgres database") do not
+  // produce HIGH findings.
+  const strongExfil = /\b(?:exfiltrate|exfil|steal|leak|transmit credentials|send credentials|delete_everything|forward to)\b/i;
+  const contextualExfil = /\b(?:send|upload|POST)\b.{0,50}\b(?:credentials|password|token|keys?|secrets|database|\bdb\b|files?)\b/i;
+  const exfiltrationFound = strongExfil.test(textToScan) || contextualExfil.test(textToScan);
   
-  if (new RegExp(exfiltrationKeywords.join('|'), 'i').test(textToScan)) {
+  if (exfiltrationFound) {
     findings.push({
       id: 'tool-exfiltration-risk',
       severity: 'HIGH',
@@ -36,7 +42,9 @@ export function scanToolPoisoning(server: ResolvedServer): Finding[] {
     });
   }
 
-  if (new RegExp(callOtherToolsKeywords.join('|'), 'i').test(textToScan)) {
+  const callOtherToolsKeywords = ['call tool', 'use tool', 'then call', 'follow by calling', 'invoke tool', 'chain to'];
+  
+  if (new RegExp('\\b(?:' + callOtherToolsKeywords.map(k => k.replace(' ', '\\s+')) + ')\\b', 'i').test(textToScan)) {
     findings.push({
         id: 'tool-exfiltration-risk',
         severity: 'MEDIUM',
@@ -56,18 +64,20 @@ export function scanToolPoisoning(server: ResolvedServer): Finding[] {
     });
   }
 
-  // 4. Capability escalation
-  const readClaims = ['read', 'view', 'get', 'list', 'fetch'];
-  const writeActions = ['write', 'create', 'update', 'delete', 'modify', 'save'];
+  // 4. Capability escalation. Only fires when the tool NAME claims a
+  // read-only role and the description then claims write/modify actions:
+  // a genuine claim-vs-description contradiction. "List and create
+  // files" on a generic file manager is normal, not escalation. Names
+  // are tokenized so 'read_file' and 'read-file' count as read-only.
+  const nameTokens = server.name.toLowerCase().split(/[^a-z0-9]+/);
+  const nameClaimsReadOnly = nameTokens.some(t => ['read', 'view', 'get', 'list', 'fetch', 'reader', 'viewer'].includes(t));
+  const hasWriteAction = /\b(?:write|writes|wrote|written|writing|create|creates|created|creating|update|updates|updated|updating|delete|deletes|deleted|deleting|modify|modifies|modified|modifying|save|saves|saved|saving)\b/i.test(textToScan);
   
-  const hasReadClaim = new RegExp(readClaims.join('|'), 'i').test(textToScan);
-  const hasWriteAction = new RegExp(writeActions.join('|'), 'i').test(textToScan);
-  
-  if (hasReadClaim && hasWriteAction && !server.name.toLowerCase().includes('write') && !server.name.toLowerCase().includes('update')) {
+  if (nameClaimsReadOnly && hasWriteAction) {
     findings.push({
       id: 'capability-escalation-risk',
       severity: 'HIGH',
-      description: 'Potential capability escalation: tool claims to be a reader but description contains write/modify instructions.',
+      description: 'Potential capability escalation: tool claims to be read-only but its description contains write/modify actions.',
       fixRecommendation: 'Ensure tool descriptions accurately reflect their capabilities and do not mislead the model into performing extra actions.'
     });
   }
@@ -86,9 +96,9 @@ export function scanToolPoisoning(server: ResolvedServer): Finding[] {
     }
   }
 
-  // 6. Base64 or hex-encoded instructions
-  const base64Regex = /[A-Za-z0-9+/]{50,}={0,2}/;
-  if (base64Regex.test(textToScan)) {
+  // 6. Encoded instructions: long base64 strings that decode to readable
+  // text. Plain long strings (URLs, hashes, JWTs) no longer trigger this.
+  if (findEncodedInstruction(textToScan).length > 0) {
     findings.push({
       id: 'prompt-injection-pattern',
       severity: 'HIGH',
@@ -97,12 +107,15 @@ export function scanToolPoisoning(server: ResolvedServer): Finding[] {
     });
   }
 
-  // 7. References to environment variables not in scope
-  const envVarRefRegex = /\$\{([A-Z0-9_]+)\}/g;
+  // 7. References to environment variables not in scope. A reference to
+  // an ambient process env var is standard configuration, not a leak.
+  const envVarRefRegex = /\$\{([A-Z0-9_]+)\}/gi;
   let match;
   while ((match = envVarRefRegex.exec(textToScan)) !== null) {
     const envVarName = match[1];
-    if (!server.env || !server.env[envVarName]) {
+    const inServerEnv = server.env && server.env[envVarName] !== undefined;
+    const inProcessEnv = envVarName in process.env || envVarName.toUpperCase() in process.env;
+    if (!inServerEnv && !inProcessEnv) {
       findings.push({
         id: 'env-var-scope-leak',
         severity: 'MEDIUM',

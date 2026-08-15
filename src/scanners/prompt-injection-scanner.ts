@@ -1,16 +1,34 @@
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { Severity } from '../types/severity.js';
+import { findEncodedInstruction } from '../utils/encoded-text.js';
 
 export function scanPromptInjection(server: ResolvedServer): Finding[] {
   const findings: Finding[] = [];
 
-  const stringPatterns = [
-    'ignore previous instructions', 'ignore all prior', 'you are now',
-    'disregard', 'forget your instructions', 'override your',
-    'act as', 'pretend you are', 'new persona', 'roleplay as',
-    'simulate being', 'jailbreak', 'dan mode', 'developer mode',
-    'your true self', 'bypass your', 'disable safety',
+  // Phrases that are suspicious in any inflected form ('ignores previous
+  // instructions', 'bypassing your safety') vs phrases that only count
+  // verbatim ('act as' must not match the benign "acts as a proxy").
+  const inflectedPatterns = [
+    'ignore previous instructions', 'ignore all prior', 'disregard',
+    'forget your instructions', 'override your', 'pretend you are',
+    'roleplay as', 'simulate being', 'bypass your', 'disable safety',
+  ];
+  const strictPatterns = [
+    'act as', 'you are now', 'new persona', 'jailbreak', 'dan mode',
+    'developer mode', 'your true self',
+  ];
+  const inflect = (word: string) => `${word}(?:s|es|d|ed|ing)?`;
+
+  const stringPatterns: Array<{ pattern: string; regex: RegExp }> = [
+    ...inflectedPatterns.map(pattern => ({
+      pattern,
+      regex: new RegExp('\\b' + pattern.split(' ').map(inflect).join('\\s+') + '\\b', 'i'),
+    })),
+    ...strictPatterns.map(pattern => ({
+      pattern,
+      regex: new RegExp('\\b' + pattern.split(' ').join('\\s+') + '\\b', 'i'),
+    })),
   ];
   const unicodePatterns = [
     { char: '\u200B', name: 'U+200B (Zero Width Space)' },
@@ -25,14 +43,14 @@ export function scanPromptInjection(server: ResolvedServer): Finding[] {
   const toolNamePatterns = [
     'bash', 'python', 'eval', 'exec', 'shell', 'terminal', 'run', 'system'
   ];
-  const base64Regex = /[A-Za-z0-9+/]{50,}={0,2}/;
 
   const argsValues = server.args ? (Array.isArray(server.args) ? server.args : Object.values(server.args)) : [];
   const textToScan = [server.description, ...argsValues].filter(Boolean).join(' ');
 
-  // String patterns
-  for (const pattern of stringPatterns) {
-    const regex = new RegExp(pattern.split(' ').join('.*'), 'i');
+  // String patterns. Joined with \s+ and word boundaries: the old
+  // pattern.split(' ').join('.*') made 'act as' match the benign phrase
+  // "this server acts as a proxy between tools".
+  for (const { pattern, regex } of stringPatterns) {
     if (regex.test(textToScan)) {
       findings.push({
         id: 'prompt-injection-pattern',
@@ -55,23 +73,27 @@ export function scanPromptInjection(server: ResolvedServer): Finding[] {
     }
   }
 
-  const base64Matches = textToScan.match(base64Regex);
-  if (base64Matches && base64Matches.length > 0) {
+  // Encoded-instruction detection: long base64 strings that decode to
+  // readable text. Plain long strings (URLs, hashes, JWTs) no longer
+  // trigger this.
+  const encoded = findEncodedInstruction(textToScan);
+  if (encoded.length > 0) {
     findings.push({
       id: 'prompt-injection-pattern',
       severity: 'HIGH' as Severity,
-      description: `Potential prompt injection (Base64-like string > 50 chars) detected.`,
+      description: `Potential prompt injection (encoded instruction; Base64-like string > 50 chars) detected.`,
       fixRecommendation: 'Review the server description and arguments for long Base64-like encoded strings that could hide malicious instructions.',
     });
   }
 
 
-  // Tool name shadows
+  // Tool name shadows. Word-boundary matching: 'run' inside "server runs
+  // on port 3000" is not shadowing.
   for (const toolName of toolNamePatterns) {
     // Check if toolName exists as a key in server.args, but it is not defined in server.schema
     // This requires schema analysis which is more complex.
-    // For now, let's just check if the tool name appears in the text.
-    if (textToScan.toLowerCase().includes(toolName)) {
+    // For now, let's just check if the tool name appears as a standalone word.
+    if (new RegExp('\\b' + toolName + '\\b', 'i').test(textToScan)) {
         findings.push({
             id: 'tool-name-shadow',
             severity: 'MEDIUM' as Severity,

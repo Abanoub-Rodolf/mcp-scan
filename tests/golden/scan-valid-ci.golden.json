@@ -22,12 +22,6 @@
       "toolName": "valid-config",
       "findings": [
         {
-          "id": "exfiltration-vector",
-          "severity": "MEDIUM",
-          "description": "Tool argument contains a potential external network endpoint: '/tmp/test.db'.",
-          "fixRecommendation": "Review if this tool should be making outbound network calls to this endpoint."
-        },
-        {
           "id": "license-risk",
           "severity": "HIGH",
           "description": "Package '@modelcontextprotocol/server-sqlite' has no license specified.",
@@ -52,7 +46,7 @@
   "totalScanned": 2,
   "criticalCount": 0,
   "highCount": 1,
-  "mediumCount": 1,
+  "mediumCount": 0,
   "lowCount": 0,
   "infoCount": 0
 }

@@ -5,14 +5,31 @@ import { KNOWN_ENDPOINTS } from '../data/known-endpoints.js';
 export function scanNetworkEgress(server: ResolvedServer): Finding[] {
   const findings: Finding[] = [];
   
-  const urlRegex = /https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s"']*)?/g;
-  const ipRegex = /\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g;
-  const ipv6Regex = /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/g;
-  const b64UrlRegex = /aHR0c[A-Za-z0-9+/=]+|c2h0dH[A-Za-z0-9+/=]+/g;
-  const hexUrlRegex = /68747470[A-Fa-f0-9]+/g;
-  const reversedUrlRegex = /\/\/:ptth|\/\/:sptth/g;
+  // No /g flags: these regexes are reused across strings and .test() on a
+  // global regex carries lastIndex between calls, silently alternating
+  // detections (the same bug fixed in the PII patterns).
+  const urlRegex = /https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?::\d+)?(?:\/[^\s"']*)?/;
+  const ipRegex = /\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/;
+  const ipv6Regex = /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/;
+  const b64UrlRegex = /aHR0c[A-Za-z0-9+/=]+|c2h0dH[A-Za-z0-9+/=]+/;
+  const hexUrlRegex = /68747470[A-Fa-f0-9]+/;
+  const reversedUrlRegex = /\/\/:ptth|\/\/:sptth/;
   
   const endpoints = new Set<string>();
+
+  /** True for loopback, RFC1918, link-local, CGNAT, and invalid octets. */
+  const isPrivateOrInvalidIp = (ip: string): boolean => {
+    const octets = ip.split('.').map(Number);
+    if (octets.length !== 4 || octets.some(o => Number.isNaN(o) || o < 0 || o > 255)) return true;
+    const [a, b] = octets;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+    if (a === 169 && b === 254) return true; // link-local
+    if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918 (all of 172.16/12)
+    if (a === 192 && b === 168) return true;
+    if (a >= 224) return true; // multicast + reserved
+    return false;
+  };
   
   const checkString = (str: string) => {
       if (str.length > 10_000) str = str.slice(0, 10_000);
@@ -21,18 +38,17 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
       
       const ipv6s = str.match(ipv6Regex);
       if (ipv6s) {
-          ipv6s.forEach(ip => endpoints.add(`ipv6:${ip}`));
+          ipv6s.forEach(ip => {
+            if (!ip.startsWith('::') && !ip.startsWith('fe80:') && !ip.startsWith('fc') && !ip.startsWith('fd')) {
+              endpoints.add(`ipv6:${ip}`);
+            }
+          });
       }
 
       const ips = str.match(ipRegex);
       if (ips) {
           ips.forEach(ip => {
-             // ignore localhost, common internal ranges, and version strings
-             const isPrivate = ip === '127.0.0.1' || ip === '0.0.0.0' ||
-                               ip.startsWith('10.') ||
-                               ip.startsWith('192.168.') ||
-                               ip.startsWith('172.16.');
-             if (!isPrivate) endpoints.add(ip);
+             if (!isPrivateOrInvalidIp(ip)) endpoints.add(ip);
           });
       }
       
@@ -121,8 +137,12 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
      }
 
      let category = 'unknown';
+     const host = endpoint.replace(/^(?:https?|wss?):\/\//, '').split(/[/:]/)[0].toLowerCase();
      for (const [cat, domains] of Object.entries(KNOWN_ENDPOINTS)) {
-         if (domains.some(d => endpoint.includes(d))) {
+         // Registered-domain matching: 'api.openai.com.evil.io' must not be
+         // classified as OpenAI, and 'telemetry' must not match any URL
+         // that merely contains the word.
+         if (domains.some(d => host === d.toLowerCase() || host.endsWith('.' + d.toLowerCase()))) {
              category = cat;
              break;
          }

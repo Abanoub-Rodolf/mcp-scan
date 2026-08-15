@@ -22,12 +22,6 @@
           "severity": "HIGH",
           "description": "Bundled snapshot found HIGH vulnerability in '@modelcontextprotocol/server-filesystem': GHSA-q66q-fx2p-7w4m - @modelcontextprotocol/server-filesystem allows for path validation bypass via prefix matching and symlink handling",
           "fixRecommendation": "Upgrade package or remove it. (Offline info)"
-        },
-        {
-          "id": "tool-name-shadow",
-          "severity": "MEDIUM",
-          "description": "Potential tool name shadowing detected: \"system\".",
-          "fixRecommendation": "Ensure tool names are not mimicked or used in a misleading way in descriptions or arguments."
         }
       ],
       "trustScore": 40,
@@ -149,7 +143,7 @@
   "totalScanned": 4,
   "criticalCount": 3,
   "highCount": 6,
-  "mediumCount": 1,
+  "mediumCount": 0,
   "lowCount": 0,
   "infoCount": 0
 }

@@ -46,14 +46,30 @@ export function scanAst(server: ResolvedServer, allowedDomains: string[] = []): 
   let hasNetworkEndpoint = false;
   let hasEnvVarInArgs = false;
 
+  const isAllowedHost = (host: string): boolean => {
+    const h = host.toLowerCase();
+    if (h === 'localhost' || h === '127.0.0.1' || h === '::1' || h.endsWith('.localhost')) return true;
+    // Substring whitelisting would exempt 'evil-allowed.com' when the
+    // policy allows 'allowed.com'; match on domain suffixes only.
+    return allowedDomains.some(d => {
+      const dh = d.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      return h === dh || h.endsWith('.' + dh);
+    });
+  };
+
   for (const arg of argsArray) {
     if (typeof arg !== 'string') continue;
 
     const hasIp = ipRegex.test(arg);
     const domainMatch = arg.match(domainRegex);
-    const isFilePath = !!domainMatch && !/^https?:\/\//i.test(domainMatch[0]) &&
-      fileExtensions.has(domainMatch[0].split('.').pop()!.toLowerCase());
-    const hasExternalDomain = !!domainMatch && !isFilePath && !arg.includes('localhost') && !arg.includes('127.0.0.1') && !allowedDomains.some(d => arg.includes(d));
+    const matchStr = domainMatch ? domainMatch[0] : '';
+    // A path-like arg (absolute/relative path, ~, file://) is a local
+    // file, not a network endpoint - '/tmp/test.db' is a sqlite database.
+    const isPathLike = arg.startsWith('/') || arg.startsWith('./') || arg.startsWith('../') || arg.startsWith('~/') || arg.startsWith('file://');
+    const isFilePath = !!domainMatch && !/^https?:\/\//i.test(matchStr) &&
+      fileExtensions.has(matchStr.split('.').pop()!.toLowerCase());
+    const host = matchStr.replace(/^https?:\/\//i, '').split(/[/:]/)[0];
+    const hasExternalDomain = !!domainMatch && !isPathLike && !isFilePath && !isAllowedHost(host);
     
     if (hasIp || hasExternalDomain) {
       hasNetworkEndpoint = true;
@@ -65,7 +81,7 @@ export function scanAst(server: ResolvedServer, allowedDomains: string[] = []): 
       });
     }
 
-    if (/\$\{([A-Z0-9_]+)\}/.test(arg)) {
+    if (/\$\{([A-Z0-9_]+)\}/i.test(arg)) {
       hasEnvVarInArgs = true;
     }
   }
@@ -80,12 +96,14 @@ export function scanAst(server: ResolvedServer, allowedDomains: string[] = []): 
     });
   }
 
-  // 5. Flag tools with both filesystem READ access AND network access
+  // 5. Flag tools with both filesystem READ access AND network access.
+  // Network access requires an actual URL or a detected endpoint - merely
+  // containing the substring "http" (e.g. --env-file=.env) is not access.
   const hasFilesystemAccess = argsArray.some(arg => 
     typeof arg === 'string' && (arg === '/' || arg === '~' || arg.startsWith('/Users') || arg.startsWith('/home') || arg.includes('.ssh') || arg.includes('.env'))
   );
   
-  const hasNetworkAccess = hasNetworkEndpoint || (/curl|wget|fetch|axios|http|https/i.test(fullCommand) && !allowedDomains.some(d => fullCommand.includes(d)));
+  const hasNetworkAccess = hasNetworkEndpoint || (/https?:\/\//i.test(fullCommand) && !allowedDomains.some(d => fullCommand.includes(d)));
   
   if (hasFilesystemAccess && hasNetworkAccess) {
     findings.push({
@@ -96,12 +114,15 @@ export function scanAst(server: ResolvedServer, allowedDomains: string[] = []): 
     });
   }
 
-  // 6. Detect reverse shells
-  if (/\b(nc|netcat)\b/i.test(fullCommand)) {
+  // 6. Detect reverse shells. A bare 'nc' arg or a --nc flag is not a
+  // reverse shell; require connection intent (an -e/-c exec flag, or an
+  // IP/host followed by a port).
+  if (/\b(?:nc|netcat)\b.*\s(?:-[ec]\b|--exec\b)/i.test(fullCommand) ||
+      /\b(?:nc|netcat)\s+(?:-[a-z]+\s+)*\d{1,3}(?:\.\d{1,3}){3}\s+\d{1,5}/i.test(fullCommand)) {
     findings.push({
       id: 'reverse-shell-risk',
       severity: 'CRITICAL',
-      description: `Command contains 'nc' or 'netcat', which could be used for a reverse shell.`,
+      description: `Command contains 'nc' or 'netcat' with connection/exec arguments, which could be used for a reverse shell.`,
     });
   }
 
@@ -114,8 +135,10 @@ export function scanAst(server: ResolvedServer, allowedDomains: string[] = []): 
     });
   }
 
-  // 8. Detect Node.js inline code execution
-  if (/\bnode\b.*-e/i.test(fullCommand)) {
+  // 8. Detect Node.js inline code execution. Requires -e as its own flag
+  // token; '--eval', '--experimental-*' and other flags that merely
+  // contain '-e' are not inline execution.
+  if (/\bnode\b.*\s-e(?:\s|$)/i.test(fullCommand)) {
     findings.push({
       id: 'node-inline-execution',
       severity: 'HIGH',

@@ -38,7 +38,11 @@ export function scanEnvLeak(server: ResolvedServer, serverFilePath: string): Fin
           if (!key) continue;
 
           if (SECRET_KEY_REGEX.test(key) && value.length > 20) {
-            if (value.includes('YOUR_') || value.includes('REPLACE') || value.includes('EXAMPLE') || value.includes('PLACEHOLDER') || value.includes('changeme')) {
+            // Placeholder values (any case) are not leaks: 'api_key=your_api_key_here'
+            const valueLower = value.toLowerCase();
+            if (valueLower.includes('your_') || valueLower.includes('replace') || valueLower.includes('example') ||
+                valueLower.includes('placeholder') || valueLower.includes('changeme') || valueLower.includes('xxxxx') ||
+                valueLower.includes('dummy') || valueLower.includes('test123') || valueLower.includes('<') || valueLower.includes('>')) {
               continue;
             }
 

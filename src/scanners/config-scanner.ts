@@ -6,15 +6,30 @@ export function scanConfig(server: ResolvedServer): Finding[] {
   
   if (server.args) {
     for (const arg of server.args) {
-      // Flag $(command) or `command` or complex ${...} but allow simple ${VAR}
-      const isSimpleEnvVar = /^\$\{[A-Z0-9_]+\}$/.test(arg);
-      const hasInjection = /\$\(.*\)|`.*`/.test(arg) || (/\$\{.*\}/.test(arg) && !isSimpleEnvVar);
+      if (typeof arg !== 'string') continue;
+
+      // Real command substitution ($(...) or backticks) is CRITICAL: in a
+      // JSON arg array nothing is shell-expanded, so it can only be there
+      // to smuggle execution. A complex ${...} expression (e.g.
+      // --url=${BASE}/api) is a config smell, not code execution, so it
+      // reports as MEDIUM. Simple ${VAR} refs (any case) are allowed.
+      const isSimpleEnvVar = /^\$\{[A-Z0-9_]+\}$/i.test(arg);
+      const hasCommandSubstitution = /\$\(.*\)|`.*`/.test(arg);
+      const hasComplexExpression = /\$\{.*\}/.test(arg) && !isSimpleEnvVar;
       
-      if (hasInjection) {
+      if (hasCommandSubstitution) {
         findings.push({
           id: 'shell-injection-risk',
           severity: 'CRITICAL',
-          description: `Argument contains potential shell injection patterns (\${...}, $(...), or backticks): '${arg}'`,
+          description: `Argument contains shell command substitution (\$(...) or backticks): '${arg}'`,
+          fixRecommendation: 'Remove command substitution from arguments. Arguments are passed directly, never through a shell.'
+        });
+      } else if (hasComplexExpression) {
+        findings.push({
+          id: 'shell-injection-risk',
+          severity: 'MEDIUM',
+          description: `Argument contains a complex \${...} expression: '${arg}'`,
+          fixRecommendation: 'Use a simple environment variable reference (e.g. ${VAR}) or resolve the value before passing it.'
         });
       }
     }
@@ -43,10 +58,13 @@ export function scanConfig(server: ResolvedServer): Finding[] {
   // Check for missing env vars mentioned in args (very basic heuristic)
   if (server.args) {
     for (const arg of server.args) {
-      const match = arg.match(/\$([A-Z0-9_]+)/);
+      if (typeof arg !== 'string') continue;
+      const match = arg.match(/\$([A-Z0-9_]+)/i);
       if (match) {
         const envVar = match[1];
-        if (!server.env || (!(envVar in server.env) && !(envVar in process.env))) {
+        const inServerEnv = server.env && envVar in server.env;
+        const inProcessEnv = envVar in process.env || envVar.toUpperCase() in process.env;
+        if (!inServerEnv && !inProcessEnv) {
            findings.push({
             id: 'missing-env-var',
             severity: 'MEDIUM',

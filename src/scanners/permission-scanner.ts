@@ -12,27 +12,34 @@ export function scanPermissions(server: ResolvedServer): Finding[] {
 
   for (const arg of server.args) {
     if (typeof arg !== 'string') continue;
-    if (DANGEROUS_PATHS.includes(arg)) {
+    // Strip --flag=/path prefixes so '--dir=/etc' is evaluated like '/etc'.
+    const value = arg.startsWith('-') ? (arg.includes('=') ? arg.split('=').pop()! : '') : arg;
+    if (!value) continue;
+
+    if (DANGEROUS_PATHS.some(p => value === p || value.startsWith(p + '/'))) {
+      // Exact match missed '/etc/passwd', '/usr/bin', '/var/log' and
+      // prefixed forms like --dir=/; anything under those roots is
+      // equally dangerous.
       findings.push({
         id: 'excessive-permissions',
         severity: 'HIGH',
-        description: `Server requests access to dangerous path: '${arg}'.`,
+        description: `Server requests access to dangerous path: '${value}'.`,
         fixRecommendation: `Restrict access to a specific, non-sensitive directory.`,
         fixable: false
       });
-    } else if (SENSITIVE_PATHS.some(p => arg.includes(p))) {
+    } else if (SENSITIVE_PATHS.some(p => value.includes(p))) {
         findings.push({
             id: 'excessive-permissions',
             severity: 'HIGH',
-            description: `Server requests access to sensitive path: '${arg}'.`,
+            description: `Server requests access to sensitive path: '${value}'.`,
             fixRecommendation: `Restrict access to a specific, non-sensitive directory.`,
             fixable: false
         });
-    } else if (BROAD_PATHS.some(p => arg.startsWith(p) && arg.split('/').length <= 3)) {
+    } else if (BROAD_PATHS.some(p => value.startsWith(p) && value.split('/').length <= 3)) {
       findings.push({
         id: 'broad-filesystem-access',
         severity: 'MEDIUM',
-        description: `Server requests broad filesystem access: '${arg}'.`,
+        description: `Server requests broad filesystem access: '${value}'.`,
         fixRecommendation: `Restrict access to a narrower project directory.`,
         fixable: false
       });
