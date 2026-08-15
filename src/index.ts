@@ -271,7 +271,7 @@ program
 
 program
   .command('policy <action> [file]')
-  .description('Manage custom security policies (validate, show)')
+  .description('Manage custom security policies (validate, init, show, list)')
   .action(async (action, file) => {
     const { runPolicyAction } = await import('./commands/policy.js');
     await runPolicyAction(action, file);

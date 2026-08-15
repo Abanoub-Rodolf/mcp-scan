@@ -6,7 +6,7 @@ import { logger } from './logger.js';
  */
 export async function sendTeamsWebhook(url: string, report: ScanReport) {
   try {
-    const totalFindings = report.criticalCount + report.highCount + report.mediumCount + report.lowCount;
+    const totalFindings = report.criticalCount + report.highCount + report.mediumCount + report.lowCount + report.infoCount;
     const isAllClear = totalFindings === 0;
     const themeColor = report.criticalCount > 0 ? 'FF0000' : report.highCount > 0 ? 'FF8C00' : report.mediumCount > 0 ? 'FFD700' : '00AA00';
 
@@ -32,18 +32,21 @@ export async function sendTeamsWebhook(url: string, report: ScanReport) {
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
 
-    if (!response.ok) {
-      logger.error(`Teams Webhook: Failed to send to ${url}. Status: ${response.status} ${response.statusText}`);
-    } else {
-      logger.pass(`Teams Webhook: notification sent.`);
+      if (!response.ok) {
+        logger.error(`Teams Webhook: Failed to send to ${url}. Status: ${response.status} ${response.statusText}`);
+      } else {
+        logger.pass(`Teams Webhook: notification sent.`);
+      }
+    } finally {
+      clearTimeout(timeoutId);
     }
   } catch (error) {
     logger.error(`Teams Webhook: Error sending to ${url}: ${error instanceof Error ? error.message : String(error)}`);

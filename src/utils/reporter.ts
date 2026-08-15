@@ -34,7 +34,7 @@ export function printReport(report: ScanReport, options: { ugig?: boolean } = {}
   const innerWidth = boxWidth - 4; // 46 visible chars between │ and │
   const border = brand;
 
-  const version = report.version || '1.0.3';
+  const version = report.version || 'unknown';
 
   // Compute padding by measuring visible width (strip ANSI, count emoji as 2 cols)
   function pad(content: string, visibleLen: number): string {

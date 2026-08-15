@@ -47,8 +47,8 @@ export async function generateSbom(report: ScanReport, options: { includeFinding
       type: 'application',
       name: name,
       version: componentVersion,
-      bomRef: `pkg:npm/${name}@${componentVersion}`,
-      purl: `pkg:npm/${name}@${componentVersion}`,
+      bomRef: `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(componentVersion)}`,
+      purl: `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(componentVersion)}`,
       description: `MCP Server: ${result.serverName} (detected in ${result.toolName})`,
     };
 

@@ -26,7 +26,7 @@ export function generateHtmlReport(report: ScanReport): string {
   const lowColor = '#8B949E';
   const passColor = '#3FB950';
 
-  const version = escapeHtml(report.version || '1.0.3');
+  const version = escapeHtml(report.version || 'unknown');
   const timestamp = escapeHtml(new Date().toLocaleString());
 
   const totalFindings = report.criticalCount + report.highCount + report.mediumCount + report.lowCount + report.infoCount;

@@ -4,7 +4,7 @@ import path from 'path';
 import { runScan } from './scan.js';
 import { logger } from '../utils/logger.js';
 import { detectTools } from '../config/detector.js';
-import { ScanReport, Finding } from '../types/scan-result.js';
+import { ScanReport, Finding, ServerScanResult } from '../types/scan-result.js';
 import chalk from 'chalk';
 import { sendWebhook, sendSlackWebhook } from '../utils/webhook.js';
 
@@ -98,8 +98,11 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
 
 function diffReports(oldReport: ScanReport, newReport: ScanReport) {
   const oldFindingsMap = new Map<string, string[]>();
+  const oldResultsByKey = new Map<string, ServerScanResult>();
   for (const res of oldReport.results) {
-    oldFindingsMap.set(`${res.toolName}:${res.serverName}`, res.findings.map(f => `${f.id}:${f.severity}`));
+    const key = `${res.toolName}:${res.serverName}`;
+    oldFindingsMap.set(key, res.findings.map(f => `${f.id}:${f.severity}`));
+    oldResultsByKey.set(key, res);
   }
 
   const newFindings: { server: string, finding: Finding }[] = [];
@@ -116,16 +119,14 @@ function diffReports(oldReport: ScanReport, newReport: ScanReport) {
       }
     }
 
-    if (oldFindingsMap.has(serverKey)) {
-        const oldResult = oldReport.results.find(r => `${r.toolName}:${r.serverName}` === serverKey);
-        if (oldResult) {
+    const oldResult = oldResultsByKey.get(serverKey);
+    if (oldResult) {
             for (const f of oldResult.findings) {
                 if (!newIds.includes(`${f.id}:${f.severity}`)) {
                     resolvedFindings.push({ server: serverKey, finding: f });
                 }
             }
         }
-    }
   }
 
   return { newFindings, resolvedFindings };

@@ -37,8 +37,9 @@ export async function runPolicyAction(action: string, file: string = '.mcp-scan-
                 }
             ]
         };
-        fs.writeFileSync(file, JSON.stringify(defaultPolicy, null, 2).replace(/"/g, "'").replace(/\{/g, '{ ').replace(/\}/g, ' }'));
-        // Wait, I should probably use YAML format if I named it .yml
+        // Write the policy directly as YAML; an earlier version wrote a
+        // JSON-to-YAML mangled file first, so an interruption between the
+        // two writes left a corrupt policy on disk.
         const yamlContent = `version: 1
 rules:
   - id: allow-localhost

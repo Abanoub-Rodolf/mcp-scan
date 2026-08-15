@@ -48,7 +48,7 @@ export async function runCompliance(options: { framework: string, output?: strin
             }
         }
         
-        const score = Math.round((compliantControls / totalControls) * 100);
+        const score = totalControls === 0 ? 0 : Math.round((compliantControls / totalControls) * 100);
         const scoreColor = score > 90 ? chalk.green : score > 70 ? chalk.yellow : chalk.red;
         
         md += `Overall Compliance Score: ${scoreColor.bold(score + '%')}\n`;

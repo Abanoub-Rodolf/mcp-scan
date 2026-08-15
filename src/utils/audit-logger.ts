@@ -5,7 +5,9 @@ import crypto from 'crypto';
 import { ScanReport, ServerScanResult, Finding } from '../types/scan-result.js';
 import { atomicWriteConfig } from '../config/writer.js';
 
-const AUDIT_LOG_DIR = path.join(os.homedir(), '.mcp-scan');
+// MCP_SCAN_HOME lets embedders and tests redirect the audit store away
+// from the real user home (the test suite sets it to a temp dir).
+const AUDIT_LOG_DIR = process.env.MCP_SCAN_HOME || path.join(os.homedir(), '.mcp-scan');
 const AUDIT_LOG_FILE = path.join(AUDIT_LOG_DIR, 'audit.log');
 const FINGERPRINT_FILE = path.join(AUDIT_LOG_DIR, 'known-servers.json');
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
