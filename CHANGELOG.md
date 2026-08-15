@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-08-15
+
+### Added
+- npm `funding` field: exposes the GitHub Sponsors link on the npm package
+  page. Metadata-only release.
+
 ### Security
 - Prompt-injection and tool-poisoning scanners now evaluate the full tool
   catalog: tool names, descriptions, and nested JSON schema description/
