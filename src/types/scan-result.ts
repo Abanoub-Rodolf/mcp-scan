@@ -54,6 +54,7 @@ export type FindingId =
   | 'data-controls-minimization-risk'
   | 'data-controls-stale-temp-files'
   | 'known-vulnerability-medium'
+  | 'known-vulnerability-low'
   | 'insecure-transport'
   | 'http-transport-no-auth'
   | 'outdated-transport'

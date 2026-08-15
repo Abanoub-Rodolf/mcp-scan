@@ -1,5 +1,6 @@
 import { ResolvedServer } from '../types/config.js';
 import { Finding, FindingId } from '../types/scan-result.js';
+import { Severity } from '../types/severity.js';
 import { logger } from '../utils/logger.js';
 import { parseCvssVector } from 'vuln-vects';
 import fs from 'fs';
@@ -24,8 +25,50 @@ interface OsvVuln {
   summary?: string;
   details?: string;
   severity?: Array<{ type: string; score: string }>;
+  database_specific?: { severity?: string };
   affected?: Array<{ ranges?: Array<{ type: string; events?: Array<{ fixed?: string }> }> }>;
   fixed_in?: string[];
+}
+
+/**
+ * Extracts a numeric CVSS score from OSV severity entries. Handles
+ * CVSS v3 vectors, CVSS v4 vectors, and plain numeric scores; never
+ * throws and never guesses - returns null when nothing is parseable
+ * so the caller can fall back to qualitative severity.
+ */
+function extractCvssScore(severities: Array<{ type: string; score: string }>): number | null {
+  if (!Array.isArray(severities)) return null;
+  for (const s of severities) {
+    if (!s || typeof s.score !== 'string' || s.score.length === 0) continue;
+    const numeric = parseFloat(s.score);
+    if (!Number.isNaN(numeric) && String(numeric) === s.score.trim()) {
+      return numeric; // plain numeric score, e.g. "9.8"
+    }
+    try {
+      const parsed = parseCvssVector(s.score);
+      if (parsed && typeof parsed.baseScore === 'number') return parsed.baseScore;
+    } catch (_e) {
+      // CVSS v4 vectors or unknown formats: fall through to the next entry
+    }
+  }
+  return null;
+}
+
+const QUALITATIVE_SEVERITY: Record<string, Severity> = {
+  CRITICAL: 'CRITICAL',
+  HIGH: 'HIGH',
+  MODERATE: 'MEDIUM',
+  MEDIUM: 'MEDIUM',
+  LOW: 'LOW',
+};
+
+function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: Severity } {
+  switch (severity) {
+    case 'CRITICAL': return { id: 'known-vulnerability-critical', severity: 'CRITICAL' };
+    case 'HIGH': return { id: 'known-vulnerability-high', severity: 'HIGH' };
+    case 'MEDIUM': return { id: 'known-vulnerability-medium', severity: 'MEDIUM' };
+    default: return { id: 'known-vulnerability-low', severity: 'LOW' };
+  }
 }
 
 /**
@@ -110,46 +153,38 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
 
     if (vulns.length > 0) {
       for (const vuln of vulns) {
-        let cvssScore = 0;
+        let cvssScore: number | null = null;
+        let severityFromDb: Severity | undefined;
         if (vuln.severity && Array.isArray(vuln.severity)) {
-          for (const severity of vuln.severity) {
-            if (severity.type === 'CVSS_V3' && severity.score) {
-              try {
-                const parsedScore = parseCvssVector(severity.score);
-                if (parsedScore && typeof parsedScore.baseScore === 'number') {
-                  cvssScore = parsedScore.baseScore;
-                  break;
-                }
-              } catch (_error) {}
-            }
-          }
+          cvssScore = extractCvssScore(vuln.severity);
         }
-        
-        if (cvssScore >= 9.0) {
-          findings.push({
-            id: 'known-vulnerability-critical' as FindingId,
-            severity: 'CRITICAL',
-            description: `Critical vulnerability found in '${packageName}': ${vuln.id} - ${vuln.summary || vuln.details}`,
-            fixRecommendation: `Upgrade package or remove it.`,
-            fixable: true,
-          });
-        } else if (cvssScore >= 7.0) {
-          findings.push({
-            id: 'known-vulnerability-high' as FindingId,
-            severity: 'HIGH',
-            description: `High vulnerability found in '${packageName}': ${vuln.id} - ${vuln.summary || vuln.details}`,
-            fixRecommendation: `Upgrade package or remove it.`,
-            fixable: true,
-          });
-        } else if (cvssScore >= 4.0) {
-          findings.push({
-            id: 'known-vulnerability-medium' as FindingId,
-            severity: 'MEDIUM',
-            description: `Medium vulnerability found in '${packageName}': ${vuln.id} - ${vuln.summary || vuln.details}`,
-            fixRecommendation: `Consider upgrading package to a patched version.`,
-            fixable: true,
-          });
+        const dbSeverity = vuln.database_specific?.severity?.toUpperCase();
+        if (dbSeverity && dbSeverity in QUALITATIVE_SEVERITY) {
+          severityFromDb = QUALITATIVE_SEVERITY[dbSeverity];
         }
+
+        // Never silently drop a known vulnerability: if no score and no
+        // qualitative severity is available, report it as MEDIUM rather
+        // than producing a false negative.
+        const effectiveSeverity: Severity =
+          cvssScore === null
+            ? (severityFromDb ?? 'MEDIUM')
+            : cvssScore >= 9.0
+              ? 'CRITICAL'
+              : cvssScore >= 7.0
+                ? 'HIGH'
+                : cvssScore >= 4.0
+                  ? 'MEDIUM'
+                  : 'LOW';
+
+        const { id, severity } = vulnSeverityToFinding(effectiveSeverity);
+        findings.push({
+          id,
+          severity,
+          description: `${effectiveSeverity} vulnerability found in '${packageName}': ${vuln.id} - ${vuln.summary || vuln.details || 'no summary available'}`,
+          fixRecommendation: effectiveSeverity === 'LOW' ? 'Review and patch when convenient.' : `Upgrade package or remove it.`,
+          fixable: true,
+        });
       }
     }
 
@@ -157,7 +192,22 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
     if (latestVersion) {
         const currentVersion = (server as ResolvedServer & { metadata?: { version?: string } }).metadata?.version;
         if (currentVersion && semver.valid(currentVersion) && semver.valid(latestVersion) && semver.gt(latestVersion, currentVersion)) {
-            const resolvesVulns = vulns.some(v => v.fixed_in?.includes(latestVersion) || !v.affected?.some(a => a.ranges?.some(r => r.type === 'SEMVER' && r.events?.some(e => e.fixed === latestVersion))));
+            // The upgrade resolves a vuln when the latest version is at or
+            // after the version that fixed it. (This was previously
+            // inverted, recommending the upgrade exactly when it would not
+            // fix anything.)
+            const fixedVersions: string[] = [];
+            for (const v of vulns) {
+              for (const a of v.affected || []) {
+                for (const r of a.ranges || []) {
+                  for (const e of r.events || []) {
+                    if (e.fixed && semver.valid(e.fixed)) fixedVersions.push(e.fixed);
+                  }
+                }
+              }
+              if (v.fixed_in) fixedVersions.push(...v.fixed_in.filter(fv => semver.valid(fv)));
+            }
+            const resolvesVulns = fixedVersions.some(fv => semver.gte(latestVersion, fv));
             
             findings.push({
                 id: 'upgrade-available',
@@ -203,10 +253,12 @@ function scanPackageOffline(packageName: string): Finding[] {
     const pkgData = snapshot.packages[packageName];
     if (pkgData && pkgData.vulns) {
       for (const vuln of pkgData.vulns) {
+        const severity = String(vuln.severity || 'MEDIUM').toUpperCase() as Severity;
+        const { id } = vulnSeverityToFinding(severity);
         findings.push({
-          id: vuln.severity === 'CRITICAL' ? 'known-vulnerability-critical' : 'known-vulnerability-high',
-          severity: vuln.severity,
-          description: `Bundled snapshot found ${vuln.severity} vulnerability in '${packageName}': ${vuln.id} - ${vuln.summary}`,
+          id,
+          severity,
+          description: `Bundled snapshot found ${severity} vulnerability in '${packageName}': ${vuln.id} - ${vuln.summary || 'no summary available'}`,
           fixRecommendation: `Upgrade package or remove it. (Offline info)`
         });
       }
