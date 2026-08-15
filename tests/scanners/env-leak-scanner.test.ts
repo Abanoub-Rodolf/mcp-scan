@@ -101,3 +101,20 @@ describe('Env Leak Scanner', () => {
     expect(findings).toHaveLength(0);
   });
 });
+
+describe('env-leak relative path regression', () => {
+  it('terminates on relative config paths (old infinite loop)', () => {
+    // Regression: scanEnvLeak('test.json') used to spin forever because
+    // path.dirname('.') === '.' and path.parse('.').root === '', so the
+    // ancestor walk never reached root. The fix resolves the path first.
+    // With a mocked fs that reports no .env files, this must return.
+    const server: ResolvedServer = {
+      name: 'x', toolName: 't', configPath: 'relative/config.json', command: 'node',
+    };
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+
+    const findings = scanEnvLeak(server, 'relative/config.json');
+    expect(Array.isArray(findings)).toBe(true);
+    expect(findings).toHaveLength(0);
+  });
+});

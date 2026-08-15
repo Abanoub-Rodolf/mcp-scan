@@ -6,23 +6,26 @@ import { ScanReport, ServerScanResult, Finding } from '../types/scan-result.js';
 import { atomicWriteConfig } from '../config/writer.js';
 
 // MCP_SCAN_HOME lets embedders and tests redirect the audit store away
-// from the real user home (the test suite sets it to a temp dir).
-const AUDIT_LOG_DIR = process.env.MCP_SCAN_HOME || path.join(os.homedir(), '.mcp-scan');
-const AUDIT_LOG_FILE = path.join(AUDIT_LOG_DIR, 'audit.log');
-const FINGERPRINT_FILE = path.join(AUDIT_LOG_DIR, 'known-servers.json');
+// from the real user home (the test suite sets it to a temp dir). Read at
+// call time: module-load evaluation would freeze the default in.
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
+function auditDir(): string {
+  return process.env.MCP_SCAN_HOME || path.join(os.homedir(), '.mcp-scan');
+}
 
 export function logScan(report: ScanReport) {
   try {
-    if (!fs.existsSync(AUDIT_LOG_DIR)) {
-      fs.mkdirSync(AUDIT_LOG_DIR, { recursive: true });
+    const dir = auditDir();
+    const logFile = path.join(dir, 'audit.log');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
 
-    if (fs.existsSync(AUDIT_LOG_FILE)) {
-      const stats = fs.statSync(AUDIT_LOG_FILE);
+    if (fs.existsSync(logFile)) {
+      const stats = fs.statSync(logFile);
       if (stats.size > MAX_LOG_SIZE) {
-        const backupFile = `${AUDIT_LOG_FILE}.${Date.now()}.bak`;
-        fs.renameSync(AUDIT_LOG_FILE, backupFile);
+        const backupFile = `${logFile}.${Date.now()}.bak`;
+        fs.renameSync(logFile, backupFile);
       }
     }
 
@@ -44,7 +47,7 @@ export function logScan(report: ScanReport) {
       servers: report.results.map(r => r.serverName)
     };
 
-    fs.appendFileSync(AUDIT_LOG_FILE, JSON.stringify(logEntry) + '\n', 'utf8');
+    fs.appendFileSync(logFile, JSON.stringify(logEntry) + '\n', 'utf8');
     
     // Update fingerprints
     updateFingerprints(report.results);
@@ -54,11 +57,12 @@ export function logScan(report: ScanReport) {
 export function checkFingerprints(results: ServerScanResult[]): Record<string, Finding[]> {
   const mutationFindings: Record<string, Finding[]> = {};
   try {
-    if (!fs.existsSync(FINGERPRINT_FILE)) return mutationFindings;
+    const fingerprintFile = path.join(auditDir(), 'known-servers.json');
+    if (!fs.existsSync(fingerprintFile)) return mutationFindings;
     
     let knownFingerprints: Record<string, string> = {};
     try {
-      knownFingerprints = JSON.parse(fs.readFileSync(FINGERPRINT_FILE, 'utf8'));
+      knownFingerprints = JSON.parse(fs.readFileSync(fingerprintFile, 'utf8'));
     } catch (_e) {}
     
     for (const result of results) {
@@ -81,8 +85,9 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
 function updateFingerprints(results: ServerScanResult[]) {
   try {
     let fingerprints: Record<string, string> = {};
-    if (fs.existsSync(FINGERPRINT_FILE)) {
-      fingerprints = JSON.parse(fs.readFileSync(FINGERPRINT_FILE, 'utf8'));
+    const fingerprintFile = path.join(auditDir(), 'known-servers.json');
+    if (fs.existsSync(fingerprintFile)) {
+      fingerprints = JSON.parse(fs.readFileSync(fingerprintFile, 'utf8'));
     }
 
     for (const result of results) {
@@ -90,7 +95,7 @@ function updateFingerprints(results: ServerScanResult[]) {
       fingerprints[key] = generateFingerprint(result);
     }
 
-    atomicWriteConfig(FINGERPRINT_FILE, JSON.stringify(fingerprints, null, 2));
+    atomicWriteConfig(fingerprintFile, JSON.stringify(fingerprints, null, 2));
   } catch (_error) {}
 }
 
@@ -121,8 +126,9 @@ interface AuditLogEntry {
 
 export function readAuditLog(count: number = 20): AuditLogEntry[] {
   try {
-    if (!fs.existsSync(AUDIT_LOG_FILE)) return [];
-    const content = fs.readFileSync(AUDIT_LOG_FILE, 'utf8');
+    const logFile = path.join(auditDir(), 'audit.log');
+    if (!fs.existsSync(logFile)) return [];
+    const content = fs.readFileSync(logFile, 'utf8');
     const lines = content.trim().split('\n');
     return lines.slice(-count).reverse().map(line => {
       try { return JSON.parse(line); } catch (_e) { return null; }
