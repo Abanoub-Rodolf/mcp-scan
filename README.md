@@ -214,6 +214,13 @@ npm install -g mcp-scan
 mcp-scan
 ```
 
+Install on macOS via Homebrew:
+
+```bash
+brew tap Abanoub-Rodolf/mcp-scan
+brew install mcp-scan
+```
+
 ---
 
 ## Contributing
