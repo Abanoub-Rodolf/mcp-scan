@@ -21,7 +21,6 @@ jobs:
     - run: npm ci
     - run: npm run build
     - name: Publish to npm
-      run: npm publish --provenance
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      # Add the NPM_TOKEN secret in repo settings to enable publishing.
+      # No NODE_AUTH_TOKEN: authentication uses the OIDC trusted publisher
+      # configured on npmjs.com for this repository + workflow (npm >= 9.5).
+      run: npm publish --provenance --access public
