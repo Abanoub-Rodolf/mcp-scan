@@ -39,4 +39,4 @@ The prompt-injection and tool-poisoning scanners now recursively collect the ent
 npx mcp-scan@latest
 ```
 
-GitHub Action: `Abanoub-Rodolf/mcp-scan` on the [GitHub Marketplace](https://github.com/marketplace). Source: [github.com/Abanoub-Rodolf/mcp-scan](https://github.com/Abanoub-Rodolf/mcp-scan). npm: [mcp-scan](https://www.npmjs.com/package/mcp-scan).
+GitHub Action: `uses: Abanoub-Rodolf/mcp-scan@v2` (standalone-bundled). Source: [github.com/Abanoub-Rodolf/mcp-scan](https://github.com/Abanoub-Rodolf/mcp-scan). npm: [mcp-scan](https://www.npmjs.com/package/mcp-scan).
