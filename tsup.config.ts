@@ -42,6 +42,8 @@ export default defineConfig([
     minify: true,
     shims: true,
     outDir: 'action/dist',
-    noExternal: ['@actions/core', 'chalk', 'ora', 'cli-table3', 'fast-glob', 'smol-toml', 'vuln-vects'],
+    // The action runs standalone (no node_modules in the runner context),
+    // so every runtime dependency must be inlined.
+    noExternal: [/.*/],
   }
 ]);
