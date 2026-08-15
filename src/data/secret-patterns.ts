@@ -1,8 +1,24 @@
-export const SECRET_PATTERNS = [
+export interface SecretPattern {
+  name: string;
+  regex: RegExp;
+  /**
+   * Context guard for prefix-less formats (e.g. Pinecone keys are bare
+   * UUIDs). When set, the pattern only fires when the env var KEY matches
+   * this regex; without it, generic 36-40 char strings and UUIDs would be
+   * flagged as CRITICAL secrets everywhere. Bare-format values still get
+   * caught by the entropy detector in the scanner.
+   */
+  keyContext?: RegExp;
+}
+
+export const SECRET_PATTERNS: SecretPattern[] = [
   { name: 'GitHub Token', regex: /gh[pousr]_[A-Za-z0-9_]{36,}/ },
+  { name: 'GitHub Fine-grained PAT', regex: /github_pat_[A-Za-z0-9_]{82}/ },
   { name: 'AWS Access Key ID', regex: /(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/ },
   // AWS Secret Access Key requires high entropy - handled by entropy scanner, not regex alone
   { name: 'Stripe Secret Key', regex: /sk_(?:live|test)_[0-9a-zA-Z]{24}/ },
+  { name: 'Stripe Restricted Key', regex: /rk_(?:live|test)_[0-9a-zA-Z]{24}/ },
+  { name: 'Stripe Webhook Secret', regex: /whsec_[a-zA-Z0-9]{16,}/ },
   { name: 'Stripe Publishable Key', regex: /pk_(?:live|test)_[0-9a-zA-Z]{24}/ },
   { name: 'Anthropic API Key', regex: /sk-ant-[a-zA-Z0-9_-]{20,}/ },
   { name: 'OpenAI API Key', regex: /sk-[a-zA-Z0-9]{48}/ },
@@ -12,7 +28,7 @@ export const SECRET_PATTERNS = [
   { name: 'Google Cloud API Key', regex: /AIza[0-9A-Za-z-_]{35}/ },
   { name: 'Google OAuth Client Secret', regex: /GOCSPX-[a-zA-Z0-9-_]{28}/ },
   { name: 'Supabase API Key', regex: /sbp_[a-zA-Z0-9]{34}/ },
-  { name: 'Supabase JWT (Anon/Service Role)', regex: /eyJ[A-Za-z0-9-_=]+\.eyJ[A-Za-z0-9-_=]+\.[A-Za-z0-9-_.+/=]+/ },
+  { name: 'JWT Token', regex: /eyJ[A-Za-z0-9-_=]+\.eyJ[A-Za-z0-9-_=]+\.[A-Za-z0-9-_.+/=]+/ },
   // Firebase uses same AIza prefix as Google Cloud - deduplicated intentionally
   { name: 'Vercel API Token', regex: /\bv1\.[a-zA-Z0-9]{24}\b/ },
   { name: 'Azure Connection String', regex: /AccountName=[a-zA-Z0-9]+;AccountKey=[a-zA-Z0-9/+=]{88}/ },
@@ -21,22 +37,27 @@ export const SECRET_PATTERNS = [
   { name: 'SendGrid API Key', regex: /SG\.[a-zA-Z0-9._-]{22}\.[a-zA-Z0-9._-]{43}/ },
   { name: 'Datadog API Key', regex: /\bddapi_[a-f0-9]{32}\b/ },
   { name: 'HuggingFace Token', regex: /hf_[a-zA-Z0-9]{34}/ },
-  { name: 'Pinecone API Key', regex: /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/ },
+  // Pinecone keys are bare UUIDs; only detectable when the key name says so.
+  { name: 'Pinecone API Key', regex: /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/, keyContext: /pinecone/i },
   { name: 'Cohere API Key', regex: /\bco_[a-zA-Z0-9]{40}\b/ },
   { name: 'Replicate API Token', regex: /r8_[a-zA-Z0-9]{37}/ },
   { name: 'Mistral API Key', regex: /\bmsk_[a-zA-Z0-9]{32}\b/ },
   { name: 'Groq API Key', regex: /gsk_[a-zA-Z0-9]{52}/ },
   { name: 'Deepseek API Key', regex: /sk-[a-f0-9]{32}/ },
   { name: 'Perplexity API Key', regex: /pplx-[a-zA-Z0-9]{48}/ },
-  { name: 'Together AI API Key', regex: /\b[a-f0-9]{64}\b/ },
+  // Together keys are bare 64-char hex; only detectable from the key name.
+  { name: 'Together AI API Key', regex: /\b[a-f0-9]{64}\b/, keyContext: /together/i },
   { name: 'GitLab Token', regex: /glpat-[a-zA-Z0-9\-]{20}/ },
   { name: 'NPM Token', regex: /\bnpm_[a-zA-Z0-9]{36}\b/ },
   { name: 'PyPI Token', regex: /\bpypi-[a-zA-Z0-9-_]{20,}\b/ },
   { name: 'Docker Hub Token', regex: /\bdckr_pat_[a-zA-Z0-9-_]{27}\b/ },
-  { name: 'Cloudflare API Token', regex: /\b[a-zA-Z0-9_-]{40}\b/ },
+  // Cloudflare tokens are bare 40-char strings; key-name gated.
+  { name: 'Cloudflare API Token', regex: /\b[a-zA-Z0-9_-]{40}\b/, keyContext: /cloudflare|cf[_-]?api|CF_API/i },
+  // Heroku API keys are bare UUIDs; key-name gated.
+  { name: 'Heroku API Key', regex: /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/, keyContext: /heroku/i },
+  // Railway tokens are bare 36-char strings; key-name gated.
+  { name: 'Railway Token', regex: /\b[a-zA-Z0-9_-]{36}\b/, keyContext: /railway/i },
   { name: 'DigitalOcean Token', regex: /\bdop_v1_[a-f0-9]{64}\b/ },
-  { name: 'Heroku API Key', regex: /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/ },
-  { name: 'Railway Token', regex: /\b[a-zA-Z0-9_-]{36}\b/ },
   { name: 'PlanetScale Token', regex: /\bpscale_tkn_[a-zA-Z0-9-_]{43}\b/ },
   { name: 'Neon Database Token', regex: /\bdb_[a-zA-Z0-9]{32}\b/ },
   { name: 'Private Key', regex: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/ },

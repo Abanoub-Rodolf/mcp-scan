@@ -44,11 +44,77 @@ describe('Secret Scanner', () => {
   });
 
   it('should detect HuggingFace tokens', () => {
+    // Real HF tokens are 'hf_' + exactly 34 alphanumeric chars
     const findings = scanSecrets({
       name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
-      env: { HF_TOKEN: 'hf_' + 'TESTtestTESTtestTESTtestTESTtest0' }
+      env: { HF_TOKEN: 'hf_' + 'abcdefghijklmnopqrstuvwxyzABCDEFGH' }
     });
     expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain('HuggingFace');
+  });
+
+  it('should detect GitHub fine-grained PATs and Stripe restricted/webhook keys', () => {
+    const findings = scanSecrets({
+      name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+      env: {
+        GH_PAT: 'github_pat_' + 'a'.repeat(82),
+        STRIPE_RESTRICTED: 'rk_live_' + 'abcdefghijklmnopqrstuvwx',
+        STRIPE_WEBHOOK: 'whsec_' + 'abcdefghijklmnopqrstuvwx'
+      }
+    });
+    const descriptions = findings.map(f => f.description).join(' ');
+    expect(descriptions).toContain('GitHub Fine-grained');
+    expect(descriptions).toContain('Stripe Restricted');
+    expect(descriptions).toContain('Stripe Webhook');
+  });
+
+  it('should not flag UUIDs or generic 36/40/64-char strings without a matching key context', () => {
+    const findings = scanSecrets({
+      name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+      env: {
+        SESSION_ID: '550e8400-e29b-41d4-a716-446655440000',
+        BUILD_TOKEN: 'a'.repeat(36),
+        RANDOM: 'B'.repeat(40),
+        HASH: 'c'.repeat(64)
+      }
+    });
+    // None of these are credible standalone secrets: no CRITICAL findings
+    expect(findings.filter(f => f.severity === 'CRITICAL')).toHaveLength(0);
+  });
+
+  it('should flag bare-format secrets when the key name provides context', () => {
+    const findings = scanSecrets({
+      name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+      env: {
+        PINECONE_API_KEY: '550e8400-e29b-41d4-a716-446655440000',
+        CLOUDFLARE_API_TOKEN: 'B'.repeat(40),
+        RAILWAY_TOKEN: 'C'.repeat(36),
+        TOGETHER_API_KEY: 'd'.repeat(64),
+        HEROKU_API_KEY: '550e8400-e29b-41d4-a716-446655440000'
+      }
+    });
+    const descriptions = findings.map(f => f.description).join(' ');
+    expect(descriptions).toContain('Pinecone');
+    expect(descriptions).toContain('Cloudflare');
+    expect(descriptions).toContain('Railway');
+    expect(descriptions).toContain('Together');
+    expect(descriptions).toContain('Heroku');
+  });
+
+  it('should not crash on non-string env values', () => {
+    const findings = scanSecrets({
+      name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+      env: { PORT: 3000 as unknown as string, ENABLED: true as unknown as string }
+    });
+    expect(Array.isArray(findings)).toBe(true);
+  });
+
+  it('should detect credentials embedded in server URLs', () => {
+    const findings = scanSecrets({
+      name: 'test', toolName: 't', configPath: 'p',
+      url: 'https://admin:supersecretpassword123@db.example.com:5432'
+    });
+    expect(findings.some(f => f.id === 'exposed-secret')).toBe(true);
   });
 
   it('should detect NPM tokens', () => {

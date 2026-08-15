@@ -39,12 +39,17 @@ function isExemptFromEntropy(str: string): boolean {
 export function scanSecrets(server: ResolvedServer): Finding[] {
   const findings: Finding[] = [];
   
-  const scanValue = (value: string, source: string, key?: string) => {
+  const scanValue = (value: unknown, source: string, key?: string) => {
+    // Config files can carry non-string values (numbers, booleans, objects);
+    // a single malformed entry must not abort the whole scan.
+    if (typeof value !== 'string') return;
+    if (value.length === 0) return;
+
     // 1. Check for environment variable references (e.g., ${VAR} or $VAR or %VAR%)
-    const windowsEnvRef = value.match(/^%([A-Z0-9_]+)%$/);
+    const windowsEnvRef = value.match(/^%([A-Z0-9_]+)%$/i);
     if (windowsEnvRef) {
       const varName = windowsEnvRef[1];
-      if (!(varName in process.env)) {
+      if (!(varName in process.env) && !(varName.toUpperCase() in process.env)) {
         findings.push({
           id: 'missing-referenced-env-var',
           severity: 'MEDIUM',
@@ -55,10 +60,10 @@ export function scanSecrets(server: ResolvedServer): Finding[] {
       return;
     }
 
-    const envRefMatch = value.match(/^\$\{([A-Z0-9_]+)\}$|^\$([A-Z0-9_]+)$/);
+    const envRefMatch = value.match(/^\$\{([A-Z0-9_]+)\}$|^\$([A-Z0-9_]+)$/i);
     if (envRefMatch) {
       const varName = envRefMatch[1] || envRefMatch[2];
-      if (!(varName in process.env)) {
+      if (!(varName in process.env) && !(varName.toUpperCase() in process.env)) {
         findings.push({
           id: 'missing-referenced-env-var',
           severity: 'MEDIUM',
@@ -69,10 +74,24 @@ export function scanSecrets(server: ResolvedServer): Finding[] {
       return;
     }
 
+    // Also match against the percent-decoded form so %XX-obfuscated keys
+    // are still caught (e.g. sk%5Ftest%5F...).
+    let decoded: string | null = null;
+    try {
+      decoded = decodeURIComponent(value);
+    } catch (_e) {
+      decoded = null;
+    }
+
     // 2. Check for hardcoded secret patterns
     let foundPattern = false;
     for (const pattern of SECRET_PATTERNS) {
-      if (pattern.regex.test(value)) {
+      if (pattern.keyContext) {
+        // Prefix-less formats need a credential-ish key name to be credible;
+        // args have no key, so bare formats are never matched there.
+        if (!key || !pattern.keyContext.test(key)) continue;
+      }
+      if (pattern.regex.test(value) || (decoded !== null && pattern.regex.test(decoded))) {
         findings.push({
           id: 'exposed-secret',
           severity: 'CRITICAL',
@@ -105,6 +124,11 @@ export function scanSecrets(server: ResolvedServer): Finding[] {
     for (const [key, value] of Object.entries(server.env)) {
       scanValue(value, 'environment variable', key);
     }
+  }
+
+  // Scan URL credentials (e.g. https://user:pass@host) when present
+  if (server.url) {
+    scanValue(server.url, 'server url');
   }
 
   // Scan arguments
