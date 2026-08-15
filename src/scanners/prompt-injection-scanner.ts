@@ -2,6 +2,7 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { Severity } from '../types/severity.js';
 import { findEncodedInstruction } from '../utils/encoded-text.js';
+import { buildScanText } from '../utils/scan-text.js';
 
 export function scanPromptInjection(server: ResolvedServer): Finding[] {
   const findings: Finding[] = [];
@@ -44,8 +45,9 @@ export function scanPromptInjection(server: ResolvedServer): Finding[] {
     'bash', 'python', 'eval', 'exec', 'shell', 'terminal', 'run', 'system'
   ];
 
-  const argsValues = server.args ? (Array.isArray(server.args) ? server.args : Object.values(server.args)) : [];
-  const textToScan = [server.description, ...argsValues].filter(Boolean).join(' ');
+  // The tool catalog (names, descriptions, JSON schemas incl. nested
+  // description/enum values) is part of the prompt at tools/list time.
+  const textToScan = buildScanText(server);
 
   // String patterns. Joined with \s+ and word boundaries: the old
   // pattern.split(' ').join('.*') made 'act as' match the benign phrase

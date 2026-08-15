@@ -1,6 +1,7 @@
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { findEncodedInstruction } from '../utils/encoded-text.js';
+import { buildScanText } from '../utils/scan-text.js';
 
 /**
  * Scanner for Tool Poisoning & Capability Injection attacks.
@@ -9,10 +10,7 @@ import { findEncodedInstruction } from '../utils/encoded-text.js';
 export function scanToolPoisoning(server: ResolvedServer): Finding[] {
   const findings: Finding[] = [];
 
-  const textToScan = [
-    server.description,
-    ...(Array.isArray(server.args) ? server.args : (server.args ? Object.values(server.args) : []))
-  ].filter(Boolean).join(' ');
+  const textToScan = buildScanText(server);
 
   // 1. Hidden instructions (long padding followed by instructions)
   if (/\s{50,}.*(ignore|disregard|forget|rules|instructions)/i.test(textToScan)) {
