@@ -144,6 +144,21 @@ export function printReport(report: ScanReport, options: { ugig?: boolean } = {}
   logger.emptyLine();
   logger.log(divider);
   logger.emptyLine();
+  // Interactive-only paid next step: this function is only called in non-json
+  // mode (CI forces json and takes printJsonReport instead), so the guard is
+  // findings-present + not the ugig listing flow. One line, no spam — the free
+  // scanner stays the whole product.
+  if (
+    !options.ugig &&
+    report.criticalCount + report.highCount + report.mediumCount > 0
+  ) {
+    logger.log(
+      dim('  Need a human call on these? ') +
+      accentGray('MCP Risk Review (48h, fixed scope) at ') +
+      brand.dim.underline('thynkq.com/pricing#specialist-review')
+    );
+    logger.emptyLine();
+  }
   logger.log(
     dim('  by ') +
     chalk.white.bold('Rodolf') +
