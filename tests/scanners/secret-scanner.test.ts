@@ -54,6 +54,8 @@ describe('Secret Scanner', () => {
   });
 
   it('should detect GitHub fine-grained PATs and Stripe restricted/webhook keys', () => {
+    // Constructed at runtime: literal secret-shaped prefixes trip GitHub
+    // push protection even with obviously fake values (repo convention).
     const findings = scanSecrets({
       name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
       env: {
