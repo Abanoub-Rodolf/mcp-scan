@@ -4,7 +4,7 @@ import { logger } from '../utils/logger.js';
 import chalk from 'chalk';
 import fs from 'fs';
 import os from 'os';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 
 /**
  * Runs a system diagnostic check.
@@ -49,10 +49,12 @@ export async function runDoctor() {
                 missingExecutables++;
             }
         } else {
-            // Check if in PATH
-            try {
-                execSync(`which ${server.command}`, { stdio: 'ignore' });
-            } catch (_e) {
+            // Check if in PATH. Never interpolate the command into a shell
+            // string: server.command comes from scanned configs and could
+            // carry shell metacharacters (command injection via `mcp-scan doctor`).
+            const whichBin = process.platform === 'win32' ? 'where' : 'which';
+            const result = spawnSync(whichBin, [server.command], { stdio: 'ignore' });
+            if (result.status !== 0) {
                 missingExecutables++;
             }
         }
