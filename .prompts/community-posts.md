@@ -2,6 +2,12 @@
 
 All drafts are ready to post manually. Do NOT post these automatically.
 
+Current facts (v2.0.3, 2026-08-15): 17 AI tool clients, 16 scanners, 17 check
+classes, 244 passing tests, GitHub public at github.com/Abanoub-Rodolf/mcp-scan,
+npm `mcp-scan@2.0.2` (2.0.3 publish pending NPM_TOKEN), audit record in
+docs/AUDIT-2026-08-15.md, awesome-list PR
+https://github.com/punkpeye/awesome-mcp-servers/pull/12192.
+
 ---
 
 ## Hacker News (Show HN)
@@ -10,7 +16,30 @@ All drafts are ready to post manually. Do NOT post these automatically.
 
 **URL:** https://github.com/Abanoub-Rodolf/mcp-scan
 
-**Timing note:** Best posted on weekday mornings, 8-10am ET. Show HN posts must start with "Show HN:".
+**Body (first comment):**
+
+Every MCP server you install gets filesystem, network, and often shell access to
+your machine. mcp-scan audits your Claude Desktop, VS Code, Cursor, Windsurf,
+Zed, Cline, and 11 more client configs for:
+
+- Leaked secrets (52+ formats plus entropy analysis, Luhn-validated cards, gated
+  prefix-less token formats)
+- Prompt injection and tool poisoning in descriptions
+- Typosquatting and supply-chain trust scoring
+- Real CVEs (live OSV + a bundled offline snapshot covering 74 packages)
+- PII handling, data exfiltration vectors, transport and permission risks
+
+I just finished a full self-audit of the tool itself: stored XSS in the HTML
+reports, a command injection in `doctor`, and a raw-traffic proxy log were all
+closed, and the false-positive classes that made scanners noisy were eliminated
+(UUIDs flagged as Pinecone keys, 13-digit numbers flagged as cards, `postgres`
+flagged as `POST` exfiltration). 244 tests, full before/after in the repo.
+
+One command, zero telemetry: `npx mcp-scan@latest`. Offline mode for air-gapped
+machines. SARIF output drops into GitHub code scanning; GitHub Action included.
+
+**Timing note:** Best posted on weekday mornings, 8-10am ET. Show HN posts must
+start with "Show HN:".
 
 ---
 
@@ -22,22 +51,22 @@ All drafts are ready to post manually. Do NOT post these automatically.
 
 MCP servers run with full filesystem and network access. Most people install them without auditing what they're actually running.
 
-mcp-scan detects MCP server configs across 10 AI tool clients (Claude Desktop, Cursor, VS Code, Windsurf, Codex CLI, Claude Code, Zed, GitHub Copilot, Cline, Roo Code) and runs 13 security scanners against them.
+mcp-scan detects MCP server configs across 17 AI tool clients (Claude Desktop, Cursor, VS Code, Windsurf, Codex CLI, Claude Code, Zed, GitHub Copilot, Cline, Roo Code, Gemini CLI, and more) and runs 16 security scanners against them.
 
 What it checks:
 
 - Leaked secrets and API keys (regex + entropy analysis)
-- Known CVEs in MCP packages
+- Known CVEs in MCP packages (live OSV + offline snapshot)
 - Dangerous permission patterns
 - Transport security (HTTP vs HTTPS)
-- Supply chain risks (typosquatting, registry verification)
+- Supply chain risks (typosquatting, trust scoring)
 - Tool poisoning and capability injection
-- License compliance
-- Exfiltration vectors via AST analysis
+- Prompt injection in tool descriptions
+- PII handling and data exfiltration vectors
 
-Output formats: CLI table, JSON, SARIF (GitHub Security tab), HTML report, CycloneDX SBOM.
+Output formats: CLI table, JSON, SARIF (GitHub Security tab), HTML report, CycloneDX/SPDX SBOM.
 
-One command: `npx mcp-scan`
+One command: `npx mcp-scan@latest`
 
 GitHub: https://github.com/Abanoub-Rodolf/mcp-scan
 npm: https://www.npmjs.com/package/mcp-scan
@@ -50,7 +79,7 @@ GitHub Action included for CI/CD integration.
 
 ## Reddit r/ClaudeAI
 
-**Title:** I built mcp-scan, a security scanner for your MCP server configs
+**Title:** I built mcp-scan, a security scanner for your MCP server configs (found a real exposed token in my own setup)
 
 **Body:**
 
@@ -60,11 +89,11 @@ If you use MCP servers with Claude Desktop, they run with full access to your fi
 - Known vulnerabilities in MCP packages
 - Suspicious permission patterns
 - Exfiltration vectors
-- Tool poisoning attacks
+- Tool poisoning and prompt injection
 
-It auto-detects configs for Claude Desktop, Cursor, VS Code, Windsurf, and 6 other AI clients.
+It auto-detects configs for 17 AI clients: Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, Zed, Cline, Roo Code, Gemini CLI, Codex CLI, and more.
 
-One command: `npx mcp-scan`
+One command: `npx mcp-scan@latest`
 
 https://github.com/Abanoub-Rodolf/mcp-scan
 
@@ -72,35 +101,58 @@ https://github.com/Abanoub-Rodolf/mcp-scan
 
 ## Reddit r/LocalLLaMA
 
-**Title:** mcp-scan: security scanner that audits MCP server configs across 10 AI clients
+**Title:** mcp-scan: security scanner that audits MCP server configs across 17 AI clients
 
 **Body:**
 
 Built a CLI tool that scans your MCP (Model Context Protocol) server configurations for security issues. MCP servers get broad system access and most people never audit what they're running.
 
-Supports Claude Desktop, Cursor, VS Code, Windsurf, Codex CLI, Zed, GitHub Copilot, Cline, Roo Code, and Claude Code.
+Supports Claude Desktop, Cursor, VS Code, Windsurf, Codex CLI, Zed, GitHub Copilot, Cline, Roo Code, Claude Code, Gemini CLI, and more.
 
-13 scanners: secrets, CVEs, permissions, transport, registry, license, supply chain, typosquatting, tool poisoning, exfiltration, AST analysis, config validation, prompt injection.
+16 scanners: secrets, CVEs, permissions, transport, registry, license, supply chain, typosquatting, tool poisoning, exfiltration, AST analysis, config validation, prompt injection, data flow, network egress, data controls.
 
-`npx mcp-scan`
+`npx mcp-scan@latest`
 
 GitHub: https://github.com/Abanoub-Rodolf/mcp-scan
 
 ---
 
-## X/Twitter
+## X/Twitter thread
 
-mcp-scan v1.7.0
+1. MCP servers run with full filesystem + network access on your machine. Most people install them without ever reading what they run.
 
-Security scanner for MCP server configurations.
+2. mcp-scan audits your MCP server configs across 17 AI clients for secrets, prompt injection, typosquatting, CVEs, and data exfiltration.
 
-MCP servers run with full filesystem access. Most users never audit their configs.
+3. `npx mcp-scan@latest` — no install, no signup, no telemetry. Offline mode included.
 
-`npx mcp-scan`
+4. SARIF output drops straight into GitHub code scanning. GitHub Action included.
 
-10 AI clients. 13 scanners. SARIF + GitHub Action for CI.
+5. I also audited mcp-scan itself: closed stored XSS, a command injection, and a raw-traffic log; killed the false-positive classes that made scanners noisy. 244 tests. Full report in the repo.
 
-github.com/Abanoub-Rodolf/mcp-scan
+Star the repo if it's useful: github.com/Abanoub-Rodolf/mcp-scan
+
+---
+
+## LinkedIn
+
+**Title:** I audited the MCP ecosystem's security tooling — and then audited my own tool
+
+**Body:**
+
+MCP servers are the new attack surface for AI development. They run with filesystem, network, and shell access, and most developers install them without auditing what they execute.
+
+mcp-scan is an open-source scanner that audits MCP server configurations across 17 AI clients (Claude, VS Code, Cursor, Windsurf, Zed, and more) for:
+
+- Exposed secrets (52+ formats + entropy analysis)
+- Prompt injection and tool poisoning
+- Supply-chain and typosquatting risks
+- Known CVEs, PII handling, and data exfiltration
+
+One command: `npx mcp-scan@latest`. Zero telemetry, offline mode, SARIF for CI.
+
+I just completed a full security audit of mcp-scan itself: closed a stored XSS in HTML reports, a command injection in the doctor command, and raw unmasked traffic in the proxy log, and eliminated entire false-positive classes. 244 tests passing; the full before/after record is published with the repo.
+
+MIT licensed: github.com/Abanoub-Rodolf/mcp-scan
 
 ---
 
