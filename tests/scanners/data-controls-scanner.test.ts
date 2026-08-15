@@ -28,7 +28,8 @@ describe('Data Controls Scanner', () => {
   it('3. Server handling credit card numbers -> PII detected, CRITICAL', () => {
     const server: ResolvedServer = {
       name: 'payment-tool', toolName: 'test', configPath: '/test',
-      schema: { param: 'credit card' }
+      description: 'processes credit card payments',
+      args: ['4242 4242 4242 4242'] // valid Luhn test card
     };
     const findings = scanDataControls(server);
     expect(findings.find(f => f.id === 'data-controls-pii')?.severity).toBe('CRITICAL');
@@ -44,13 +45,42 @@ describe('Data Controls Scanner', () => {
     expect(findings.find(f => f.id === 'data-controls-pii')?.description).toContain('IBAN');
   });
 
-  it('5. Server with API Key -> PII detected, CRITICAL', () => {
+  it('5. Server handling API keys -> PII detected, CRITICAL', () => {
     const server: ResolvedServer = {
       name: 'api-tool', toolName: 'test', configPath: '/test',
-      args: ['AKIA' + '1234567890ABCDEFGHIJ']
+      description: 'stores api_key and api_token values for users'
     };
     const findings = scanDataControls(server);
     expect(findings.find(f => f.id === 'data-controls-pii')?.severity).toBe('CRITICAL');
+  });
+
+  it('5b. AWS access key in args is a credential, not PII', () => {
+    const server: ResolvedServer = {
+      name: 'aws-tool', toolName: 'test', configPath: '/test',
+      args: ['AKIA' + '1234567890ABCDEFGHIJ']
+    };
+    const findings = scanDataControls(server);
+    expect(findings.find(f => f.id === 'data-controls-pii')).toBeUndefined();
+  });
+
+  it('5c. 13-16 digit numbers that fail Luhn are not credit cards', () => {
+    const server: ResolvedServer = {
+      name: 'ts-tool', toolName: 'test', configPath: '/test',
+      description: 'handles timestamps',
+      args: ['1700000000000'] // epoch ms, no dashes, fails Luhn
+    };
+    const findings = scanDataControls(server);
+    expect(findings.find(f => f.id === 'data-controls-pii')).toBeUndefined();
+  });
+
+  it('5d. localhost/private IPs are not PII', () => {
+    const server: ResolvedServer = {
+      name: 'sse-tool', toolName: 'test', configPath: '/test',
+      url: 'http://127.0.0.1:3001/sse',
+      description: 'local SSE server'
+    };
+    const findings = scanDataControls(server);
+    expect(findings.find(f => f.id === 'data-controls-pii')).toBeUndefined();
   });
 
   it('6. Server with TTL/expiry config -> retention policy detected', () => {

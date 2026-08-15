@@ -20,16 +20,22 @@ export function maskString(str: string, options?: PrivacyOptions): string {
       continue;
     }
 
-    maskedStr = maskedStr.replace(pattern.regex, pattern.mask);
+    // Patterns are stored without the /g flag so detectors never hit the
+    // stateful lastIndex trap; masking needs global replace, so clone.
+    const globalRegex = new RegExp(pattern.regex.source, pattern.regex.flags.replace('g', '') + 'g');
+    maskedStr = maskedStr.replace(globalRegex, pattern.mask);
   }
   return maskedStr;
 }
+
+const MAX_MASK_DEPTH = 100;
 
 /**
  * Recursively masks PII in an object, array, or string.
  * Pass deepClone=true to avoid mutating the original (useful in scan pipelines).
  */
-export function maskPii(data: any, options?: PrivacyOptions, deepClone = false): any {
+export function maskPii(data: any, options?: PrivacyOptions, deepClone = false, depth = 0): any {
+  if (depth > MAX_MASK_DEPTH) return data;
   if (deepClone && data != null && typeof data === 'object') {
     data = JSON.parse(JSON.stringify(data));
   }
@@ -41,14 +47,14 @@ export function maskPii(data: any, options?: PrivacyOptions, deepClone = false):
 
   if (Array.isArray(data)) {
     for (let i = 0; i < data.length; i++) {
-      data[i] = maskPii(data[i], options);
+      data[i] = maskPii(data[i], options, false, depth + 1);
     }
     return data;
   }
 
   if (typeof data === 'object') {
     for (const key of Object.keys(data)) {
-      data[key] = maskPii(data[key], options);
+      data[key] = maskPii(data[key], options, false, depth + 1);
     }
     return data;
   }

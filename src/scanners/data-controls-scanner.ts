@@ -14,33 +14,55 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
   
   const detectedPii = new Set<string>();
   
-  // 1. Pattern-based PII detection
+  // 1. Pattern-based PII detection over the full server config. Patterns are
+  // stored without /g so repeated .test() calls never hit the lastIndex
+  // trap; validate() rejects shape-only matches (Luhn, private IPs).
   for (const pattern of PII_PATTERNS) {
-      if (pattern.regex.test(JSON.stringify(server))) {
-          detectedPii.add(pattern.name);
-      }
+    if (pattern.detect === false) continue;
+    const matches = JSON.stringify(server).match(pattern.regex);
+    if (matches && (!pattern.validate || matches.some(m => pattern.validate(m)))) {
+      detectedPii.add(pattern.name);
+    }
   }
-  
-  // 2. Keyword-based PII detection
-  const piiTerms: Record<string, string[]> = {
-      'Email': ['email', 'e-mail'],
-      'Phone Number': ['phone number', 'telephone', 'mobile number', 'cell phone'],
-      'Credit Card': ['credit card', 'ccnum', 'card number', 'cvv', 'expiry'],
-      'SSN': ['ssn', 'social security', 'tax id', 'national id'],
-      'IPv4 Address': ['ipv4', 'client ip', 'ip address'],
-      'Password': ['password', 'pwd', 'passphrase', 'pin code'],
-      'API Key': ['api_key', 'apikey', 'secret_key', 'api_token', 'access_token', 'auth_token', 'bearer_token', 'refresh_token', 'oauth_token'],
-      'Address': ['street address', 'residential address', 'home address', 'mailing address'],
-      'Date of Birth': ['date of birth', 'dob', 'birthday', 'birth date'],
-      'Health Data': ['diagnosis', 'medical record', 'prescription', 'health data', 'phi', 'hipaa'],
-      'Biometric': ['fingerprint', 'face id', 'biometric', 'retina scan'],
-      'PII': ['pii', 'personal data', 'personally identifiable']
+
+  // 2. Keyword-based PII detection. Restricted to descriptive text (server
+  // name, description, tool names, tool descriptions) - env var keys and
+  // raw values are credentials, not PII, and matching them made ordinary
+  // configs look like PII processors. Terms match on word boundaries so
+  // 'dob' no longer hits "adobe" and 'phi' no longer hits "phishing".
+  const descriptiveText = [
+    server.name,
+    server.description,
+    server.schema?.description,
+    ...(server.schema?.tools || []).flatMap((tool: any) => [tool.name, tool.description]),
+    server.command
+  ].filter(Boolean).join('\n').toLowerCase();
+
+  const piiTerms: Record<string, RegExp> = {
+    'Email': /\b(?:email|e-mail)\b/i,
+    'Phone Number': /\b(?:phone number|telephone|mobile number|cell phone|phone)\b/i,
+    'Credit Card': /\b(?:credit card|ccnum|card number|cvv|expiry)\b/i,
+    'SSN': /\b(?:ssn|social security|tax id|national id)\b/i,
+    'IPv4 Address': /\b(?:ipv4|client ip|ip address)\b/i,
+    'Password': /\b(?:password|pwd|passphrase|pin code)\b/i,
+    'API Key': /\b(?:api[_-]?key|secret[_-]?key|api[_-]?token|access[_-]?token|auth[_-]?token|bearer[_-]?token|refresh[_-]?token|oauth[_-]?token)\b/i,
+    'Address': /\b(?:street address|residential address|home address|mailing address)\b/i,
+    'Date of Birth': /\b(?:date of birth|dob|birthday|birth date)\b/i,
+    'Health Data': /\b(?:diagnosis|medical record|prescription|health data|hipaa)\b/i,
+    'Biometric': /\b(?:fingerprint|face id|biometric|retina scan)\b/i,
+    'Zip Code': /\b(?:zip code|zipcode|postal code)\b/i,
+    'NPI Number': /\bnpi\b/i,
+    'US Driver License': /\b(?:driver[’']?s? license|drivers license)\b/i,
+    'Passport Number': /\bpassport\b/i,
+    'VAT Number': /\bvat\b/i,
+    'AWS Account ID': /\baws account\b/i,
+    'PII': /\b(?:pii|personal data|personally identifiable)\b/i
   };
   
-  for (const [name, terms] of Object.entries(piiTerms)) {
-      if (terms.some(t => serverStr.includes(t))) {
-          detectedPii.add(name);
-      }
+  for (const [name, termRe] of Object.entries(piiTerms)) {
+    if (termRe.test(descriptiveText)) {
+      detectedPii.add(name);
+    }
   }
 
   if (detectedPii.size > 0) {
@@ -55,8 +77,11 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
          fixRecommendation: 'Implement strict data minimization. Ensure all PII is encrypted and handled according to privacy policies.'
       });
       
-      // Consent Check
-      const hasConsentKeywords = /consent|opt-in|agree|policy|permission/i.test(serverStr);
+      // Consent Check. These keyword scans run over the full config so
+      // env keys (CACHE_TTL, DB_ENCRYPT) count as evidence; substring
+      // matching is intentional - the words are rare enough in configs
+      // that boundary strictness would only cause false negatives.
+      const hasConsentKeywords = /consent|opt-in|opt in|agree|privacy policy/i.test(serverStr);
       if (!hasConsentKeywords) {
          findings.push({
             id: 'data-controls-consent-gap',
@@ -67,7 +92,7 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
       }
 
       // Retention Check
-      const hasRetention = /ttl|expire|cleanup|retention|auto-delete|purge/i.test(serverStr);
+      const hasRetention = /ttl|expire|cleanup|retention|auto-delete|auto delete|purge/i.test(serverStr);
       if (!hasRetention) {
          findings.push({
             id: 'data-controls-retention-gap',
@@ -89,7 +114,7 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
       }
 
       // Encryption Check
-      const hasEncryption = /encrypt|aes|kms|crypto|vault|sealed/i.test(serverStr);
+      const hasEncryption = /encrypt|aes|kms|crypto|vault|sealed|at rest/i.test(serverStr);
       if (!hasEncryption) {
          findings.push({
             id: 'data-controls-encryption-gap',
@@ -100,23 +125,27 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
       }
 
       // Data Minimization Check (Heuristic)
-      // If a tool has many properties (>10) and handles PII, it might be over-collecting.
+      // If a tool has many properties (>10) and the server was detected as
+      // handling PII, it might be over-collecting.
       const tools = server.schema?.tools || [];
       for (const tool of tools) {
           const props = tool.inputSchema?.properties ? Object.keys(tool.inputSchema.properties) : [];
-          if (props.length > 10 && JSON.stringify(tool).toLowerCase().includes('pii')) {
+          if (props.length > 10) {
               findings.push({
                   id: 'data-controls-minimization-risk',
                   severity: 'LOW',
-                  description: `Tool '${tool.name}' requests a large number of properties and handles PII.`,
+                  description: `Tool '${tool.name}' requests a large number of properties while the server handles PII.`,
                   fixRecommendation: 'Audit tool properties and remove any that are not strictly necessary for the intended function.'
               });
           }
       }
   }
   
-  // Prompt Logging Check
-  const isLoggingPrompts = /log/i.test(serverStr) && /(prompt|query|interaction|message|chat)/i.test(serverStr);
+  // Prompt Logging Check - requires a logging verb in proximity to a
+  // user-data noun; two independent substring matches flagged 'dialog'
+  // and 'log in' on nearly every server.
+  const isLoggingPrompts = /\b(?:log|record|store|capture|persist)\b.{0,60}\b(?:prompt|query|interaction|message|chat)\b/i.test(descriptiveText)
+    || /\b(?:prompt|query|interaction|message|chat)\b.{0,60}\b(?:log|record|store|capture|persist)\b/i.test(descriptiveText);
   if (isLoggingPrompts) {
      findings.push({
         id: 'data-controls-prompt-logging',
