@@ -67,13 +67,28 @@ class JsonRpcInterceptor extends Transform {
   }
 }
 
+/**
+ * Splits a command-line string into arguments, respecting single and
+ * double quotes and commas as separators. The old split-on-comma-or-space
+ * broke multi-word values (e.g. -c 'echo hi') and quoted paths.
+ */
+export function splitArgs(input: string): string[] {
+  const tokens: string[] = [];
+  const re = /"([^"]*)"|'([^']*)'|([^\s,"]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(input)) !== null) {
+    tokens.push(m[1] ?? m[2] ?? m[3]);
+  }
+  return tokens;
+}
+
 export async function runProxy(options: { command?: string, args?: string, ui?: boolean }) {
   if (!options.command) {
     throw new Error('No command specified for proxy. Use --command <cmd>.');
   }
 
   let dashboardCallback: undefined | ((dir: string, msg: string, pii: boolean) => void);
-  const args = options.args ? (options.args.includes(',') ? options.args.split(',') : options.args.split(' ')) : [];
+  const args = options.args ? splitArgs(options.args) : [];
   if (options.ui) {
       const { createDashboard } = await import('../utils/dashboard-ui.js');
       const dashboard = createDashboard();

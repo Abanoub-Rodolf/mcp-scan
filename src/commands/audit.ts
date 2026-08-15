@@ -37,7 +37,8 @@ export async function runAudit(serverName?: string) {
 
   if (!targetServer) {
     spinner.fail(`Server '${serverName}' not found in any detected configs.`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   // Run normal scan first for this specific server
@@ -46,7 +47,8 @@ export async function runAudit(serverName?: string) {
 
   if (!serverResult) {
      spinner.fail(`Failed to analyze server '${serverName}'.`);
-     process.exit(1);
+     process.exitCode = 1;
+     return;
   }
 
   // Run deep checks
@@ -71,7 +73,7 @@ export async function runAudit(serverName?: string) {
   });
 
   if (baseReport.criticalCount > 0 || baseReport.highCount > 0) {
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 

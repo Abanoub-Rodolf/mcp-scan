@@ -2,6 +2,7 @@
   name: MCP Security Scan
   description: Scans MCP server configurations for security issues
   language: node
+  additional_dependencies: ['mcp-scan']
   entry: mcp-scan
   args: ['--ci', '--severity', 'high']
   pass_filenames: false

@@ -36,7 +36,7 @@ export default defineConfig([
       action: 'action/src/action.ts',
     },
     format: ['cjs'],
-    target: 'node20',
+    target: 'node24',
     platform: 'node',
     dts: false,
     minify: true,

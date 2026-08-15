@@ -37,5 +37,5 @@ outputs:
   sarif-path:
     description: 'Path to SARIF file'
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'action/dist/action.cjs'
