@@ -7,9 +7,115 @@ import fs from 'fs';
 type ComplianceControl = { id: string; description: string; findingIds: string[] };
 type ComplianceFramework = { id: string; name: string; controls: ComplianceControl[] };
 
+export type ControlStatus = 'COMPLIANT' | 'PARTIAL' | 'NON-COMPLIANT';
+
+export interface AssessedControl {
+  id: string;
+  description: string;
+  findingsCount: number;
+  status: ControlStatus;
+  findings: Array<{ id: string; severity: string; description: string }>;
+}
+
+export interface FrameworkAssessment {
+  name: string;
+  score: number;
+  controls: AssessedControl[];
+  totalViolations: number;
+}
+
+export function controlStatus(count: number): ControlStatus {
+  if (count === 0) return 'COMPLIANT';
+  return count > 2 ? 'NON-COMPLIANT' : 'PARTIAL';
+}
+
+/** One assessment pass over a framework; every renderer consumes this. */
+export function assessFramework(fw: ComplianceFramework, allFindings: Finding[]): FrameworkAssessment {
+  const controls: AssessedControl[] = fw.controls.map(c => {
+    const matching = allFindings.filter((f: Finding) => c.findingIds.includes(f.id));
+    return {
+      id: c.id,
+      description: c.description,
+      findingsCount: matching.length,
+      status: controlStatus(matching.length),
+      findings: matching.map((f: Finding) => ({
+        id: f.id,
+        severity: f.severity,
+        description: f.description || 'No description provided',
+      })),
+    };
+  });
+  const compliantCount = controls.filter(c => c.status === 'COMPLIANT').length;
+  return {
+    name: fw.name,
+    score: controls.length === 0 ? 0 : Math.round((compliantCount / controls.length) * 100),
+    controls,
+    totalViolations: controls.reduce((sum, c) => sum + c.findingsCount, 0),
+  };
+}
+
+function renderConsole(a: FrameworkAssessment): string {
+  let out = `\n${chalk.hex('#FFB833').bold('-- ' + a.name + ' Compliance Report --')}\n\n`;
+
+  const scoreColor = a.score > 90 ? chalk.green : a.score > 70 ? chalk.yellow : chalk.red;
+  out += `Overall Compliance Score: ${scoreColor.bold(a.score + '%')}\n`;
+  out += `Summary: ${a.controls.filter(c => c.status === 'COMPLIANT').length} / ${a.controls.length} controls meeting criteria. ${a.totalViolations} total violations.\n\n`;
+
+  for (const control of a.controls) {
+    const statusColor = control.status === 'NON-COMPLIANT' ? chalk.red : control.status === 'PARTIAL' ? chalk.yellow : chalk.green;
+    out += `${chalk.bold(control.id.padEnd(10))} ${control.description.substring(0, 40).padEnd(42)} ${statusColor(`[${control.status}]`)} (${control.findingsCount} findings)\n`;
+    if (control.findingsCount > 0) {
+      control.findings.slice(0, 3).forEach(f => {
+        out += chalk.dim(`           └─ ${f.id}: ${f.description.substring(0, 60)}...\n`);
+      });
+    }
+  }
+  return out;
+}
+
+function toCsv(assessments: FrameworkAssessment[]): string {
+  let csv = 'Framework,ControlID,Description,FindingsCount,Status\n';
+  for (const a of assessments) {
+    for (const c of a.controls) {
+      csv += `"${a.name}","${c.id}","${c.description}",${c.findingsCount},"${c.status}"\n`;
+    }
+  }
+  return csv;
+}
+
+function toJson(assessments: FrameworkAssessment[]): unknown {
+  // Shape kept identical to the pre-refactor output for consumers.
+  return assessments.map(a => ({
+    name: a.name,
+    complianceScore: a.score,
+    controls: a.controls.map(c => ({
+      id: c.id,
+      description: c.description,
+      findingsCount: c.findingsCount,
+      compliant: c.status === 'COMPLIANT',
+      findings: c.findings.map(f => ({ id: f.id, severity: f.severity })),
+    })),
+  }));
+}
+
+function toMarkdown(assessments: FrameworkAssessment[], generatedAt: string): string {
+  let md = `# Compliance Framework Mapping Report\n\nGenerated: ${generatedAt}\n\n`;
+  for (const a of assessments) {
+    md += `## ${a.name}\n\n`;
+    md += `**Compliance Score:** ${a.score}%\n\n`;
+    md += `| Control | Description | Status | Findings |\n| --- | --- | --- | --- |\n`;
+    for (const c of a.controls) {
+      const status = c.status === 'NON-COMPLIANT' ? '🔴 NON-COMPLIANT' : c.status === 'PARTIAL' ? '🟡 PARTIAL' : '🟢 COMPLIANT';
+      md += `| ${c.id} | ${c.description} | ${status} | ${c.findingsCount} |\n`;
+    }
+    md += '\n';
+  }
+  return md;
+}
+
 export async function runCompliance(options: { framework: string, output?: string }) {
-    const frameworksToRun = (options.framework === 'all' 
-        ? COMPLIANCE_FRAMEWORKS 
+    const frameworksToRun = (options.framework === 'all'
+        ? COMPLIANCE_FRAMEWORKS
         : [getFramework(options.framework)]).filter((fw): fw is NonNullable<typeof fw> => !!fw);
 
     const AVAILABLE_FRAMEWORKS = ['soc2', 'gdpr', 'hipaa', 'pci-dss', 'nist', 'all'];
@@ -22,109 +128,24 @@ export async function runCompliance(options: { framework: string, output?: strin
 
     const report = await runScan({ silent: true });
     const allFindings = report.results.flatMap(r => r.findings);
-
-    const generateReport = (fw: ComplianceFramework) => {
-        let md = `\n${chalk.hex('#FFB833').bold('-- ' + fw.name + ' Compliance Report --')}\n\n`;
-        let totalFindings = 0;
-        const totalControls = fw.controls.length;
-        let compliantControls = 0;
-
-        let table = '';
-        for (const control of fw.controls) {
-            const matchingFindings = allFindings.filter((f: Finding) => control.findingIds.includes(f.id));
-            const count = matchingFindings.length;
-            totalFindings += count;
-
-            if (count === 0) compliantControls++;
-
-            const status = count > 0 ? (count > 2 ? chalk.red('[NON-COMPLIANT]') : chalk.yellow('[PARTIAL]')) : chalk.green('[COMPLIANT]');
-            table += `${chalk.bold(control.id.padEnd(10))} ${control.description.substring(0, 40).padEnd(42)} ${status} (${count} findings)\n`;
-
-            if (count > 0) {
-                matchingFindings.slice(0, 3).forEach((f: Finding) => {
-                    const desc = f.description || 'No description provided';
-                    table += chalk.dim(`           └─ ${f.id}: ${desc.substring(0, 60)}...\n`);
-                });
-            }
-        }
-        
-        const score = totalControls === 0 ? 0 : Math.round((compliantControls / totalControls) * 100);
-        const scoreColor = score > 90 ? chalk.green : score > 70 ? chalk.yellow : chalk.red;
-        
-        md += `Overall Compliance Score: ${scoreColor.bold(score + '%')}\n`;
-        md += `Summary: ${compliantControls} / ${totalControls} controls meeting criteria. ${totalFindings} total violations.\n\n`;
-        md += table;
-        
-        return md;
-    };
-
-    let fullMarkdown = '';
-    for (const fw of frameworksToRun) {
-        fullMarkdown += generateReport(fw);
-    }
+    const assessments = frameworksToRun.map(fw => assessFramework(fw, allFindings));
 
     if (options.output) {
         if (options.output.endsWith('.csv')) {
-             let csv = 'Framework,ControlID,Description,FindingsCount,Status\n';
-             for (const fw of frameworksToRun) {
-                 for (const control of fw.controls) {
-                     const count = allFindings.filter((f: Finding) => control.findingIds.includes(f.id)).length;
-                     const status = count > 0 ? (count > 2 ? 'NON-COMPLIANT' : 'PARTIAL') : 'COMPLIANT';
-                     csv += `"${fw.name}","${control.id}","${control.description}",${count},"${status}"\n`;
-                 }
-             }
-             fs.writeFileSync(options.output, csv);
-             console.log(`Saved compliance CSV report to ${options.output}`);
+            fs.writeFileSync(options.output, toCsv(assessments));
+            console.log(`Saved compliance CSV report to ${options.output}`);
         } else if (options.output.endsWith('.json')) {
-             const jsonObj = frameworksToRun.map((fw: ComplianceFramework) => {
-                 const controls = fw.controls.map((c: ComplianceControl) => {
-                     const matching = allFindings.filter((f: Finding) => c.findingIds.includes(f.id));
-                     return {
-                         id: c.id,
-                         description: c.description,
-                         findingsCount: matching.length,
-                         compliant: matching.length === 0,
-                         findings: matching.map((f: Finding) => ({ id: f.id, severity: f.severity }))
-                     };
-                 });
-                 const score = Math.round((controls.filter(c => c.compliant).length / controls.length) * 100);
-                 return {
-                     name: fw.name,
-                     complianceScore: score,
-                     controls
-                 };
-             });
-             fs.writeFileSync(options.output, JSON.stringify(jsonObj, null, 2));
-             console.log(`Saved compliance JSON report to ${options.output}`);
+            fs.writeFileSync(options.output, JSON.stringify(toJson(assessments), null, 2));
+            console.log(`Saved compliance JSON report to ${options.output}`);
         } else {
-             // clean markdown (no chalk)
-             const generateMdReport = (fw: ComplianceFramework) => {
-                 type ControlRow = ComplianceControl & { count: number; compliant: boolean };
-                 const controls: ControlRow[] = fw.controls.map((c: ComplianceControl) => {
-                     const matching = allFindings.filter((f: Finding) => c.findingIds.includes(f.id));
-                     return { ...c, count: matching.length, compliant: matching.length === 0 };
-                 });
-                 const score = Math.round((controls.filter(c => c.compliant).length / controls.length) * 100);
-
-                 let md = `## ${fw.name}\n\n`;
-                 md += `**Compliance Score:** ${score}%\n\n`;
-                 md += `| Control | Description | Status | Findings |\n| --- | --- | --- | --- |\n`;
-                 controls.forEach((c: ControlRow) => {
-                     const status = c.count > 0 ? (c.count > 2 ? '🔴 NON-COMPLIANT' : '🟡 PARTIAL') : '🟢 COMPLIANT';
-                     md += `| ${c.id} | ${c.description} | ${status} | ${c.count} |\n`;
-                 });
-                 md += '\n';
-                 return md;
-             };
-             
-             let mdOutput = `# Compliance Framework Mapping Report\n\nGenerated: ${new Date().toISOString()}\n\n`;
-             for (const fw of frameworksToRun) {
-                 mdOutput += generateMdReport(fw);
-             }
-             fs.writeFileSync(options.output, mdOutput);
-             console.log(`Saved compliance Markdown report to ${options.output}`);
+            fs.writeFileSync(options.output, toMarkdown(assessments, new Date().toISOString()));
+            console.log(`Saved compliance Markdown report to ${options.output}`);
         }
     } else {
-        console.log(fullMarkdown);
+        let fullOutput = '';
+        for (const a of assessments) {
+            fullOutput += renderConsole(a);
+        }
+        console.log(fullOutput);
     }
 }
