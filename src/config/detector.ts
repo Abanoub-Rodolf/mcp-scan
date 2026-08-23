@@ -30,29 +30,19 @@ export async function detectTools(dependencies: DetectorDependencies): Promise<D
   }
 
   // Add extension glob paths
-  const clinePaths = await getExtensionGlobPaths('Cline', { homedir: os.homedir });
-  for (const configPath of clinePaths) {
-    const resolved = path.resolve(configPath);
-    if (!seenPaths.has(resolved)) {
-      seenPaths.add(resolved);
-      detected.push({
-        name: 'Cline',
-        configPath: resolved,
-        exists: fs.existsSync(resolved)
-      });
-    }
-  }
-
-  const rooCodePaths = await getExtensionGlobPaths('Roo Code', { homedir: os.homedir });
-  for (const configPath of rooCodePaths) {
-    const resolved = path.resolve(configPath);
-    if (!seenPaths.has(resolved)) {
-      seenPaths.add(resolved);
-      detected.push({
-        name: 'Roo Code',
-        configPath: resolved,
-        exists: fs.existsSync(resolved)
-      });
+  const extensionTools = ['Cline', 'Roo Code'] as const;
+  for (const tool of extensionTools) {
+    const extPaths = await getExtensionGlobPaths(tool, { homedir: os.homedir });
+    for (const configPath of extPaths) {
+      const resolved = path.resolve(configPath);
+      if (!seenPaths.has(resolved)) {
+        seenPaths.add(resolved);
+        detected.push({
+          name: tool,
+          configPath: resolved,
+          exists: fs.existsSync(resolved)
+        });
+      }
     }
   }
 
@@ -74,13 +64,8 @@ export async function detectTools(dependencies: DetectorDependencies): Promise<D
         configPath: resolved,
         exists: true
       });
-
-    } else {
-
     }
   }
-
-
 
   return detected;
 }

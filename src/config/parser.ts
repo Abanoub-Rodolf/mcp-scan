@@ -124,20 +124,23 @@ export function extractServers(toolName: string, configPath: string, config: Mcp
     // or with non-string values, env values that are numbers/booleans.
     // Downstream scanners assume string arrays / string values; one odd
     // entry must not abort the whole scan.
-    const normalized: McpServerEntry = { ...entry };
+    const { args, env, ...rest } = entry;
+    const normalized: McpServerEntry = { ...rest };
 
-    if (normalized.args !== undefined && !Array.isArray(normalized.args)) {
-      normalized.args = Object.values(normalized.args as any)
+    if (args !== undefined && !Array.isArray(args)) {
+      normalized.args = Object.values(args)
         .filter((a): a is string | number => typeof a === 'string' || typeof a === 'number')
         .map(String);
+    } else if (Array.isArray(args)) {
+      normalized.args = args;
     }
 
-    if (normalized.env) {
-      const env: Record<string, string> = {};
-      for (const [k, v] of Object.entries(normalized.env)) {
-        env[k] = typeof v === 'string' ? v : String(v);
+    if (env) {
+      const normalizedEnv: Record<string, string> = {};
+      for (const [k, v] of Object.entries(env)) {
+        normalizedEnv[k] = typeof v === 'string' ? v : String(v);
       }
-      normalized.env = env;
+      normalized.env = normalizedEnv;
     }
 
     servers.push({
