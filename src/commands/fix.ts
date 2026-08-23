@@ -2,9 +2,93 @@ import { runScan } from './scan.js';
 import { logger } from '../utils/logger.js';
 import { atomicWriteConfig } from '../config/writer.js';
 import { parseConfig } from '../config/parser.js';
+import { RawMcpServerEntry } from '../types/config.js';
+import { Finding } from '../types/scan-result.js';
 import readline from 'readline';
 import { SECRET_PATTERNS } from '../data/secret-patterns.js';
 import chalk from 'chalk';
+
+/**
+ * Applies the automatic remediation for one finding to a raw config
+ * server entry. Mutates the entry in place and returns whether anything
+ * changed. Pure enough to unit test: no I/O, no prompting.
+ */
+export function applyAutoFix(finding: Finding, server: RawMcpServerEntry): boolean {
+  let changed = false;
+
+  switch (finding.id) {
+    case 'exposed-secret': {
+      if (!server.env) break;
+      for (const [key, value] of Object.entries(server.env)) {
+        const str = String(value);
+        for (const pattern of SECRET_PATTERNS) {
+          if (pattern.regex.test(str)) {
+            server.env[key] = `\${${key}}`;
+            changed = true;
+            break;
+          }
+        }
+      }
+      break;
+    }
+    case 'http-transport-no-auth': {
+      let argsChanged = false;
+      if (Array.isArray(server.args)) {
+        server.args = server.args.map(arg => {
+          if (typeof arg === 'string' && arg.startsWith('http://')) {
+            argsChanged = true;
+            return arg.replace('http://', 'https://');
+          }
+          return arg;
+        });
+      }
+      // Attempt BOTH surfaces independently: a server can carry http://
+      // in an arg and in its url at the same time.
+      const url = server.url;
+      const urlChanged = typeof url === 'string' && url.startsWith('http://');
+      if (urlChanged) {
+        server.url = url.replace('http://', 'https://');
+      }
+      changed = argsChanged || urlChanged;
+      break;
+    }
+    case 'outdated-transport': {
+      if (Array.isArray(server.args)) {
+        server.args = server.args.map(arg => {
+          if (arg === '--transport=sse') {
+            changed = true;
+            return '--transport=streamable-http';
+          }
+          return arg;
+        });
+      }
+      break;
+    }
+    case 'insecure-transport': {
+      let argsChanged = false;
+      if (Array.isArray(server.args)) {
+        server.args = server.args.map(arg => {
+          if (typeof arg === 'string' && arg.startsWith('ws://')) {
+            argsChanged = true;
+            return arg.replace('ws://', 'wss://');
+          }
+          return arg;
+        });
+      }
+      const url = server.url;
+      const urlChanged = typeof url === 'string' && url.startsWith('ws://');
+      if (urlChanged) {
+        server.url = url.replace('ws://', 'wss://');
+      }
+      changed = argsChanged || urlChanged;
+      break;
+    }
+    default:
+      break;
+  }
+
+  return changed;
+}
 
 export async function runFix() {
   const rl = readline.createInterface({
@@ -22,19 +106,19 @@ export async function runFix() {
 
   for (const result of initialReport.results) {
     const fixableFindings = result.findings.filter(f => f.fixable);
-    
+
     if (fixableFindings.length === 0) continue;
 
     for (const finding of fixableFindings) {
       const confidence = finding.remediationConfidence || 50;
       const confidenceColor = confidence >= 90 ? chalk.green : confidence >= 70 ? chalk.yellow : chalk.red;
-      
+
       logger.divider();
       logger.warn(`Issue in ${result.serverName} (${result.configPath})`);
       logger.log(`[${finding.severity}] ${finding.description}`);
       logger.log(`Confidence Score: ${confidenceColor(confidence + '%')}`);
       logger.fix(`Proposed Fix: ${finding.fixRecommendation}`);
-      
+
       let shouldApply = false;
       if (confidence >= 95) {
         const answer = await question('High confidence fix. Auto-apply? (Y/n): ');
@@ -51,54 +135,7 @@ export async function runFix() {
            if (!config || !config.mcpServers[result.serverName]) continue;
 
            const server = config.mcpServers[result.serverName];
-           let changed = false;
-
-           // 1. Fix exposed secrets
-           if (finding.id === 'exposed-secret' && server.env) {
-              for (const [key, value] of Object.entries(server.env)) {
-                 for (const pattern of SECRET_PATTERNS) {
-                    if (pattern.regex.test(value)) {
-                       server.env[key] = `\${${key}}`;
-                       changed = true;
-                       break;
-                    }
-                 }
-              }
-           } 
-           // 2. Fix HTTP to HTTPS
-           else if (finding.id === 'http-transport-no-auth' && server.args) {
-              server.args = server.args.map(arg => {
-                 if (arg.startsWith('http://')) {
-                    changed = true;
-                    return arg.replace('http://', 'https://');
-                 }
-                 return arg;
-              });
-           }
-           // 3. Fix outdated transport
-           else if (finding.id === 'outdated-transport' && server.args) {
-              server.args = server.args.map(arg => {
-                 if (arg === '--transport=sse') {
-                    changed = true;
-                    return '--transport=streamable-http';
-                 }
-                 return arg;
-              });
-           }
-           // 4. Fix insecure WebSocket ws:// → wss://
-           else if (finding.id === 'insecure-transport' && server.args) {
-              server.args = server.args.map(arg => {
-                 if (typeof arg === 'string' && arg.startsWith('ws://')) {
-                    changed = true;
-                    return arg.replace('ws://', 'wss://');
-                 }
-                 return arg;
-              });
-              if (!changed && server.url?.startsWith('ws://')) {
-                 (server as any).url = server.url.replace('ws://', 'wss://');
-                 changed = true;
-              }
-           }
+           const changed = applyAutoFix(finding, server);
 
            if (changed) {
               atomicWriteConfig(result.configPath, JSON.stringify(config, null, 2));
@@ -118,7 +155,7 @@ export async function runFix() {
 
   rl.close();
   logger.divider();
-  
+
   if (fixedCount > 0) {
     logger.brand(`Auto-fix complete. Applied ${fixedCount} fixes (${autoAppliedCount} auto-applied).`);
     logger.info('Re-scanning to verify fixes...');

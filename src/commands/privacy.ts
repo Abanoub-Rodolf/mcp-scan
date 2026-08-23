@@ -2,9 +2,18 @@ import { detectTools } from '../config/detector.js';
 import { parseConfig, extractServers } from '../config/parser.js';
 import { scanDataControls } from '../scanners/data-controls-scanner.js';
 import { scanNetworkEgress } from '../scanners/network-egress-scanner.js';
+import { BRAND_COLOR } from '../types/severity.js';
 import chalk from 'chalk';
 import fs from 'fs';
 import os from 'os';
+
+// Global risk score weights: PII presence contributes up to 40 points,
+// security gaps up to 60 (capped at 4 tracked gaps per server).
+const PII_RISK_WEIGHT = 40;
+const GAP_RISK_WEIGHT = 60;
+const MAX_GAPS_PER_SERVER = 4;
+const HIGH_RISK_THRESHOLD = 70;
+const MEDIUM_RISK_THRESHOLD = 30;
 
 export async function runPrivacy(options: { format?: string, output?: string, retention?: boolean }) {
   const tools = await detectTools({ fs, os, process });
@@ -66,15 +75,23 @@ export async function runPrivacy(options: { format?: string, output?: string, re
 
   // Calculate global risk score (0-100)
   if (report.summary.totalServers > 0) {
-      const piiPenalty = (report.summary.piiServers / report.summary.totalServers) * 40;
-      const gapPenalty = Math.min((report.summary.totalGaps / (report.summary.totalServers * 4)) * 60, 60);
+      const piiPenalty = (report.summary.piiServers / report.summary.totalServers) * PII_RISK_WEIGHT;
+      const gapPenalty = Math.min((report.summary.totalGaps / (report.summary.totalServers * MAX_GAPS_PER_SERVER)) * GAP_RISK_WEIGHT, GAP_RISK_WEIGHT);
       report.summary.riskScore = Math.round(piiPenalty + gapPenalty);
   }
 
-  // Handle Output Formats
+  const jsonPayload = JSON.stringify(report, null, 2);
+
+  // Handle Output Formats. One contract everywhere: with --output the
+  // content goes to the file and stdout only gets a confirmation line;
+  // without it, content goes to stdout.
   if (options.format === 'json') {
-      console.log(JSON.stringify(report, null, 2));
-      if (options.output) fs.writeFileSync(options.output, JSON.stringify(report, null, 2));
+      if (options.output) {
+          fs.writeFileSync(options.output, jsonPayload);
+          console.log(`Saved JSON report to ${options.output}`);
+      } else {
+          console.log(jsonPayload);
+      }
       return;
   }
 
@@ -94,10 +111,10 @@ export async function runPrivacy(options: { format?: string, output?: string, re
 
   // Default Console / Markdown Output
   const renderConsole = () => {
-      console.log(chalk.hex('#339DFF').bold('\n-- Privacy Impact Assessment ----------------------'));
+      console.log(chalk.hex(BRAND_COLOR).bold('\n-- Privacy Impact Assessment ----------------------'));
       console.log(chalk.dim(`Generated: ${new Date().toLocaleString()}\n`));
 
-      console.log(`Global Risk Score: ${report.summary.riskScore > 70 ? chalk.red.bold(report.summary.riskScore) : report.summary.riskScore > 30 ? chalk.yellow(report.summary.riskScore) : chalk.green(report.summary.riskScore)} / 100`);
+      console.log(`Global Risk Score: ${report.summary.riskScore > HIGH_RISK_THRESHOLD ? chalk.red.bold(report.summary.riskScore) : report.summary.riskScore > MEDIUM_RISK_THRESHOLD ? chalk.yellow(report.summary.riskScore) : chalk.green(report.summary.riskScore)} / 100`);
       console.log(`Summary: ${report.summary.piiServers} / ${report.summary.totalServers} servers handle sensitive data.`);
       console.log(`Compliance: ${report.summary.totalGaps} total security gaps detected.\n`);
 
@@ -120,8 +137,6 @@ export async function runPrivacy(options: { format?: string, output?: string, re
       }
   };
 
-  renderConsole();
-
   if (options.output && options.format !== 'json' && options.format !== 'csv') {
       let md = `# Privacy Impact Assessment\n\n`;
       md += `**Global Risk Score:** ${report.summary.riskScore} / 100\n`;
@@ -131,6 +146,9 @@ export async function runPrivacy(options: { format?: string, output?: string, re
           md += `| ${s.name} | ${s.risk} | ${s.pii} | ${s.gaps} |\n`;
       }
       fs.writeFileSync(options.output, md);
-      console.log(`Saved Markdown report to ${options.output}`);
+      console.log(`Saved Markdown report to ${options.output}. (--format text writes Markdown; use json or csv for machine formats)`);
+      return;
   }
+
+  renderConsole();
 }
