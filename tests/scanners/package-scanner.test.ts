@@ -85,9 +85,6 @@ describe('Package Scanner - OSV.dev integration', () => {
           return createMockFetchResponse(true, { vulns: [] });
         } else if (packageName === 'error-package') {
           return createMockFetchResponse(false, {}, 500);
-        } else if (packageName === 'timeout-package') {
-          // Mock fetch to resolve after 4 seconds, which is less than the 5-second timeout
-          return new Promise((resolve) => setTimeout(() => resolve(createMockFetchResponse(true, { vulns: [] })), 4000));
         }
       } else if (url.startsWith('https://registry.npmjs.org/')) {
          // Mock npm registry response
@@ -144,11 +141,39 @@ describe('Package Scanner - OSV.dev integration', () => {
     });
 
     it('should handle OSV.dev API timeout gracefully', async () => {
-      const server = mockServer('timeout-package');
-      const findings = await scanPackageDeep(server);
-      expect(findings.some(f => f.id === 'known-vulnerability-critical' || f.id === 'known-vulnerability-high')).toBe(false);
-      // Ensure the warning about timeout is NOT called, as it should not time out now
-      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('OSV.dev API request for timeout-package timed out'));
+      // The mock honors the abort signal the scanner wires up, so the
+      // 5-second timeout fires under fake timers instead of sleeping for
+      // real seconds. Proves the abort -> warn -> offline-fallback path.
+      vi.useFakeTimers();
+      try {
+        mockFetch.mockImplementation(async (url: string | URL | Request, options: RequestInit = {}) => {
+          if (url === 'https://api.osv.dev/v1/query') {
+            return new Promise((_, reject) => {
+              const signal = options.signal;
+              if (!signal) {
+                reject(new Error('mock fetch requires an AbortSignal'));
+                return;
+              }
+              if (signal.aborted) {
+                reject(new DOMException('The operation was aborted.', 'AbortError'));
+                return;
+              }
+              signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
+            });
+          }
+          return createMockFetchResponse(false, {}, 404);
+        });
+
+        const server = mockServer('timeout-package');
+        const pending = scanPackageDeep(server);
+        await vi.advanceTimersByTimeAsync(5001);
+        const findings = await pending;
+
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(`OSV.dev API request for ${'timeout-package'} failed or timed out`));
+        expect(findings.some(f => f.id === 'known-vulnerability-critical' || f.id === 'known-vulnerability-high')).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('should handle OSV.dev API network errors gracefully', async () => {
