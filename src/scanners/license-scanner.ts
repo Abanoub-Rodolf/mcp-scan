@@ -1,12 +1,11 @@
-import { Finding } from '../types/scan-result.js';
-import { SupplyChainResult } from './supply-chain-scanner.js';
+import { Finding, PackageMetadata } from '../types/scan-result.js';
 
 /**
  * Scans a package's license for compliance risks.
  * @param metadata The metadata gathered from the supply chain scan.
  * @returns An array of findings related to license risk.
  */
-export function scanLicense(metadata: SupplyChainResult['metadata']): Finding[] {
+export function scanLicense(metadata: PackageMetadata | undefined): Finding[] {
   const findings: Finding[] = [];
   if (!metadata || metadata.source !== 'npm') return findings;
 

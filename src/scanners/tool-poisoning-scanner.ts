@@ -3,6 +3,10 @@ import { Finding } from '../types/scan-result.js';
 import { findEncodedInstruction } from '../utils/encoded-text.js';
 import { buildScanText } from '../utils/scan-text.js';
 
+// Long whitespace padding before an instruction reads as deliberately
+// hidden rather than ordinary formatting.
+const HIDDEN_INSTRUCTION_PATTERN = /\s{50,}.*(ignore|disregard|forget|rules|instructions)/i;
+
 /**
  * Scanner for Tool Poisoning & Capability Injection attacks.
  * Detects patterns in tool descriptions and arguments that aim to influence model behavior maliciously.
@@ -13,7 +17,7 @@ export function scanToolPoisoning(server: ResolvedServer): Finding[] {
   const textToScan = buildScanText(server);
 
   // 1. Hidden instructions (long padding followed by instructions)
-  if (/\s{50,}.*(ignore|disregard|forget|rules|instructions)/i.test(textToScan)) {
+  if (HIDDEN_INSTRUCTION_PATTERN.test(textToScan)) {
     findings.push({
       id: 'hidden-instruction-risk',
       severity: 'HIGH',

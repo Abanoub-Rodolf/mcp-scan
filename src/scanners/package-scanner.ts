@@ -2,14 +2,10 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding, FindingId } from '../types/scan-result.js';
 import { Severity } from '../types/severity.js';
 import { logger } from '../utils/logger.js';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
+import { loadCveSnapshot } from '../utils/cve-snapshot.js';
 import { parseCvssVector } from 'vuln-vects';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import semver from 'semver';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SNAPSHOT_PATH = path.join(__dirname, '../data/cve-snapshot.json');
 
 interface NpmRegistryResponse {
   'dist-tags'?: { latest?: string };
@@ -91,17 +87,8 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
 
   let latestVersion = '';
   try {
-    const npmController = new AbortController();
-    const npmTimeoutId = setTimeout(() => npmController.abort(), 8000);
-    let res;
-    try {
-      res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`, {
-        signal: npmController.signal,
-      });
-    } finally {
-      clearTimeout(npmTimeoutId);
-    }
-    
+    const res = await fetchWithTimeout(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`, {}, 8000);
+
     if (!res.ok) {
       logger.warn(`Failed to fetch package info for ${packageName} from npm registry.`);
     } else {
@@ -127,21 +114,12 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
   }
 
   // OSV.dev integration
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-
   try {
-    let osvRes;
-    try {
-      osvRes = await fetch('https://api.osv.dev/v1/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ package: { name: packageName, ecosystem: 'npm' } }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const osvRes = await fetchWithTimeout('https://api.osv.dev/v1/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ package: { name: packageName, ecosystem: 'npm' } }),
+    }, 5000);
 
     if (!osvRes.ok) {
       logger.warn(`OSV.dev API request failed for ${packageName}.`);
@@ -232,25 +210,22 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
 function scanPackageOffline(packageName: string): Finding[] {
   const findings: Finding[] = [];
   try {
-    if (!fs.existsSync(SNAPSHOT_PATH)) return findings;
-    
-    let snapshot;
-    try {
-      snapshot = JSON.parse(fs.readFileSync(SNAPSHOT_PATH, 'utf8'));
-    } catch (parseError) {
-      logger.warn(`Failed to parse offline CVE snapshot: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
-      return findings;
-    }
-    
-    // Check if snapshot is stale (> 30 days)
-    const updatedAt = new Date(snapshot.updatedAt);
+    const snapshot = loadCveSnapshot();
+    if (!snapshot) return findings;
+
+    const data = snapshot.raw;
+
+    // Check if snapshot is stale (> 30 days). Missing/invalid dates yield
+    // NaN here, which never trips the warning - same as the untyped
+    // original.
+    const updatedAt = new Date(data.updatedAt ?? NaN);
     const now = new Date();
     const diffDays = (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60 * 24);
     if (diffDays > 30) {
       logger.warn(`CVE snapshot is ${Math.floor(diffDays)} days old. Run 'npm run update-cve-snapshot' to update.`);
     }
 
-    const pkgData = snapshot.packages[packageName];
+    const pkgData = data.packages?.[packageName];
     if (pkgData && pkgData.vulns) {
       for (const vuln of pkgData.vulns) {
         const severity = String(vuln.severity || 'MEDIUM').toUpperCase() as Severity;

@@ -2,6 +2,11 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { SECRET_PATTERNS } from '../data/secret-patterns.js';
 
+// Entropy-detection calibration: values at least this long are checked,
+// and only flagged above this Shannon bits-per-character.
+const MIN_ENTROPY_VALUE_LENGTH = 20;
+const MIN_ENTROPY_BITS_PER_CHAR = 4.5;
+
 /**
  * Calculates the Shannon entropy of a string.
  * @param str The string to calculate entropy for.
@@ -106,9 +111,9 @@ export function scanSecrets(server: ResolvedServer): Finding[] {
     }
 
     // 3. Entropy-based detection (if no pattern matched)
-    if (!foundPattern && value.length >= 20) {
+    if (!foundPattern && value.length >= MIN_ENTROPY_VALUE_LENGTH) {
       const entropy = calculateEntropy(value);
-      if (entropy > 4.5 && !isExemptFromEntropy(value)) {
+      if (entropy > MIN_ENTROPY_BITS_PER_CHAR && !isExemptFromEntropy(value)) {
         findings.push({
           id: 'high-entropy-value',
           severity: 'MEDIUM',

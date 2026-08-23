@@ -4,6 +4,12 @@ import { PII_PATTERNS } from '../data/pii-patterns.js';
 import fs from 'fs';
 import os from 'os';
 
+// Calibration: a tool exposing more properties than this looks like a
+// broad-surface data risk; a temp dir holding more files than this
+// suggests unmanaged retention.
+const MANY_PROPERTIES_THRESHOLD = 10;
+const MANY_TEMP_FILES_THRESHOLD = 100;
+
 /**
  * Scanner for data controls, privacy, and PII handling.
  * Evaluates if a server follows best practices for data retention, encryption, and consent.
@@ -19,8 +25,9 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
   // trap; validate() rejects shape-only matches (Luhn, private IPs).
   for (const pattern of PII_PATTERNS) {
     if (pattern.detect === false) continue;
+    const validate = pattern.validate;
     const matches = JSON.stringify(server).match(pattern.regex);
-    if (matches && (!pattern.validate || matches.some(m => pattern.validate(m)))) {
+    if (matches && (!validate || matches.some(m => validate(m)))) {
       detectedPii.add(pattern.name);
     }
   }
@@ -130,7 +137,7 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
       const tools = server.schema?.tools || [];
       for (const tool of tools) {
           const props = tool.inputSchema?.properties ? Object.keys(tool.inputSchema.properties) : [];
-          if (props.length > 10) {
+          if (props.length > MANY_PROPERTIES_THRESHOLD) {
               findings.push({
                   id: 'data-controls-minimization-risk',
                   severity: 'LOW',
@@ -163,7 +170,7 @@ export function scanDataControls(server: ResolvedServer, performRetentionScan: b
           try {
               if (fs.existsSync(t)) {
                   const files = fs.readdirSync(t);
-                  if (files.length > 100) { // Arbitrary threshold for "many temp files"
+                  if (files.length > MANY_TEMP_FILES_THRESHOLD) {
                       foundTempFiles = true;
                       break;
                   }

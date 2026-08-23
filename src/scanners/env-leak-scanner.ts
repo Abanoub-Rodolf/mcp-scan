@@ -1,8 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import { ResolvedServer } from '../types/config.js';
-import { Finding, FindingId } from '../types/scan-result.js';
+import { Finding } from '../types/scan-result.js';
 import { logger } from '../utils/logger.js';
+
+// Env values shorter than this are rarely real secrets worth flagging.
+const MIN_LEAK_VALUE_LENGTH = 20;
 
 // Regex to detect keys that commonly represent secrets
 const SECRET_KEY_REGEX = /.*(KEY|SECRET|TOKEN|PASSWORD|API_|AUTH_|CREDENTIAL|BEARER|CERT|PEM|PASSPHRASE|SIGNING).*/i;
@@ -37,7 +40,7 @@ export function scanEnvLeak(server: ResolvedServer, serverFilePath: string): Fin
 
           if (!key) continue;
 
-          if (SECRET_KEY_REGEX.test(key) && value.length > 20) {
+          if (SECRET_KEY_REGEX.test(key) && value.length > MIN_LEAK_VALUE_LENGTH) {
             // Placeholder values (any case) are not leaks: 'api_key=your_api_key_here'
             const valueLower = value.toLowerCase();
             if (valueLower.includes('your_') || valueLower.includes('replace') || valueLower.includes('example') ||
@@ -47,7 +50,7 @@ export function scanEnvLeak(server: ResolvedServer, serverFilePath: string): Fin
             }
 
             findings.push({
-              id: 'env-secret-exposed' as FindingId,
+              id: 'env-secret-exposed',
               severity: 'HIGH',
               description: `Potentially exposed secret in '${envFileName}': key '${key}' has a real-looking value.`,
               fixRecommendation: `Review key '${key}' in ${envFileName}. If it's a real secret, add the file to .gitignore and consider a secrets manager.`,

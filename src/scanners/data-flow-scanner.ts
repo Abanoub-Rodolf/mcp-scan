@@ -8,7 +8,7 @@ import {
 } from '../data/data-flow-patterns.js';
 
 interface DataNode {
-  type: 'source' | 'transform' | 'sink';
+  type: 'source' | 'sink';
   name: string;
   category: 'filesystem' | 'network' | 'env' | 'clipboard' | 'database' | 'process' | 'unknown';
   description: string;

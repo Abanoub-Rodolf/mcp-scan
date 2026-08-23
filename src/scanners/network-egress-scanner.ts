@@ -2,6 +2,9 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { KNOWN_ENDPOINTS } from '../data/known-endpoints.js';
 
+// Long opaque base64-ish query values suggest data smuggled in URLs.
+const DATA_IN_URL_PATTERN = /[?&][a-zA-Z0-9_-]+=[a-zA-Z0-9+/]{32,}[=]{0,2}/;
+
 export function scanNetworkEgress(server: ResolvedServer): Finding[] {
   const findings: Finding[] = [];
   
@@ -56,7 +59,7 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
       if (hexUrlRegex.test(str)) endpoints.add('obfuscated:hex');
       if (reversedUrlRegex.test(str)) endpoints.add('obfuscated:reversed');
 
-      const dataInUrlMatch = str.match(/[?&][a-zA-Z0-9_-]+=[a-zA-Z0-9+/]{32,}[=]{0,2}/);
+      const dataInUrlMatch = str.match(DATA_IN_URL_PATTERN);
       if (dataInUrlMatch && (str.includes('http') || str.includes('wss'))) {
           findings.push({
              id: 'network-egress-data-in-url',

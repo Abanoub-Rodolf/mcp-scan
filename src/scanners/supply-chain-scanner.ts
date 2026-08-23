@@ -1,12 +1,7 @@
 import { ResolvedServer } from '../types/config.js';
-import { Finding } from '../types/scan-result.js';
+import { Finding, PackageMetadata } from '../types/scan-result.js';
 import { logger } from '../utils/logger.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SNAPSHOT_PATH = path.join(__dirname, '../data/cve-snapshot.json');
+import { loadCveSnapshot } from '../utils/cve-snapshot.js';
 
 interface NpmPackageData {
   'dist-tags'?: { latest?: string };
@@ -30,21 +25,13 @@ interface RepoMetadata {
   forks: number;
   updatedAt: string;
   pushedAt: string;
-  contributorCount: number;
   owner: string;
 }
 
 export interface SupplyChainResult {
   findings: Finding[];
   trustScore: number;
-  metadata?: {
-    packageName?: string;
-    version?: string;
-    license?: string;
-    repositoryUrl?: string;
-    author?: string;
-    source?: 'npm' | 'local' | 'unknown';
-  };
+  metadata?: PackageMetadata;
 }
 
 export async function scanSupplyChain(server: ResolvedServer, offline: boolean = false): Promise<SupplyChainResult> {
@@ -137,9 +124,9 @@ export async function scanSupplyChain(server: ResolvedServer, offline: boolean =
 function scanSupplyChainOffline(packageName: string): SupplyChainResult {
   const result: SupplyChainResult = { findings: [], trustScore: 30, metadata: { source: 'npm', packageName } };
   try {
-    if (!fs.existsSync(SNAPSHOT_PATH)) return result;
-    const snapshot = JSON.parse(fs.readFileSync(SNAPSHOT_PATH, 'utf8'));
-    const pkgData = snapshot.packages[packageName];
+    const snapshot = loadCveSnapshot();
+    if (!snapshot) return result;
+    const pkgData = snapshot.raw.packages?.[packageName];
     if (pkgData) {
       result.metadata!.version = pkgData.version;
       result.metadata!.license = pkgData.license;
@@ -194,7 +181,6 @@ async function fetchGitHubMetadata(repoUrl: string): Promise<RepoMetadata | null
       forks: data.forks_count,
       updatedAt: data.updated_at,
       pushedAt: data.pushed_at,
-      contributorCount: 0,
       owner: data.owner.login
     };
   } catch (_error) {
