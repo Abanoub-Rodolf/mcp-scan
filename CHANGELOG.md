@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-08-23
+
 ### Security
 - Dependency audit: bumped undici (7 high advisories), uuid, and vite
   (2 high advisories) past their patched versions; rebuilt the GitHub
