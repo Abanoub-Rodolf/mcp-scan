@@ -9,8 +9,19 @@ export interface McpServerEntry {
   schema?: any;
 }
 
+/**
+ * What real-world config files actually contain before normalization:
+ * args may be an object instead of an array and env values may be
+ * numbers or booleans. parseConfig returns these; extractServers is the
+ * documented boundary that turns them into strict McpServerEntries.
+ */
+export type RawMcpServerEntry = Omit<McpServerEntry, 'args' | 'env'> & {
+  args?: string[] | Record<string, unknown>;
+  env?: Record<string, unknown>;
+};
+
 export interface McpConfig {
-  mcpServers: Record<string, McpServerEntry>;
+  mcpServers: Record<string, RawMcpServerEntry>;
 }
 
 export interface DetectedTool {

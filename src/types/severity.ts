@@ -15,3 +15,15 @@ export const SEVERITY_ORDER: Record<Severity, number> = {
   LOW: 2,
   INFO: 1,
 };
+
+// Canonical severity palette. Every surface (CLI, HTML, dashboard, spinner)
+// derives its colors from here so a finding renders the same hue everywhere.
+export const BRAND_COLOR = '#339DFF';
+
+export const SEVERITY_COLORS: Record<Severity, string> = {
+  CRITICAL: '#F85149',
+  HIGH: '#F0883E',
+  MEDIUM: '#D29922',
+  LOW: '#3FB949',
+  INFO: '#8B949E',
+};

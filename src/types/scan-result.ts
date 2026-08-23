@@ -1,66 +1,9 @@
 import { Severity } from './severity.js';
 
-export type FindingId =
-  | 'no-malicious-package'
-  | 'malicious-package'
-  | 'no-typosquatting'
-  | 'typosquatting-package'
-  | 'outdated-package'
-  | 'unmaintained-package'
-  | 'known-vulnerability-critical'
-  | 'known-vulnerability-high'
-  | 'prompt-injection-pattern'
-  | 'unicode-injection'
-  | 'tool-name-shadow'
-  | 'schema-bypass-risk'
-  | 'exposed-secret'
-  | 'missing-referenced-env-var'
-  | 'duplicate-server'
-  | 'supply-chain-low-trust'
-  | 'supply-chain-rug-pull'
-  | 'hidden-instruction-risk'
-  | 'capability-escalation-risk'
-  | 'tool-exfiltration-risk'
-  | 'env-var-scope-leak'
-  | 'high-entropy-value'
-  | 'license-risk'
-  | 'exfiltration-vector'
-  | 'blocked-package-policy'
-  | 'env-var-prefix-risk'
-  | 'server-mutation'
-  | 'upgrade-available'
-  | 'data-exfiltration-risk'
-  | 'credential-relay-risk'
-  | 'cross-server-flow'
-  | 'temp-storage-risk'
-  | 'network-egress-suspicious'
-  | 'network-egress-non-standard-port'
-  | 'network-egress-obfuscated'
-  | 'network-egress-raw-ip'
-  | 'network-egress-telemetry'
-  | 'network-egress-api'
-  | 'network-egress-cdn'
-  | 'network-egress-unknown'
-  | 'network-egress-data-in-url'
-  | 'network-egress-bypass-attempt'
-  | 'data-controls-pii'
-  | 'data-controls-consent-gap'
-  | 'data-controls-retention-gap'
-  | 'data-controls-deletion-gap'
-  | 'data-controls-encryption-gap'
-  | 'data-controls-prompt-logging'
-  | 'data-controls-sharing'
-  | 'data-controls-old-temp-files'
-  | 'data-controls-minimization-risk'
-  | 'data-controls-stale-temp-files'
-  | 'known-vulnerability-medium'
-  | 'known-vulnerability-low'
-  | 'insecure-transport'
-  | 'http-transport-no-auth'
-  | 'outdated-transport'
-  | 'stale-server';
-
-export const FINDING_IDS: FindingId[] = [
+// Single source of truth for finding identities. The FindingId union is
+// derived from this list, so adding a new scanner finding means adding it
+// here exactly once.
+export const FINDING_IDS = [
   'no-malicious-package',
   'malicious-package',
   'no-typosquatting',
@@ -109,16 +52,20 @@ export const FINDING_IDS: FindingId[] = [
   'data-controls-deletion-gap',
   'data-controls-encryption-gap',
   'data-controls-prompt-logging',
+  'env-secret-exposed',
   'data-controls-sharing',
   'data-controls-old-temp-files',
   'data-controls-minimization-risk',
   'data-controls-stale-temp-files',
   'known-vulnerability-medium',
+  'known-vulnerability-low',
   'insecure-transport',
   'http-transport-no-auth',
   'outdated-transport',
   'stale-server',
-];
+] as const;
+
+export type FindingId = typeof FINDING_IDS[number];
 
 export interface Finding {
   id: string;
@@ -127,6 +74,21 @@ export interface Finding {
   fixRecommendation?: string;
   fixable?: boolean;
   remediationConfidence?: number; // 1-100
+}
+
+/**
+ * Single contract for package metadata gathered by scanners. Both the
+ * supply-chain scanner's result and ServerScanResult.metadata use this,
+ * so peer scanners never borrow each other's types.
+ */
+export interface PackageMetadata {
+  packageName?: string;
+  version?: string;
+  license?: string;
+  repositoryUrl?: string;
+  author?: string;
+  integrity?: string;
+  source?: 'npm' | 'local' | 'unknown';
 }
 
 export interface ServerScanResult {
@@ -144,15 +106,7 @@ export interface ServerScanResult {
     type?: string;
     env?: string[]; // Sorted keys for fingerprinting
   };
-  metadata?: {
-    packageName?: string;
-    version?: string;
-    license?: string;
-    repositoryUrl?: string;
-    author?: string;
-    integrity?: string;
-    source?: 'npm' | 'local' | 'unknown';
-  };
+  metadata?: PackageMetadata;
 }
 
 export interface ScanReport {
