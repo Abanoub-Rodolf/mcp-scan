@@ -6,6 +6,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-08-23
+
+### Fixed
+- `ci --max-severity` now fails on LOW and INFO findings as documented;
+  previously the flag silently ignored both severities.
+- CLI severity colors: HIGH was rendered in critical red and MEDIUM in
+  high orange. All surfaces (CLI, HTML, dashboard, spinner) now share one
+  palette.
+- An INFO-only scan printed "All clear" in the terminal while HTML and
+  Slack reported "N findings detected". The all-clear check now counts
+  every severity everywhere.
+- Slack webhook: a rejected fetch leaked the 10s abort timer; transport
+  is now unified with an always-cleared timeout helper.
+- `mcp-scan fix`: url-based `http-transport-no-auth` and `insecure-transport`
+  servers were detected but never remediated; both are fixed now. Servers
+  carrying an insecure scheme in args AND url get both rewritten.
+- LOW findings render green (the shared palette) in HTML and terminal
+  badges instead of gray; the terminal summary row keeps its dim styling.
+- Library note: `ScanOptions.fix` was removed from the public type. The
+  interactive fix flow is CLI-only (`mcp-scan fix` / `--fix`); passing it
+  to `runScan` had become a silent no-op, which is now a visible compile
+  error for TypeScript consumers.
+- With `MCP_SCAN_HOME` set, custom rules now load from that home; a
+  warning points at legacy rules left in `~/.mcp-scan/rules`.
+- SBOM: CycloneDX component purls are built by one function so
+  vulnerability `affects[].ref` joins cannot silently break; corrected a
+  wrong repository URL.
+- Two type errors that made plain `tsc --noEmit` fail (invisible to tsup
+  builds) are fixed.
+
+### Changed
+- Finding ids live in one list: the `FindingId` union is derived from it,
+  replacing a hand-maintained duplicate that had already drifted.
+- Severity tallying is shared by scan/report/audit/submit instead of five
+  divergent inline chains (scan also tallied twice per run).
+- fetch timeout handling unified across package scanner, doctor, submit,
+  and webhooks; offline CVE snapshot read through one loader that warns on
+  parse failures instead of failing silently.
+- Custom rules directory honors `MCP_SCAN_HOME` at call time (previously
+  frozen to the real home dir at module load); rule file read failures are
+  no longer misreported as parse failures.
+- Tool config paths generated from one declarative table (adding a tool is
+  one entry); proven byte-equivalent across 24 platform/home/env combos.
+- Compliance command computes one assessment consumed by console, CSV,
+  JSON, and Markdown renderers; outputs verified byte-identical.
+- Config parsing boundary typed honestly (`RawMcpServerEntry`), removing
+  `as any` casts in parser and fix paths.
+
+### Added
+- 26 new tests: real abort-path coverage for OSV.dev timeouts (the old test
+  slept 4 real seconds without testing the timeout), unit coverage for the
+  Levenshtein typosquatting math, scan-text surface builder, CI threshold
+  matrix, and auto-fix strategies.
+
+### Security
+- No detection patterns or thresholds changed; every scanner emits exactly
+  as before (verified by the full suite plus golden output diffs).
+
 ## [2.0.4] - 2026-08-15
 
 ### Added
