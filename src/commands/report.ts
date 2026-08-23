@@ -7,6 +7,7 @@ import fs from 'fs';
 import { printJsonReport } from '../utils/json-reporter.js';
 import { printReport } from '../utils/reporter.js';
 import { generateHtmlReport } from '../utils/html-reporter.js';
+import { recalcSeverityCounts } from '../utils/severity-tally.js';
 
 /**
  * Scans all config files in a directory and aggregates them into one report.
@@ -62,16 +63,11 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
         
         for (const result of report.results) {
             const key = `${result.serverName}:${JSON.stringify(result.findings)}`;
-            if (!seenServers.has(key)) {
-                seenServers.add(key);
-                aggregatedReport.results.push(result);
-                aggregatedReport.criticalCount += result.findings.filter(f => f.severity === 'CRITICAL').length;
-                aggregatedReport.highCount += result.findings.filter(f => f.severity === 'HIGH').length;
-                aggregatedReport.mediumCount += result.findings.filter(f => f.severity === 'MEDIUM').length;
-                aggregatedReport.lowCount += result.findings.filter(f => f.severity === 'LOW').length;
-                aggregatedReport.infoCount += result.findings.filter(f => f.severity === 'INFO').length;
-                aggregatedReport.totalScanned++;
-            }
+        if (!seenServers.has(key)) {
+            seenServers.add(key);
+            aggregatedReport.results.push(result);
+            aggregatedReport.totalScanned++;
+        }
         }
     } catch (err) {
       // Silently swallowed per-file failures made configs vanish from the
@@ -80,6 +76,7 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
     }
   }
 
+  recalcSeverityCounts(aggregatedReport);
   aggregatedReport.totalDurationMs = Date.now() - startTime;
 
   if (options.json) {

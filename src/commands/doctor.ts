@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import fs from 'fs';
 import os from 'os';
 import { spawnSync } from 'child_process';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 
 /**
  * Runs a system diagnostic check.
@@ -76,17 +77,9 @@ export async function runDoctor() {
   let githubOk = false;
   let githubDetail = '';
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    let res;
-    try {
-      res = await fetch('https://api.github.com/zen', {
-        headers: { 'User-Agent': 'mcp-scan-doctor' },
-        signal: controller.signal
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const res = await fetchWithTimeout('https://api.github.com/zen', {
+      headers: { 'User-Agent': 'mcp-scan-doctor' }
+    }, 10000);
     if (res.ok) {
         githubOk = true;
         const rateLimit = res.headers.get('x-ratelimit-remaining');
@@ -103,18 +96,12 @@ export async function runDoctor() {
   let updateOk = false;
   let updateDetail = '';
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    try {
-      const res = await fetch('https://registry.npmjs.org/mcp-scan/latest', { signal: controller.signal });
-      if (res.ok) {
-          const data = await res.json() as { version: string };
-          const latest = data.version;
-          updateOk = true;
-          updateDetail = `Latest version available on npm: ${latest}`;
-      }
-    } finally {
-      clearTimeout(timeoutId);
+    const res = await fetchWithTimeout('https://registry.npmjs.org/mcp-scan/latest', {}, 10000);
+    if (res.ok) {
+        const data = await res.json() as { version: string };
+        const latest = data.version;
+        updateOk = true;
+        updateDetail = `Latest version available on npm: ${latest}`;
     }
   } catch (_e) {}
   check('Update check (npm)', updateOk, updateDetail);

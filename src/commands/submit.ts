@@ -1,5 +1,7 @@
 import { ScanReport, ServerScanResult } from '../types/scan-result.js';
 import { logger } from '../utils/logger.js';
+import { countBySeverity } from '../utils/severity-tally.js';
+import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 import chalk from 'chalk';
 
 const brand = chalk.hex('#339DFF');
@@ -108,13 +110,9 @@ function buildListingPayload(result: ServerScanResult, reportVersion: string = '
     scan_report: {
       scanned_at: new Date().toISOString(),
       findings_count: result.findings.length,
-      severity_breakdown: {
-        critical: result.findings.filter(f => f.severity === 'CRITICAL').length,
-        high: result.findings.filter(f => f.severity === 'HIGH').length,
-        medium: result.findings.filter(f => f.severity === 'MEDIUM').length,
-        low: result.findings.filter(f => f.severity === 'LOW').length,
-        info: result.findings.filter(f => f.severity === 'INFO').length,
-      }
+      severity_breakdown: Object.fromEntries(
+        Object.entries(countBySeverity(result.findings)).map(([k, v]) => [k.toLowerCase(), v])
+      )
     }
   };
 }
@@ -184,22 +182,14 @@ export async function submitToUgig(
     if (i > 0) await sleep(300);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      let response: Response;
-      try {
-        response = await fetch(UGIG_API, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': options.apiKey,
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
+      const response = await fetchWithTimeout(UGIG_API, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': options.apiKey,
+        },
+        body: JSON.stringify(payload),
+      }, 10000);
 
       if (response.ok) {
         const data = await response.json() as { slug?: string };

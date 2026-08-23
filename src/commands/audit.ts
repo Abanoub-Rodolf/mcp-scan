@@ -10,6 +10,8 @@ import { readAuditLog } from '../utils/audit-logger.js';
 import Table from 'cli-table3';
 import chalk from 'chalk';
 import { logger } from '../utils/logger.js';
+import { recalcSeverityCounts } from '../utils/severity-tally.js';
+import { EXIT_FINDINGS } from '../utils/exit-codes.js';
 
 export async function runAudit(serverName?: string) {
   if (!serverName) {
@@ -59,10 +61,7 @@ export async function runAudit(serverName?: string) {
   const deepFindings = await scanPackageDeep(targetServer, serverResult.findings.some(f => f.description.includes('offline')));
   
   serverResult.findings.push(...deepFindings);
-  for (const f of deepFindings) {
-    if (f.severity === 'CRITICAL') baseReport.criticalCount++;
-    else if (f.severity === 'HIGH') baseReport.highCount++;
-  }
+  recalcSeverityCounts(baseReport);
 
   spinner.succeed(`Audit complete for '${serverName}'`);
 
@@ -73,7 +72,7 @@ export async function runAudit(serverName?: string) {
   });
 
   if (baseReport.criticalCount > 0 || baseReport.highCount > 0) {
-    process.exitCode = 1;
+    process.exitCode = EXIT_FINDINGS;
   }
 }
 
