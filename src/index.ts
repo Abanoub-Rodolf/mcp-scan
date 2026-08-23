@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { runScan } from './commands/scan.js';
 import { runAudit } from './commands/audit.js';
 import { runFix } from './commands/fix.js';
+import { EXIT_FINDINGS } from './utils/exit-codes.js';
 import { runWatch } from './commands/watch.js';
 import { runLs } from './commands/ls.js';
 import { runInit } from './commands/init.js';
@@ -44,7 +45,7 @@ program
   .option('--sarif <path>', 'Output report in SARIF format for GitHub Security Scanning')
   .option('--policy <path>', 'Use custom security policy from YAML file')
   .option('--html <path>', 'Output report in self-contained HTML format')
-  .option('--sbom <path>', 'Output Software Bill of Materials (SBOM) in CycloneDX format')
+  .option('--sbom <path>', 'Output SBOM in CycloneDX format (use the sbom command for SPDX or --include-findings)')
   .option('--webhook <url>', 'POST scan results to a webhook URL')
   .option('--slack-webhook <url>', 'POST scan results to a Slack webhook URL')
   .option('--offline', 'Skip all external network calls and use bundled CVE snapshot')
@@ -68,6 +69,10 @@ Examples:
       chalk.level = 0; // Disable chalk colors in CI mode
     }
     const report = await runScan({ ...options, version: pkg.version, ci: options.ci });
+
+    if (options.fix) {
+      await runFix();
+    }
 
     if (options.html) {
       const { generateHtmlReport } = await import('./utils/html-reporter.js');
@@ -104,7 +109,7 @@ Examples:
     if (options.ci && (report.criticalCount > 0 || report.highCount > 0)) {
       // Strict exit codes are a CI contract; a plain interactive scan
       // reports findings without failing the shell.
-      process.exitCode = 1;
+      process.exitCode = EXIT_FINDINGS;
     }
     if (options.submit) {
       const apiKey = options.ugigKey || process.env.UGIG_API_KEY;

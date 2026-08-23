@@ -28,8 +28,8 @@ import { createSpinner } from '../utils/spinner.js';
 import { printJsonReport } from '../utils/json-reporter.js';
 import { printReport } from '../utils/reporter.js';
 import { logScan, checkFingerprints } from '../utils/audit-logger.js';
+import { recalcSeverityCounts } from '../utils/severity-tally.js';
 import { loadCustomRules, evaluateCustomRules } from '../utils/rule-engine.js';
-import { runFix } from './fix.js';
 import { SEVERITY_ORDER, Severity } from '../types/severity.js';
 import { logger } from '../utils/logger.js';
 
@@ -292,21 +292,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   }
 
   // 19. Recalculate summary counts after policy application
-  report.criticalCount = 0;
-  report.highCount = 0;
-  report.mediumCount = 0;
-  report.lowCount = 0;
-  report.infoCount = 0;
-
-  for (const result of report.results) {
-    for (const finding of result.findings) {
-      if (finding.severity === 'CRITICAL') report.criticalCount++;
-      else if (finding.severity === 'HIGH') report.highCount++;
-      else if (finding.severity === 'MEDIUM') report.mediumCount++;
-      else if (finding.severity === 'LOW') report.lowCount++;
-      else if (finding.severity === 'INFO') report.infoCount++;
-    }
-  }
+  recalcSeverityCounts(report);
 
   report.totalDurationMs = Date.now() - startTime;
   
@@ -323,10 +309,6 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   }
   
   logScan(report);
-  
-  if (options.fix) {
-    await runFix();
-  }
 
   if (options.sarif) {
     writeSarifReport(report, options.sarif);

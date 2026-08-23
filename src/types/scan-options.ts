@@ -8,7 +8,6 @@ export interface ScanOptions {
   json?: boolean;
   verbose?: boolean;
   severity?: string;
-  fix?: boolean;
   config?: string;
   version?: string;
   ugig?: boolean;
