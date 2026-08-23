@@ -1,9 +1,10 @@
 import chalk from 'chalk';
+import { BRAND_COLOR, SEVERITY_COLORS } from '../types/severity.js';
 
-const brandColor = chalk.hex('#339DFF');
-const criticalColor = chalk.hex('#F85149').bold;
-const highColor = chalk.hex('#F85149');
-const mediumColor = chalk.hex('#F0883E').bold;
+const brandColor = chalk.hex(BRAND_COLOR);
+const criticalColor = chalk.hex(SEVERITY_COLORS.CRITICAL).bold;
+const highColor = chalk.hex(SEVERITY_COLORS.HIGH);
+const mediumColor = chalk.hex(SEVERITY_COLORS.MEDIUM).bold;
 const lowColor = chalk.dim;
 const passColor = chalk.hex('#3FB950');
 const dimColor = chalk.dim;

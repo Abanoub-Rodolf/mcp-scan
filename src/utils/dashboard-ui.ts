@@ -3,6 +3,8 @@ import contrib from 'blessed-contrib';
 import { DashboardView } from '../types/dashboard.js';
 import { readAuditLog } from './audit-logger.js';
 
+import { BRAND_COLOR } from '../types/severity.js';
+
 export function createDashboard() {
   const screen = blessed.screen({
     smartCSR: true,
@@ -16,7 +18,7 @@ export function createDashboard() {
 
   // Header
   grid.set(0, 0, 1, 12, blessed.box, {
-    content: '{center}{bold}{#339DFF-fg}MCP SCAN ENTERPRISE DASHBOARD{/|}{/center}',
+    content: `{center}{bold}{#${BRAND_COLOR}-fg}MCP SCAN ENTERPRISE DASHBOARD{/|}{/center}`,
     tags: true,
     style: { fg: 'white', bg: 'black' }
   });
@@ -47,7 +49,7 @@ export function createDashboard() {
     keys: true,
     fg: 'white',
     selectedFg: 'white',
-    selectedBg: '#339DFF',
+    selectedBg: BRAND_COLOR,
     interactive: true,
     label: ' Recent Scans (Use UP/DOWN to scroll) ',
     width: '100%',
@@ -61,7 +63,7 @@ export function createDashboard() {
     fg: 'green',
     selectedFg: 'green',
     label: ' Proxy Traffic (JSON-RPC) ',
-    border: { type: "line", fg: "#339DFF" }
+    border: { type: "line", fg: BRAND_COLOR }
   });
 
   const proxyStats = grid.set(1, 8, 10, 4, blessed.box, {
@@ -74,24 +76,33 @@ export function createDashboard() {
   proxyLog.hide();
   proxyStats.hide();
 
+  function aggregateHistory(entries: Array<{ scannedCount: number; findings: { critical: number; high: number; medium: number; low: number } }>) {
+    const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
+    let totalScanned = 0;
+    for (const e of entries) {
+      totalScanned += e.scannedCount;
+      bySeverity.critical += e.findings.critical;
+      bySeverity.high += e.findings.high;
+      bySeverity.medium += e.findings.medium;
+      bySeverity.low += e.findings.low;
+    }
+    // Guard against divide-by-zero when the log is empty or all-clean.
+    const total = bySeverity.critical + bySeverity.high + bySeverity.medium + bySeverity.low || 1;
+    return { totalScanned, bySeverity, total };
+  }
+
   function updateHistoryView() {
     if (currentView !== 'HISTORY') return;
-    
-    const entries = readAuditLog(20);
-    const totalScanned = entries.reduce((acc, e) => acc + e.scannedCount, 0);
-    historyStatsBox.setContent(`\n {bold}Total Scans in Log:{/bold} ${entries.length}\n {bold}Servers Analyzed:{/bold} ${totalScanned}\n {bold}Latest Scan:{/bold} ${entries[0] ? new Date(entries[0].timestamp).toLocaleTimeString() : 'N/A'}`);
 
-    let c = 0, h = 0, m = 0, l = 0;
-    entries.forEach(e => {
-        c += e.findings.critical; h += e.findings.high; m += e.findings.medium; l += e.findings.low;
-    });
-    const total = c + h + m + l || 1;
-    
+    const entries = readAuditLog(20);
+    const history = aggregateHistory(entries);
+    historyStatsBox.setContent(`\n {bold}Total Scans in Log:{/bold} ${entries.length}\n {bold}Servers Analyzed:{/bold} ${history.totalScanned}\n {bold}Latest Scan:{/bold} ${entries[0] ? new Date(entries[0].timestamp).toLocaleTimeString() : 'N/A'}`);
+
     historyDonut.setData([
-      { percent: Math.round((c/total)*100), label: 'CRITICAL', color: 'red' },
-      { percent: Math.round((h/total)*100), label: 'HIGH', color: 'yellow' },
-      { percent: Math.round((m/total)*100), label: 'MEDIUM', color: 'cyan' },
-      { percent: Math.round((l/total)*100), label: 'LOW', color: 'green' }
+      { percent: Math.round((history.bySeverity.critical/history.total)*100), label: 'CRITICAL', color: 'red' },
+      { percent: Math.round((history.bySeverity.high/history.total)*100), label: 'HIGH', color: 'yellow' },
+      { percent: Math.round((history.bySeverity.medium/history.total)*100), label: 'MEDIUM', color: 'cyan' },
+      { percent: Math.round((history.bySeverity.low/history.total)*100), label: 'LOW', color: 'green' }
     ]);
 
     const tableData = entries.map(e => [

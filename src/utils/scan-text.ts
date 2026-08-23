@@ -11,7 +11,7 @@ import { ResolvedServer } from '../types/config.js';
  * of these surfaces, not just `server.description`.
  */
 export function buildScanText(server: ResolvedServer): string {
-  const parts: string[] = [server.name, server.description];
+  const parts: string[] = [server.name, server.description ?? ''];
 
   const args = server.args
     ? (Array.isArray(server.args) ? server.args : Object.values(server.args))

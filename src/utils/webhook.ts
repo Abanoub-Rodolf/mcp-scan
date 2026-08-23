@@ -1,5 +1,14 @@
 import { ScanReport } from '../types/scan-result.js';
 import { logger } from './logger.js';
+import { fetchWithTimeout } from './fetch-with-timeout.js';
+
+async function postJson(url: string, body: unknown): Promise<Response> {
+  return fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }, 10000);
+}
 
 /**
  * Sends a summary of the scan report to a Microsoft Teams incoming webhook.
@@ -30,23 +39,12 @@ export async function sendTeamsWebhook(url: string, report: ScanReport) {
       ]
     };
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
+    const response = await postJson(url, payload);
 
-      if (!response.ok) {
-        logger.error(`Teams Webhook: Failed to send to ${url}. Status: ${response.status} ${response.statusText}`);
-      } else {
-        logger.pass(`Teams Webhook: notification sent.`);
-      }
-    } finally {
-      clearTimeout(timeoutId);
+    if (!response.ok) {
+      logger.error(`Teams Webhook: Failed to send to ${url}. Status: ${response.status} ${response.statusText}`);
+    } else {
+      logger.pass(`Teams Webhook: notification sent.`);
     }
   } catch (error) {
     logger.error(`Teams Webhook: Error sending to ${url}: ${error instanceof Error ? error.message : String(error)}`);
@@ -59,15 +57,8 @@ export async function sendTeamsWebhook(url: string, report: ScanReport) {
  * @param report The scan report.
  */
 export async function sendWebhook(url: string, report: ScanReport) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(report),
-      signal: controller.signal
-    });
+    const response = await postJson(url, report);
 
     if (!response.ok) {
       logger.error(`Webhook: Failed to send report to ${url}. Status: ${response.status} ${response.statusText}`);
@@ -76,8 +67,6 @@ export async function sendWebhook(url: string, report: ScanReport) {
     }
   } catch (error) {
     logger.error(`Webhook: Error sending report to ${url}: ${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
@@ -148,15 +137,7 @@ export async function sendSlackWebhook(url: string, report: ScanReport) {
       ]
     };
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
+    const response = await postJson(url, payload);
 
     if (!response.ok) {
       logger.error(`Slack Webhook: Failed to send to ${url}. Status: ${response.status} ${response.statusText}`);

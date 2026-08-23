@@ -1,4 +1,5 @@
 import { ScanReport } from '../types/scan-result.js';
+import { BRAND_COLOR, SEVERITY_COLORS } from '../types/severity.js';
 
 /**
  * HTML-escapes a value so server-controlled strings (tool descriptions,
@@ -18,57 +19,17 @@ export function escapeHtml(value: unknown): string {
  * @param report The scan report to generate the HTML for.
  * @returns The HTML report as a string.
  */
-export function generateHtmlReport(report: ScanReport): string {
-  const brandBlue = '#339DFF';
-  const criticalColor = '#F85149';
-  const highColor = '#F0883E';
-  const mediumColor = '#D29922';
-  const lowColor = '#8B949E';
-  const passColor = '#3FB950';
+// Static stylesheet, hoisted out of the template so restyles never
+// touch the dynamic/escaping logic below.
+// Severity palette shared by the stylesheet and the dynamic markup.
+const brandBlue = BRAND_COLOR;
+const criticalColor = SEVERITY_COLORS.CRITICAL;
+const highColor = SEVERITY_COLORS.HIGH;
+const mediumColor = SEVERITY_COLORS.MEDIUM;
+const lowColor = SEVERITY_COLORS.LOW;
+const passColor = '#3FB950';
 
-  const version = escapeHtml(report.version || 'unknown');
-  const timestamp = escapeHtml(new Date().toLocaleString());
-
-  const totalFindings = report.criticalCount + report.highCount + report.mediumCount + report.lowCount + report.infoCount;
-  const isAllClear = totalFindings === 0;
-
-  const resultsHtml = report.results.length === 0 
-    ? `<div class="empty-state">No MCP servers detected to scan.</div>`
-    : report.results.map(result => {
-        const findingsHtml = result.findings.length === 0
-          ? `<div class="server-clean">✓ No issues found</div>`
-          : result.findings.map(finding => `
-            <div class="finding severity-${escapeHtml(finding.severity.toLowerCase())}">
-              <div class="finding-header">
-                <span class="badge badge-${escapeHtml(finding.severity.toLowerCase())}">${escapeHtml(finding.severity)}</span>
-                <span class="finding-id">${escapeHtml(finding.id)}</span>
-              </div>
-              <div class="finding-description">${escapeHtml(finding.description)}</div>
-              ${finding.fixRecommendation ? `<div class="finding-fix">↳ ${escapeHtml(finding.fixRecommendation)}</div>` : ''}
-            </div>
-          `).join('');
-
-        return `
-          <div class="server-card">
-            <div class="server-header">
-              <div class="server-name">${escapeHtml(result.toolName)} › ${escapeHtml(result.serverName)}</div>
-              <div class="server-path">${escapeHtml(result.configPath)}</div>
-            </div>
-            <div class="server-findings">
-              ${findingsHtml}
-            </div>
-          </div>
-        `;
-      }).join('');
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>mcp-scan Security Report</title>
-    <style>
+const STYLES = `
         :root {
             --bg: #0d1117;
             --card-bg: #161b22;
@@ -287,6 +248,53 @@ export function generateHtmlReport(report: ScanReport): string {
             border: 1px solid var(--critical);
             color: var(--critical);
         }
+`;
+
+export function generateHtmlReport(report: ScanReport): string {
+  const version = escapeHtml(report.version || 'unknown');
+  const timestamp = escapeHtml(new Date().toLocaleString());
+
+  const totalFindings = report.criticalCount + report.highCount + report.mediumCount + report.lowCount + report.infoCount;
+  const isAllClear = totalFindings === 0;
+
+  const resultsHtml = report.results.length === 0 
+    ? `<div class="empty-state">No MCP servers detected to scan.</div>`
+    : report.results.map(result => {
+        const findingsHtml = result.findings.length === 0
+          ? `<div class="server-clean">✓ No issues found</div>`
+          : result.findings.map(finding => `
+            <div class="finding severity-${escapeHtml(finding.severity.toLowerCase())}">
+              <div class="finding-header">
+                <span class="badge badge-${escapeHtml(finding.severity.toLowerCase())}">${escapeHtml(finding.severity)}</span>
+                <span class="finding-id">${escapeHtml(finding.id)}</span>
+              </div>
+              <div class="finding-description">${escapeHtml(finding.description)}</div>
+              ${finding.fixRecommendation ? `<div class="finding-fix">↳ ${escapeHtml(finding.fixRecommendation)}</div>` : ''}
+            </div>
+          `).join('');
+
+        return `
+          <div class="server-card">
+            <div class="server-header">
+              <div class="server-name">${escapeHtml(result.toolName)} › ${escapeHtml(result.serverName)}</div>
+              <div class="server-path">${escapeHtml(result.configPath)}</div>
+            </div>
+            <div class="server-findings">
+              ${findingsHtml}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>mcp-scan Security Report</title>
+    <style>
+    ${STYLES}
     </style>
 </head>
 <body>

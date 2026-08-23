@@ -37,18 +37,24 @@ interface CycloneDXBom {
 export async function generateSbom(report: ScanReport, options: { includeFindings?: boolean } = {}): Promise<CycloneDXBom> {
   const version = report.version || '2.0.0';
   const timestamp = new Date().toISOString();
-  
+
+  // Vulnerability references resolve via affects[].ref matching bomRef, so
+  // every purl must come from this one builder or SBOM consumers silently
+  // lose the join.
+  const toPurl = (name: string, pkgVersion: string): string =>
+    `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(pkgVersion)}`;
+
   const components = report.results.map(result => {
     const meta = result.metadata;
     const name = meta?.packageName || result.serverName;
     const componentVersion = meta?.version || '0.0.0';
-    
+
     const component: CycloneDXComponent = {
       type: 'application',
       name: name,
       version: componentVersion,
-      bomRef: `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(componentVersion)}`,
-      purl: `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(componentVersion)}`,
+      bomRef: toPurl(name, componentVersion),
+      purl: toPurl(name, componentVersion),
       description: `MCP Server: ${result.serverName} (detected in ${result.toolName})`,
     };
 
@@ -72,11 +78,11 @@ export async function generateSbom(report: ScanReport, options: { includeFinding
   const vulnerabilities: CycloneDXVulnerability[] = [];
   if (options.includeFindings) {
       for (const result of report.results) {
-          const componentRef = `pkg:npm/${result.metadata?.packageName || result.serverName}@${result.metadata?.version || '0.0.0'}`;
+          const componentRef = toPurl(result.metadata?.packageName || result.serverName, result.metadata?.version || '0.0.0');
           for (const finding of result.findings) {
               vulnerabilities.push({
                   id: finding.id,
-                  source: { name: 'mcp-scan', url: 'https://github.com/rodolfboctor/mcp-scan' },
+                  source: { name: 'mcp-scan', url: 'https://github.com/Abanoub-Rodolf/mcp-scan' },
                   description: finding.description,
                   recommendation: finding.fixRecommendation,
                   ratings: [{

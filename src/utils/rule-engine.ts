@@ -5,36 +5,53 @@ import { CustomRule } from '../types/rules.js';
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { logger } from './logger.js';
+import { auditDir } from './audit-logger.js';
 
-const RULES_DIR = path.join(os.homedir(), '.mcp-scan', 'rules');
+function rulesDir(): string {
+  return path.join(auditDir(), 'rules');
+}
+
+/**
+ * Reads one rule file. Returns null when the file cannot be read or does
+ * not contain valid JSON; the two failure modes get distinct messages so
+ * a permissions problem is not misread as bad JSON.
+ */
+function readRuleFile(fullPath: string): CustomRule[] | null {
+  let content: string;
+  try {
+    content = fs.readFileSync(fullPath, 'utf8');
+  } catch (e: any) {
+    logger.warn(`Failed to read rule file ${fullPath}: ${e.message}`);
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch (e: any) {
+    logger.warn(`Failed to parse rule file ${fullPath}: ${e.message}`);
+    return null;
+  }
+}
 
 export function loadCustomRules(): CustomRule[] {
   const rules: CustomRule[] = [];
-  try {
-    if (!fs.existsSync(RULES_DIR)) return rules;
-
-    const files = fs.readdirSync(RULES_DIR);
-    for (const file of files) {
-      if (file.endsWith('.json')) {
-        try {
-          const fullPath = path.join(RULES_DIR, file);
-          const content = fs.readFileSync(fullPath, 'utf8');
-          try {
-            const parsed = JSON.parse(content);
-            if (Array.isArray(parsed)) {
-              rules.push(...parsed);
-            } else {
-              rules.push(parsed);
-            }
-          } catch (e: any) {
-            logger.warn(`Failed to parse rule file ${fullPath}: ${e.message}`);
-          }
-        } catch (e: any) {
-          logger.warn(`Failed to parse custom rule file ${file}: ${e.message}`);
-        }
-      }
+  const dir = rulesDir();
+  if (!fs.existsSync(dir)) {
+    // One-time migration hint: MCP_SCAN_HOME users whose rules loaded
+    // from ~/.mcp-scan/rules before the home override existed.
+    const legacy = path.join(os.homedir(), '.mcp-scan', 'rules');
+    if (process.env.MCP_SCAN_HOME && fs.existsSync(legacy)) {
+      logger.warn(`Custom rules not found in ${dir}, but ${legacy} exists. Move them there to keep loading them.`);
     }
-  } catch (_error) {}
+    return rules;
+  }
+
+  for (const file of fs.readdirSync(dir)) {
+    if (!file.endsWith('.json')) continue;
+    const parsed = readRuleFile(path.join(dir, file));
+    if (parsed) rules.push(...parsed);
+  }
   return rules;
 }
 
@@ -44,7 +61,7 @@ export function evaluateCustomRules(server: ResolvedServer, rules: CustomRule[])
   for (const rule of rules) {
     try {
       const regex = new RegExp(rule.pattern, 'i');
-      
+
       let matchFound = false;
       let matchSource = '';
 

@@ -9,7 +9,7 @@ import { atomicWriteConfig } from '../config/writer.js';
 // from the real user home (the test suite sets it to a temp dir). Read at
 // call time: module-load evaluation would freeze the default in.
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
-function auditDir(): string {
+export function auditDir(): string {
   return process.env.MCP_SCAN_HOME || path.join(os.homedir(), '.mcp-scan');
 }
 
