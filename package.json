@@ -107,10 +107,10 @@
     "eslint": "^10.1.0",
     "execa": "^9.6.1",
     "globals": "^17.4.0",
-    "tsup": "^8.0.2",
+    "tsup": "^8.5.1",
     "typescript": "^5.4.5",
     "typescript-eslint": "^8.57.1",
-    "vitest": "^4.1.1",
+    "vitest": "^4.1.11",
     "vuln-vects": "^1.1.0"
   }
 }

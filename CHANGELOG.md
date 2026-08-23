@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security
+- Dependency audit: bumped undici (7 high advisories), uuid, and vite
+  (2 high advisories) past their patched versions; rebuilt the GitHub
+  Actions bundle with them inline.
+- Accepted residual risks, upstream-blocked: lodash high via
+  `blessed-contrib` (affects only the interactive dashboard TUI, no
+  patched upstream exists yet) and esbuild low (dev-only, Windows dev
+  server). Revisit when upstream releases land.
+
 ## [2.0.5] - 2026-08-23
 
 ### Fixed
