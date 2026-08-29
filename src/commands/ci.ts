@@ -3,6 +3,7 @@ import { printJsonReport } from '../utils/json-reporter.js';
 import { SEVERITY_ORDER, Severity } from '../types/severity.js';
 import { EXIT_OK, EXIT_FINDINGS } from '../utils/exit-codes.js';
 import fs from 'fs';
+import { proHint } from '../utils/pro-hint.js';
 
 export async function runCi(options: {
   maxSeverity?: string,
@@ -55,6 +56,8 @@ export async function runCi(options: {
   // Print summary to stderr so CI systems can capture it separately from JSON stdout
   const totalFindings = report.criticalCount + report.highCount + report.mediumCount + report.lowCount;
   process.stderr.write(`mcp-scan: ${totalFindings} finding(s), exit code ${exitCode}\n`);
+
+  if (shouldFail) proHint(process.stderr);
 
   process.exitCode = exitCode;
 }

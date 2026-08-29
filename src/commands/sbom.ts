@@ -1,6 +1,7 @@
 import { runScan } from './scan.js';
 import { generateSbom, generateSpdx } from '../utils/sbom-generator.js';
 import fs from 'fs';
+import { proHint } from '../utils/pro-hint.js';
 
 /**
  * Generates a Software Bill of Materials (SBOM) from mcp-scan results.
@@ -19,10 +20,12 @@ export async function runSbom(options: {
       const sbom = await generateSbom(report, { includeFindings: options.includeFindings });
       fs.writeFileSync(options.output, JSON.stringify(sbom, null, 2));
       console.log(`CycloneDX SBOM written to ${options.output} (${report.totalScanned} components)`);
+      proHint();
     } else if (options.format === 'spdx') {
       const spdxText = generateSpdx(report);
       fs.writeFileSync(options.output, spdxText);
       console.log(`SPDX SBOM written to ${options.output} (${report.totalScanned} components)`);
+      proHint();
     } else {
       console.error(`Error: Unsupported SBOM format '${options.format}'. Supported formats: cyclonedx, spdx`);
       process.exitCode = 1;

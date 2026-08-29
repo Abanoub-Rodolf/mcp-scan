@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.0.7] - 2026-08-29
+
+### Added
+- A one-line pointer to the hosted report option after high-intent commands
+  (`compliance`, `sbom`, `policy show`, and a failed `ci` gate, on stderr).
+  TTY-only, never in JSON or SARIF output, silenced permanently with
+  `MCP_SCAN_NO_HINTS=1`. The scanner itself stays free and unchanged.
+
 ## [2.0.6] - 2026-08-23
 
 ### Security

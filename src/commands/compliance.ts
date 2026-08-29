@@ -2,6 +2,7 @@ import { COMPLIANCE_FRAMEWORKS, getFramework } from '../data/compliance/index.js
 import { runScan } from './scan.js';
 import { Finding } from '../types/scan-result.js';
 import chalk from 'chalk';
+import { proHint } from '../utils/pro-hint.js';
 import fs from 'fs';
 
 type ComplianceControl = { id: string; description: string; findingIds: string[] };
@@ -147,5 +148,6 @@ export async function runCompliance(options: { framework: string, output?: strin
             fullOutput += renderConsole(a);
         }
         console.log(fullOutput);
+        proHint();
     }
 }

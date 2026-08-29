@@ -1,5 +1,6 @@
 import { validatePolicy, loadYamlPolicy } from '../policy/engine.js';
 import chalk from 'chalk';
+import { proHint } from '../utils/pro-hint.js';
 import fs from 'fs';
 
 export async function runPolicyAction(action: string, file: string = '.mcp-scan-policy.yml') {
@@ -51,6 +52,7 @@ rules:
             if (rule.match) console.log(chalk.dim(`  Match: ${JSON.stringify(rule.match)}`));
             console.log();
         }
+        proHint();
     } else if (action === 'list') {
         const policy = loadYamlPolicy(file);
         if (!policy) {
