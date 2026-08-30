@@ -1,4 +1,8 @@
-name: 'mcp-scan'
+# Marketplace name: the bare 'mcp-scan' slug 500s on publish, consistent with a
+# collision against a delisted listing of the same name (Invariant Labs' Action,
+# pre-Snyk-rename). Slugs of removed listings stay reserved; GitHub surfaces the
+# collision as a server error rather than a validation message.
+name: 'mcp-scan Action'
 description: 'Security scanner for MCP server configurations'
 author: 'ThynkQ'
 branding:
