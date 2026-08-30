@@ -31,9 +31,6 @@ describe('CI Command Integration', () => {
     }, 30000); // Increased timeout for execa
 
     it('should exit with code 0 when --ci finds no critical/high findings above the severity threshold', async () => {
-    // The valid fixture legitimately carries a HIGH license-risk finding
-    // for the sqlite package (no license on npm), so filter below
-    // CRITICAL to exercise the clean-exit path.
     const { stdout, exitCode } = await execa('node', [CLI_PATH, 'scan', '--ci', '--severity', 'critical', ...OFFLINE, '--config', VALID_FIXTURE], { stdin: 'ignore' });
 
     expect(exitCode).toBe(0);

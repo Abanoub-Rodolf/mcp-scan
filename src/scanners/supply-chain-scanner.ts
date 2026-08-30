@@ -71,6 +71,10 @@ export async function scanSupplyChain(server: ResolvedServer, offline: boolean =
     
     metadata.version = npmData['dist-tags']?.latest;
     metadata.license = npmData.license || npmData.licenses?.[0]?.type;
+    // A successful, parsed registry response is authoritative for license
+    // presence/absence, regardless of what happens next (no repo URL, dead
+    // GitHub link, etc. below still return this metadata).
+    metadata.licenseVerified = true;
     metadata.author = typeof npmData.author === 'object' ? npmData.author?.name : npmData.author;
     metadata.repositoryUrl = repoUrl || undefined;
 

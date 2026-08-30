@@ -77,12 +77,6 @@
           "description": "Package 'mcp-analytics-proo' is on the known malicious blocklist.",
           "fixRecommendation": "Remove this server immediately.",
           "fixable": false
-        },
-        {
-          "id": "license-risk",
-          "severity": "HIGH",
-          "description": "Package 'mcp-analytics-proo' has no license specified.",
-          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
         }
       ],
       "trustScore": 30,
@@ -111,12 +105,6 @@
           "remediationConfidence": 99
         },
         {
-          "id": "license-risk",
-          "severity": "HIGH",
-          "description": "Package 'stripe-server' has no license specified.",
-          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
-        },
-        {
           "id": "unverified-source",
           "severity": "HIGH",
           "description": "Server 'stripe-server' is an unscoped package from an unverified source (higher typosquatting risk).",
@@ -142,7 +130,7 @@
   ],
   "totalScanned": 4,
   "criticalCount": 3,
-  "highCount": 6,
+  "highCount": 4,
   "mediumCount": 0,
   "lowCount": 0,
   "infoCount": 0

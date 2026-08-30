@@ -12,12 +12,26 @@ export function scanLicense(metadata: PackageMetadata | undefined): Finding[] {
   const license = metadata.license?.toUpperCase();
 
   if (!license) {
-    findings.push({
-      id: 'license-risk',
-      severity: 'HIGH',
-      description: `Package '${metadata.packageName}' has no license specified.`,
-      fixRecommendation: 'Unlicensed software carries legal risk for commercial use. Verify the license manually.'
-    });
+    // An absent license field only means something if the lookup that
+    // produced it was authoritative. A failed/offline registry fallback
+    // (see supply-chain-scanner) also leaves license undefined for
+    // packages it simply has no data on - reporting that as "no license
+    // specified" is a false positive, not a real finding.
+    if (metadata.licenseVerified) {
+      findings.push({
+        id: 'license-risk',
+        severity: 'HIGH',
+        description: `Package '${metadata.packageName}' has no license specified.`,
+        fixRecommendation: 'Unlicensed software carries legal risk for commercial use. Verify the license manually.'
+      });
+    } else {
+      findings.push({
+        id: 'license-risk',
+        severity: 'INFO',
+        description: `License for package '${metadata.packageName}' could not be verified (registry lookup failed or ran offline).`,
+        fixRecommendation: 'Re-run online (without --offline) or check the package registry manually to confirm licensing before relying on this result.'
+      });
+    }
     return findings;
   }
 

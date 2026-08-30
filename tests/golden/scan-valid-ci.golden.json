@@ -20,14 +20,7 @@
     {
       "serverName": "sqlite",
       "toolName": "valid-config",
-      "findings": [
-        {
-          "id": "license-risk",
-          "severity": "HIGH",
-          "description": "Package '@modelcontextprotocol/server-sqlite' has no license specified.",
-          "fixRecommendation": "Unlicensed software carries legal risk for commercial use. Verify the license manually."
-        }
-      ],
+      "findings": [],
       "trustScore": 100,
       "connection": {
         "command": "npx",
@@ -45,7 +38,7 @@
   ],
   "totalScanned": 2,
   "criticalCount": 0,
-  "highCount": 1,
+  "highCount": 0,
   "mediumCount": 0,
   "lowCount": 0,
   "infoCount": 0

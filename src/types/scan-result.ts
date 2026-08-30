@@ -85,6 +85,11 @@ export interface PackageMetadata {
   packageName?: string;
   version?: string;
   license?: string;
+  // True only when license came from a live, authoritative registry lookup.
+  // The offline CVE snapshot is a small curated set (~70 packages); a miss
+  // there means "we don't know", not "no license" - license-scanner reads
+  // this to avoid reporting an absence of data as an absence of license.
+  licenseVerified?: boolean;
   repositoryUrl?: string;
   author?: string;
   integrity?: string;
