@@ -12,9 +12,12 @@ describe('Secret Scanner', () => {
   });
 
   it('should detect AWS keys', () => {
+    // Not AWS's documented EXAMPLE key (see the placeholder-suppression
+    // test below) - a structurally valid but non-canonical key so this
+    // stays a true-positive fixture.
     const findings = scanSecrets({
       name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
-      env: { KEY: 'AKIA' + 'IOSFODNN7EXAMPLE' }
+      env: { KEY: 'AKIA' + 'QWRTPZMNBVCXKLHG' }
     });
     expect(findings).toHaveLength(1);
   });
@@ -195,5 +198,88 @@ describe('Secret Scanner', () => {
       env: { SESSION_ID: '550e8400-e29b-41d4-a716-446655440000' }
     });
     expect(findings.some(f => f.id === 'high-entropy-value')).toBe(false);
+  });
+
+  describe('placeholder suppression (real corpus false positives, FP-REVIEW-2026-08-30)', () => {
+    it('should not flag AWS documentation example key as CRITICAL', () => {
+      // AKIAIOSFODNN7EXAMPLE is AWS's own published example access key,
+      // copy-pasted into docs and configs everywhere. Not a real credential.
+      const findings = scanSecrets({
+        name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+        env: { API_KEY: 'AKIA' + 'IOSFODNN7EXAMPLE' }
+      });
+      expect(findings.filter(f => f.severity === 'CRITICAL')).toHaveLength(0);
+    });
+
+    it('should not flag a fabricated ghp_test... token as CRITICAL', () => {
+      const findings = scanSecrets({
+        name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+        env: { GITHUB_TOKEN: 'ghp_' + 'test1234567890abcdef1234567890abcdef' }
+      });
+      expect(findings.filter(f => f.severity === 'CRITICAL')).toHaveLength(0);
+    });
+
+    it('should not flag localhost DB URL with a literal "changeme" password', () => {
+      const findings = scanSecrets({
+        name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+        env: { DB_URL: 'postgresql://leegen:changeme@localhost:5432/leegen' }
+      });
+      expect(findings.filter(f => f.severity === 'CRITICAL')).toHaveLength(0);
+    });
+
+    it('should not flag localhost DB URL with a literal "change_me" password', () => {
+      const findings = scanSecrets({
+        name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+        env: { DATABASE_URL: 'postgresql://ppi_user:change_me@localhost:5432/ppi' }
+      });
+      expect(findings.filter(f => f.severity === 'CRITICAL')).toHaveLength(0);
+    });
+
+    it('should not flag localhost DB URL with a short throwaway password', () => {
+      const findings = scanSecrets({
+        name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+        env: { DATABASE_URL: 'postgresql://mcp_user:mcp_pass@localhost:5432/weather_mcp' }
+      });
+      expect(findings.filter(f => f.severity === 'CRITICAL')).toHaveLength(0);
+    });
+
+    it('should not flag an unfilled DB URL template (user:password@host)', () => {
+      const findings = scanSecrets({
+        name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+        env: { POSTGRES_CONNECTION_STRING: 'postgresql://user:password@host:5432/database' }
+      });
+      expect(findings.filter(f => f.severity === 'CRITICAL')).toHaveLength(0);
+    });
+
+    it('should still flag a real-looking high-entropy Supabase token as CRITICAL', () => {
+      // Shape of the one confirmed true positive in the census (fitbox):
+      // sbp_ prefix isn't in SECRET_PATTERNS, so this exercises the
+      // structural regexes generally still firing on genuine secrets -
+      // using a Stripe-shaped key here as the representative real-secret case.
+      const findings = scanSecrets({
+        name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+        env: { STRIPE_SECRET_KEY: 'sk_live_' + '7fQm2xVzT9pL4kR8wYb3nJ6h' }
+      });
+      expect(findings.filter(f => f.severity === 'CRITICAL' && f.id === 'exposed-secret')).toHaveLength(1);
+    });
+
+    it('should still flag a real-looking DB URL credential on a non-dev host as CRITICAL', () => {
+      const findings = scanSecrets({
+        name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+        env: { DATABASE_URL: 'postgresql://svc_prod:kR8x2Qm9vTz4wYb3nJ6hLpF7@db.internal-prod-cluster.net:5432/app' }
+      });
+      expect(findings.filter(f => f.severity === 'CRITICAL' && f.id === 'exposed-secret')).toHaveLength(1);
+    });
+
+    it('should downgrade (not suppress) a real-looking secret found in a test fixture path', () => {
+      const findings = scanSecrets({
+        name: 'test', toolName: 't', configPath: 'tests/fixtures/mcp_configs/config.json', command: 'cmd',
+        env: { STRIPE_SECRET_KEY: 'sk_live_' + '7fQm2xVzT9pL4kR8wYb3nJ6h' }
+      });
+      const secretFindings = findings.filter(f => f.id === 'exposed-secret');
+      expect(secretFindings).toHaveLength(1);
+      expect(secretFindings[0].severity).toBe('HIGH');
+      expect(secretFindings[0].severity).not.toBe('CRITICAL');
+    });
   });
 });

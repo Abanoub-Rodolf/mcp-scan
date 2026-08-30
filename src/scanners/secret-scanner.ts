@@ -7,6 +7,72 @@ import { SECRET_PATTERNS } from '../data/secret-patterns.js';
 const MIN_ENTROPY_VALUE_LENGTH = 20;
 const MIN_ENTROPY_BITS_PER_CHAR = 4.5;
 
+// Substrings that mark a matched value as a placeholder/template/vendor-doc
+// example rather than a real credential. Checked case-insensitively against
+// the value that matched a SECRET_PATTERNS regex. Deliberately narrow
+// (e.g. 'test123' not bare 'test') so real fake-but-random test fixtures
+// used elsewhere in this repo's own test suite (sequential alphabets,
+// repeated letters) don't collide with it.
+const PLACEHOLDER_TOKENS = [
+  'changeme', 'change_me', 'change-me', 'changeit', 'changethis',
+  'your-api-key', 'your_api_key', 'yourapikey',
+  'placeholder', 'dummy', 'redacted', 'test123', 'example', 'foobar',
+  'insertkeyhere', 'replacewithkey',
+];
+
+// Exact-match placeholders for DB-URL username/password fields. Substring
+// matching is too loose here (real passwords legitimately contain
+// "password" as part of a longer random string), so this list requires the
+// whole credential field to equal one of these words.
+const WEAK_CREDENTIAL_WORDS = new Set([
+  'changeme', 'change_me', 'change-me', 'changeit', 'changethis',
+  'password', 'pass', 'admin', 'root', 'test', 'guest', 'secret',
+  '123456', 'letmein', 'qwerty', 'user', 'demo', 'sample', 'default',
+  'foo', 'bar', 'postgres', 'mysql',
+]);
+
+// Hosts that indicate a local/dev/template config rather than a reachable
+// live database. Combined with a weak credential field below, this is what
+// tells "postgres://user:changeme@localhost/db" apart from a real leaked
+// connection string.
+const DEV_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', 'host', 'hostname', 'db', 'database']);
+
+// Path fragments that suggest a config is a test fixture, template, or
+// documentation sample rather than a real deployed config. This LOWERS
+// confidence (severity is downgraded one notch) but never grants immunity —
+// a real credential committed under examples/ still fires CRITICAL.
+const FIXTURE_PATH_REGEX = /(^|[\\/])(tests?|fixtures?|examples?|docs)([\\/]|$)|\.(template|sample|example|disabled)(\.|$)/i;
+
+function isPlaceholderValue(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (PLACEHOLDER_TOKENS.some(token => lower.includes(token))) return true;
+  if (/x{4,}/i.test(text)) return true;
+  if (/<[a-z0-9_ -]{1,40}>/i.test(text)) return true;
+  return false;
+}
+
+/**
+ * Extracts user/password/host from a "scheme://user:pass@host" value, if
+ * present. Mirrors the shape of the 'Database URL with Credentials' pattern
+ * but with capture groups, since SECRET_PATTERNS only stores a bare regex.
+ */
+function extractDbCredentials(value: string): { user: string; password: string; host: string } | null {
+  const match = value.match(/[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^:@/\s]+):([^@/\s]+)@([^/\s]+)/);
+  if (!match) return null;
+  return { user: match[1], password: match[2], host: match[3] };
+}
+
+function isWeakDbCredential(host: string, password: string, user: string): boolean {
+  const hostname = host.split(':')[0].toLowerCase();
+  const isDevHost = DEV_HOSTS.has(hostname) || hostname.endsWith('.local');
+  const isWeakPassword = WEAK_CREDENTIAL_WORDS.has(password.toLowerCase()) || password.length < 12;
+  if (isDevHost && isWeakPassword) return true;
+  // A placeholder-shaped password or username is weak regardless of host
+  // (e.g. "your-api-key" on a real-looking prod hostname is still a template).
+  if (isPlaceholderValue(password) || isPlaceholderValue(user)) return true;
+  return false;
+}
+
 /**
  * Calculates the Shannon entropy of a string.
  * @param str The string to calculate entropy for.
@@ -97,16 +163,34 @@ export function scanSecrets(server: ResolvedServer): Finding[] {
         if (!key || !pattern.keyContext.test(key)) continue;
       }
       if (pattern.regex.test(value) || (decoded !== null && pattern.regex.test(decoded))) {
+        // The 'Database URL with Credentials' pattern only checks structural
+        // shape (scheme://user:pass@host); it says nothing about whether the
+        // credential is real. Extract the fields and require the password to
+        // look like an actual secret before treating this as CRITICAL.
+        if (pattern.name === 'Database URL with Credentials') {
+          const creds = extractDbCredentials(value) || (decoded !== null ? extractDbCredentials(decoded) : null);
+          if (creds && isWeakDbCredential(creds.host, creds.password, creds.user)) {
+            foundPattern = true; // matched shape, but confirmed placeholder: don't fall through to entropy either
+            break;
+          }
+        } else if (isPlaceholderValue(value) || (decoded !== null && isPlaceholderValue(decoded))) {
+          // Vendor doc examples (AWS's AKIA...EXAMPLE) and fabricated test
+          // tokens (ghp_test123...) match the format regex but are not real.
+          foundPattern = true;
+          break;
+        }
+
+        const inFixturePath = FIXTURE_PATH_REGEX.test(server.configPath || '');
         findings.push({
           id: 'exposed-secret',
-          severity: 'CRITICAL',
-          description: `Exposed ${pattern.name} in ${source}${key ? ` '${key}'` : ''}.`,
+          severity: inFixturePath ? 'HIGH' : 'CRITICAL',
+          description: `Exposed ${pattern.name} in ${source}${key ? ` '${key}'` : ''}.${inFixturePath ? ' Path suggests this may be a test fixture or example — verify before treating as a live credential.' : ''}`,
           fixRecommendation: `Move the secret to a secure environment variable and reference it instead (e.g., \${${key || 'VAR_NAME'}}).`,
           fixable: true,
-          remediationConfidence: 99
+          remediationConfidence: inFixturePath ? 60 : 99
         });
         foundPattern = true;
-        break; 
+        break;
       }
     }
 
