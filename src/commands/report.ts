@@ -16,9 +16,16 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
   const targetDir = options.configs || process.cwd();
   logger.brand(`Aggregating reports from: ${targetDir}`);
 
+  // dot:true is required - fast-glob's default excludes dotfiles/dot-dirs,
+  // which silently dropped the single most common MCP config filename,
+  // ".mcp.json", from every result. Without it, `report` could tell you
+  // "found N config files" and still scan zero of the servers those
+  // configs define, with no error - a security tool reporting false
+  // assurance. See regression test in tests/commands/report.test.ts.
   const configFiles = await glob(['**/*.json', '**/*.toml', '**/*.yaml', '**/*.yml'], {
     cwd: targetDir,
     absolute: true,
+    dot: true,
     ignore: [
       '**/node_modules/**',
       '**/package.json',
@@ -27,6 +34,7 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
       '**/.mcp-scan.json',
       '**/.mcp-scan-policy.yml',
       '**/.github/**',
+      '**/.git/**',
       '**/dist/**',
     ]
   });
@@ -51,16 +59,21 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
 
   const startTime = Date.now();
   const seenServers = new Set<string>();
+  let notMcpConfigCount = 0;
+  let failedFileCount = 0;
 
   for (const file of configFiles) {
     // Basic check if it looks like an MCP config
     try {
         const content = fs.readFileSync(file, 'utf8');
-        if (!content.includes('mcpServers') && !content.includes('mcp_servers')) continue;
-        
+        if (!content.includes('mcpServers') && !content.includes('mcp_servers')) {
+          notMcpConfigCount++;
+          continue;
+        }
+
         logger.detail(`Scanning: ${path.relative(targetDir, file)}`);
         const report = await runScan({ silent: true, config: file });
-        
+
         for (const result of report.results) {
             const key = `${result.serverName}:${JSON.stringify(result.findings)}`;
         if (!seenServers.has(key)) {
@@ -72,12 +85,26 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
     } catch (err) {
       // Silently swallowed per-file failures made configs vanish from the
       // aggregated report with no way to know they were skipped.
+      failedFileCount++;
       logger.warn(`Skipping ${file}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   recalcSeverityCounts(aggregatedReport);
   aggregatedReport.totalDurationMs = Date.now() - startTime;
+
+  // A report that finds files but scans nothing must say so loudly - a
+  // silent "0 servers, 0 findings" reads as a clean bill of health when
+  // it may actually mean every candidate file failed or was skipped.
+  if (aggregatedReport.totalScanned === 0) {
+    logger.error(
+      `Found ${configFiles.length} file(s) but scanned 0 MCP servers ` +
+      `(${notMcpConfigCount} did not look like MCP configs, ${failedFileCount} failed to scan). ` +
+      `This is not a clean result - it means nothing was actually checked.`
+    );
+  } else if (failedFileCount > 0) {
+    logger.warn(`${failedFileCount} config file(s) failed to scan and are missing from this report.`);
+  }
 
   if (options.json) {
     printJsonReport(aggregatedReport);
