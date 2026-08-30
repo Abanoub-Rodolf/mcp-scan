@@ -12,16 +12,11 @@
           "fixable": false
         },
         {
-          "id": "known-vulnerability-high",
-          "severity": "HIGH",
-          "description": "Bundled snapshot found HIGH vulnerability in '@modelcontextprotocol/server-filesystem': GHSA-hc55-p739-j48w - @modelcontextprotocol/server-filesystem vulnerability allows for path validation bypass via colliding path prefix",
-          "fixRecommendation": "Upgrade package or remove it. (Offline info)"
-        },
-        {
-          "id": "known-vulnerability-high",
-          "severity": "HIGH",
-          "description": "Bundled snapshot found HIGH vulnerability in '@modelcontextprotocol/server-filesystem': GHSA-q66q-fx2p-7w4m - @modelcontextprotocol/server-filesystem allows for path validation bypass via prefix matching and symlink handling",
-          "fixRecommendation": "Upgrade package or remove it. (Offline info)"
+          "id": "known-vulnerability-unresolved",
+          "severity": "LOW",
+          "description": "Package '@modelcontextprotocol/server-filesystem' has 2 known advisories (GHSA-hc55-p739-j48w, GHSA-q66q-fx2p-7w4m) in the offline snapshot (recorded against version 2026.7.10), but the resolved version could not be confirmed against it while offline. This is not a confirmed vulnerability - verify manually.",
+          "fixRecommendation": "Pin '@modelcontextprotocol/server-filesystem' to an exact version and re-scan online to get a confirmed verdict.",
+          "fixable": false
         }
       ],
       "trustScore": 40,
@@ -130,8 +125,8 @@
   ],
   "totalScanned": 4,
   "criticalCount": 3,
-  "highCount": 4,
+  "highCount": 2,
   "mediumCount": 0,
-  "lowCount": 0,
+  "lowCount": 1,
   "infoCount": 0
 }

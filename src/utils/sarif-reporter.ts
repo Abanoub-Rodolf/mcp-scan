@@ -178,6 +178,11 @@ const SARIF_RULES: Record<string, { short: string, full: string, helpUri?: strin
      full: 'Package has a known medium-severity vulnerability.',
      helpUri: 'https://thynkq.com/docs/mcp-scan/rules/known-vulnerability-medium'
   },
+  'known-vulnerability-unresolved': {
+     short: 'Unresolved package version',
+     full: 'Package has known advisories but the installed/resolved version could not be verified against them.',
+     helpUri: 'https://thynkq.com/docs/mcp-scan/rules/known-vulnerability-unresolved'
+  },
   'large-arg-list': {
      short: 'Large argument list',
      full: 'Server has a suspiciously large number of arguments.',

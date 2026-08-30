@@ -10,10 +10,24 @@ import semver from 'semver';
 interface NpmRegistryResponse {
   'dist-tags'?: { latest?: string };
   time?: Record<string, string>;
+  versions?: Record<string, unknown>;
 }
 
 interface OsvResponse {
   vulns?: OsvVuln[];
+}
+
+interface OsvAffectedRangeEvent {
+  introduced?: string;
+  fixed?: string;
+  last_affected?: string;
+  limit?: string;
+}
+
+interface OsvAffected {
+  package?: { ecosystem?: string; name?: string };
+  ranges?: Array<{ type: string; events?: OsvAffectedRangeEvent[] }>;
+  versions?: string[];
 }
 
 interface OsvVuln {
@@ -22,7 +36,7 @@ interface OsvVuln {
   details?: string;
   severity?: Array<{ type: string; score: string }>;
   database_specific?: { severity?: string };
-  affected?: Array<{ ranges?: Array<{ type: string; events?: Array<{ fixed?: string }> }> }>;
+  affected?: OsvAffected[];
   fixed_in?: string[];
 }
 
@@ -68,24 +82,140 @@ function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: S
 }
 
 /**
+ * Splits a package spec (as it appears in `npx <spec>` / `npm exec <spec>`)
+ * into its registry name and version specifier. Handles scoped packages
+ * (`@scope/name@1.2.3`) by skipping the leading `@` before looking for the
+ * version-separating `@`. Returns versionSpec: null for unpinned specs
+ * (`pkg`) and for the literal `latest` tag, since both resolve the same way.
+ */
+export function parsePackageSpec(spec: string): { name: string; versionSpec: string | null } {
+  const isScoped = spec.startsWith('@');
+  const rest = isScoped ? spec.slice(1) : spec;
+  const atIndex = rest.indexOf('@');
+  if (atIndex === -1) return { name: spec, versionSpec: null };
+  const name = (isScoped ? '@' : '') + rest.slice(0, atIndex);
+  const versionSpec = rest.slice(atIndex + 1);
+  if (!versionSpec || versionSpec === 'latest') return { name, versionSpec: null };
+  return { name, versionSpec };
+}
+
+export type VersionMatch = true | false | 'unknown';
+
+/**
+ * Walks an OSV SEMVER range event list (introduced/fixed/last_affected/limit)
+ * and decides whether `version` falls inside any of the affected intervals.
+ * Mirrors OSV's documented range semantics: events are ordered, an
+ * `introduced` opens an interval (0 means "since the beginning of time"),
+ * and a `fixed` (exclusive), `last_affected` (inclusive), or `limit`
+ * (exclusive) closes it. An interval left open by the data (no closing
+ * event) is still affected today.
+ */
+function versionInSemverEvents(version: string, events: OsvAffectedRangeEvent[]): boolean {
+  let introduced: string | null = null;
+  for (const e of events) {
+    if (e.introduced !== undefined) {
+      introduced = e.introduced === '0' ? '0.0.0' : e.introduced;
+      continue;
+    }
+    if (introduced === null || !semver.valid(introduced)) continue;
+    if (e.fixed !== undefined) {
+      if (semver.valid(e.fixed) && semver.gte(version, introduced) && semver.lt(version, e.fixed)) return true;
+      introduced = null;
+    } else if (e.last_affected !== undefined) {
+      if (semver.valid(e.last_affected) && semver.gte(version, introduced) && semver.lte(version, e.last_affected)) return true;
+      introduced = null;
+    } else if (e.limit !== undefined) {
+      if (semver.valid(e.limit) && semver.gte(version, introduced) && semver.lt(version, e.limit)) return true;
+      introduced = null;
+    }
+  }
+  if (introduced !== null && semver.valid(introduced) && semver.gte(version, introduced)) return true;
+  return false;
+}
+
+/**
+ * Determines whether a resolved package version actually falls inside an
+ * OSV advisory's affected range - not just whether the package name
+ * matches. Returns 'unknown' when the advisory carries no structured
+ * version/range data to compare against, so the caller can avoid treating
+ * an unmatchable advisory as a confirmed hit.
+ */
+export function matchVersionAgainstVuln(version: string, vuln: OsvVuln, packageName: string): VersionMatch {
+  if (!semver.valid(version)) return 'unknown';
+  const affectedEntries = vuln.affected || [];
+  if (affectedEntries.length === 0) return 'unknown';
+
+  let hasRangeData = false;
+  for (const affected of affectedEntries) {
+    if (affected.package?.name && affected.package.name !== packageName) continue;
+
+    if (Array.isArray(affected.versions) && affected.versions.length > 0) {
+      hasRangeData = true;
+      if (affected.versions.includes(version)) return true;
+    }
+
+    for (const range of affected.ranges || []) {
+      if (range.type !== 'SEMVER' || !Array.isArray(range.events)) continue;
+      hasRangeData = true;
+      if (versionInSemverEvents(version, range.events)) return true;
+    }
+  }
+
+  return hasRangeData ? false : 'unknown';
+}
+
+/**
+ * Resolves what version would actually be installed for a package spec:
+ * an exact pin is used as-is, a semver range is resolved against the
+ * registry's published versions, and an unpinned/`latest` spec resolves
+ * to dist-tags.latest. Returns version: null when resolution isn't
+ * possible (registry lookup failed, or nothing satisfies the range) -
+ * callers must not assume a vulnerable version in that case.
+ */
+function resolveEffectiveVersion(
+  versionSpec: string | null,
+  latestVersion: string,
+  publishedVersions: string[]
+): { version: string | null; pinned: boolean } {
+  if (versionSpec) {
+    if (semver.valid(versionSpec)) {
+      return { version: versionSpec, pinned: true };
+    }
+    if (semver.validRange(versionSpec)) {
+      const max = publishedVersions.length > 0 ? semver.maxSatisfying(publishedVersions, versionSpec) : null;
+      return { version: max, pinned: false };
+    }
+    // Unparseable version spec (e.g. a git URL or tag) - can't resolve.
+    return { version: null, pinned: false };
+  }
+  if (latestVersion && semver.valid(latestVersion)) {
+    return { version: latestVersion, pinned: false };
+  }
+  return { version: null, pinned: false };
+}
+
+/**
  * Deep audit of a package, either online or using a bundled snapshot.
  */
 export async function scanPackageDeep(server: ResolvedServer, offline: boolean = false): Promise<Finding[]> {
   const findings: Finding[] = [];
-  
-  let packageName = '';
+
+  let packageSpec = '';
   if (server.command === 'npx' || server.command === 'npm') {
     const pkgArg = (Array.isArray(server.args) ? server.args : (server.args ? Object.values(server.args) : [])).find(a => typeof a === 'string' && !a.startsWith('-'));
-    if (pkgArg) packageName = pkgArg as string;
+    if (pkgArg) packageSpec = pkgArg as string;
   }
 
-  if (!packageName) return findings;
+  if (!packageSpec) return findings;
+
+  const { name: packageName, versionSpec } = parsePackageSpec(packageSpec);
 
   if (offline) {
-    return scanPackageOffline(packageName);
+    return scanPackageOffline(packageName, versionSpec);
   }
 
   let latestVersion = '';
+  let publishedVersions: string[] = [];
   try {
     const res = await fetchWithTimeout(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`, {}, 8000);
 
@@ -94,11 +224,12 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
     } else {
       const data = await res.json() as NpmRegistryResponse;
       latestVersion = data['dist-tags']?.latest || '';
+      publishedVersions = data.versions ? Object.keys(data.versions) : [];
       if (data && typeof data === 'object' && data.time && typeof data.time.modified === 'string') {
         const lastModified = new Date(data.time.modified);
         const now = new Date();
         const diffMonths = (now.getTime() - lastModified.getTime()) / (1000 * 60 * 60 * 24 * 30);
-        
+
         if (diffMonths > 6) {
           findings.push({
             id: 'stale-server',
@@ -110,7 +241,13 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
     }
   } catch (_error) {
     logger.warn(`Network error fetching npm registry for ${packageName}. Switching to offline mode.`);
-    return scanPackageOffline(packageName);
+    return scanPackageOffline(packageName, versionSpec);
+  }
+
+  const { version: resolvedVersion, pinned } = resolveEffectiveVersion(versionSpec, latestVersion, publishedVersions);
+  const versionResolutionFailed = resolvedVersion === null;
+  if (versionResolutionFailed) {
+    logger.warn(`Could not resolve an installable version for '${packageSpec}'; vulnerability matching will be degraded to an unresolved-version finding.`);
   }
 
   // OSV.dev integration
@@ -130,7 +267,32 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
     const vulns: OsvVuln[] = osvData.vulns || [];
 
     if (vulns.length > 0) {
+      const unresolvedVulnIds: string[] = [];
+
       for (const vuln of vulns) {
+        const matchStatus: VersionMatch = resolvedVersion === null
+          ? 'unknown'
+          : matchVersionAgainstVuln(resolvedVersion, vuln, packageName);
+
+        if (matchStatus === false) {
+          // Resolved version is confirmed outside the advisory's affected
+          // range: this is exactly the false-positive this scanner used to
+          // produce (name-only match, version ignored). Do not fire.
+          continue;
+        }
+
+        if (matchStatus === 'unknown') {
+          // Either the version couldn't be resolved, or the advisory has
+          // no structured range/versions data to compare against. Either
+          // way we cannot confirm the resolved version is affected, so we
+          // must not report it as a confirmed vulnerability - collect it
+          // for a single lower-severity "unresolved" finding instead.
+          unresolvedVulnIds.push(vuln.id);
+          continue;
+        }
+
+        // matchStatus === true: resolved version is confirmed inside the
+        // advisory's affected range. Fire at full severity.
         let cvssScore: number | null = null;
         let severityFromDb: Severity | undefined;
         if (vuln.severity && Array.isArray(vuln.severity)) {
@@ -159,55 +321,62 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
         findings.push({
           id,
           severity,
-          description: `${effectiveSeverity} vulnerability found in '${packageName}': ${vuln.id} - ${vuln.summary || vuln.details || 'no summary available'}`,
+          description: `${effectiveSeverity} vulnerability found in '${packageName}@${resolvedVersion}': ${vuln.id} - ${vuln.summary || vuln.details || 'no summary available'}`,
           fixRecommendation: effectiveSeverity === 'LOW' ? 'Review and patch when convenient.' : `Upgrade package or remove it.`,
           fixable: true,
         });
       }
+
+      if (unresolvedVulnIds.length > 0) {
+        const reason = versionResolutionFailed
+          ? `the installed version of '${packageName}' could not be resolved (spec: '${versionSpec ?? 'unpinned/latest'}')`
+          : `the advisory data for these does not specify a version range to check '${packageName}@${resolvedVersion}' against`;
+        findings.push({
+          id: 'known-vulnerability-unresolved',
+          severity: 'LOW',
+          description: `Package '${packageName}' has ${unresolvedVulnIds.length} known advisor${unresolvedVulnIds.length === 1 ? 'y' : 'ies'} (${unresolvedVulnIds.join(', ')}) that could not be confirmed against the resolved version: ${reason}. This is not a confirmed vulnerability - verify manually.`,
+          fixRecommendation: `Pin '${packageName}' to an exact version and re-scan to get a confirmed verdict.`,
+          fixable: false,
+        });
+      }
     }
 
-    // Upgrade Advisor Logic
-    if (latestVersion) {
-        const currentVersion = (server as ResolvedServer & { metadata?: { version?: string } }).metadata?.version;
-        if (currentVersion && semver.valid(currentVersion) && semver.valid(latestVersion) && semver.gt(latestVersion, currentVersion)) {
-            // The upgrade resolves a vuln when the latest version is at or
-            // after the version that fixed it. (This was previously
-            // inverted, recommending the upgrade exactly when it would not
-            // fix anything.)
-            const fixedVersions: string[] = [];
-            for (const v of vulns) {
-              for (const a of v.affected || []) {
-                for (const r of a.ranges || []) {
-                  for (const e of r.events || []) {
-                    if (e.fixed && semver.valid(e.fixed)) fixedVersions.push(e.fixed);
-                  }
-                }
-              }
-              if (v.fixed_in) fixedVersions.push(...v.fixed_in.filter(fv => semver.valid(fv)));
+    // Upgrade Advisor Logic - only meaningful for a pinned version; an
+    // unpinned/`latest` spec always resolves to latestVersion already.
+    if (latestVersion && pinned && resolvedVersion && semver.valid(resolvedVersion) && semver.valid(latestVersion) && semver.gt(latestVersion, resolvedVersion)) {
+      const fixedVersions: string[] = [];
+      for (const v of vulns) {
+        for (const a of v.affected || []) {
+          for (const r of a.ranges || []) {
+            for (const e of r.events || []) {
+              if (e.fixed && semver.valid(e.fixed)) fixedVersions.push(e.fixed);
             }
-            const resolvesVulns = fixedVersions.some(fv => semver.gte(latestVersion, fv));
-            
-            findings.push({
-                id: 'upgrade-available',
-                severity: 'INFO',
-                description: `A newer version of '${packageName}' is available: ${currentVersion} → ${latestVersion}.`,
-                fixRecommendation: resolvesVulns 
-                    ? `UPGRADE RECOMMENDED: Version ${latestVersion} may resolve known vulnerabilities. Run: npm install ${packageName}@${latestVersion}`
-                    : `Run: npm install ${packageName}@${latestVersion} to update.`,
-                fixable: true
-            });
+          }
         }
+        if (v.fixed_in) fixedVersions.push(...v.fixed_in.filter(fv => semver.valid(fv)));
+      }
+      const resolvesVulns = fixedVersions.some(fv => semver.gte(latestVersion, fv));
+
+      findings.push({
+        id: 'upgrade-available',
+        severity: 'INFO',
+        description: `A newer version of '${packageName}' is available: ${resolvedVersion} → ${latestVersion}.`,
+        fixRecommendation: resolvesVulns
+          ? `UPGRADE RECOMMENDED: Version ${latestVersion} may resolve known vulnerabilities. Run: npm install ${packageName}@${latestVersion}`
+          : `Run: npm install ${packageName}@${latestVersion} to update.`,
+        fixable: true
+      });
     }
 
   } catch (_error) {
     logger.warn(`OSV.dev API request for ${packageName} failed or timed out. Switching to offline snapshot.`);
-    return [...findings, ...scanPackageOffline(packageName)];
+    return [...findings, ...scanPackageOffline(packageName, versionSpec)];
   }
 
   return findings;
 }
 
-function scanPackageOffline(packageName: string): Finding[] {
+function scanPackageOffline(packageName: string, versionSpec: string | null): Finding[] {
   const findings: Finding[] = [];
   try {
     const snapshot = loadCveSnapshot();
@@ -226,15 +395,34 @@ function scanPackageOffline(packageName: string): Finding[] {
     }
 
     const pkgData = data.packages?.[packageName];
-    if (pkgData && pkgData.vulns) {
-      for (const vuln of pkgData.vulns) {
-        const severity = String(vuln.severity || 'MEDIUM').toUpperCase() as Severity;
-        const { id } = vulnSeverityToFinding(severity);
+    if (pkgData && pkgData.vulns && pkgData.vulns.length > 0) {
+      // The offline snapshot only records vulnerabilities observed against
+      // one specific version (pkgData.version) at snapshot time - it has
+      // no per-advisory range data. We can only confirm a match when the
+      // config pins that exact same version; anything else (unpinned, or
+      // pinned to a different version) is unresolved against this data.
+      const pinnedVersion = versionSpec && semver.valid(versionSpec) ? versionSpec : null;
+      const confirmedMatch = pinnedVersion !== null && pkgData.version !== undefined && pinnedVersion === pkgData.version;
+
+      if (confirmedMatch) {
+        for (const vuln of pkgData.vulns) {
+          const severity = String(vuln.severity || 'MEDIUM').toUpperCase() as Severity;
+          const { id } = vulnSeverityToFinding(severity);
+          findings.push({
+            id,
+            severity,
+            description: `Bundled snapshot found ${severity} vulnerability in '${packageName}@${pinnedVersion}': ${vuln.id} - ${vuln.summary || 'no summary available'}`,
+            fixRecommendation: `Upgrade package or remove it. (Offline info)`
+          });
+        }
+      } else {
+        const ids = pkgData.vulns.map(v => v.id || 'unknown').join(', ');
         findings.push({
-          id,
-          severity,
-          description: `Bundled snapshot found ${severity} vulnerability in '${packageName}': ${vuln.id} - ${vuln.summary || 'no summary available'}`,
-          fixRecommendation: `Upgrade package or remove it. (Offline info)`
+          id: 'known-vulnerability-unresolved',
+          severity: 'LOW',
+          description: `Package '${packageName}' has ${pkgData.vulns.length} known advisor${pkgData.vulns.length === 1 ? 'y' : 'ies'} (${ids}) in the offline snapshot (recorded against version ${pkgData.version ?? 'unknown'}), but the resolved version could not be confirmed against it while offline. This is not a confirmed vulnerability - verify manually.`,
+          fixRecommendation: `Pin '${packageName}' to an exact version and re-scan online to get a confirmed verdict.`,
+          fixable: false,
         });
       }
     }

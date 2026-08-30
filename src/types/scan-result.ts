@@ -59,6 +59,7 @@ export const FINDING_IDS = [
   'data-controls-stale-temp-files',
   'known-vulnerability-medium',
   'known-vulnerability-low',
+  'known-vulnerability-unresolved',
   'insecure-transport',
   'http-transport-no-auth',
   'outdated-transport',

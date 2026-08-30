@@ -63,6 +63,10 @@ describe('Package Scanner - OSV.dev integration', () => {
         const body = JSON.parse(options.body as string);
         const packageName = body.package.name;
 
+        // affected[].ranges use OSV's real event shape: an "introduced"
+        // opens the vulnerable interval, "fixed" closes it exclusively.
+        // Everything below fixed is vulnerable; the fixed version and
+        // above is patched.
         if (packageName === 'vulnerable-critical') {
           return createMockFetchResponse(true, {
             vulns: [{
@@ -70,6 +74,10 @@ describe('Package Scanner - OSV.dev integration', () => {
               summary: 'A critical vulnerability',
               details: 'Details of the critical vulnerability.',
               severity: [{ type: 'CVSS_V3', score: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H' }],
+              affected: [{
+                package: { ecosystem: 'npm', name: 'vulnerable-critical' },
+                ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '2.0.0' }] }],
+              }],
             }],
           });
         } else if (packageName === 'vulnerable-high') {
@@ -79,6 +87,24 @@ describe('Package Scanner - OSV.dev integration', () => {
               summary: 'A high vulnerability',
               details: 'Details of the high vulnerability.',
               severity: [{ type: 'CVSS_V3', score: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:L' }],
+              affected: [{
+                package: { ecosystem: 'npm', name: 'vulnerable-high' },
+                ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.5.0' }] }],
+              }],
+            }],
+          });
+        } else if (packageName === 'mcp-remote-fixture') {
+          // Mirrors the real mcp-remote case: an advisory exists, but only
+          // for versions below the fix; latest resolves patched.
+          return createMockFetchResponse(true, {
+            vulns: [{
+              id: 'GHSA-fake-remote',
+              summary: 'Vulnerable before 0.8.0',
+              severity: [{ type: 'CVSS_V3', score: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H' }],
+              affected: [{
+                package: { ecosystem: 'npm', name: 'mcp-remote-fixture' },
+                ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '0.8.0' }] }],
+              }],
             }],
           });
         } else if (packageName === 'no-vulns') {
@@ -95,6 +121,9 @@ describe('Package Scanner - OSV.dev integration', () => {
              return createMockFetchResponse(true, { time: { modified: new Date(Date.now() - 2 * 30 * 24 * 60 * 60 * 1000).toISOString() } }); // Modified 2 months ago
          } else if (packageName === 'npm-error') {
              return createMockFetchResponse(false, {}, 404);
+         } else if (packageName === 'mcp-remote-fixture') {
+             // Unpinned config resolves to the current patched latest.
+             return createMockFetchResponse(true, { 'dist-tags': { latest: '0.8.2' }, versions: { '0.8.2': {} } });
          }
       }
       return createMockFetchResponse(false, {}, 404); // Default not found
@@ -128,14 +157,59 @@ describe('Package Scanner - OSV.dev integration', () => {
   });
 
   describe('OSV.dev integration', () => {
-    it('should find critical vulnerabilities from OSV.dev', async () => {
-      const server = mockServer('vulnerable-critical');
+    it('pinned vulnerable version fires at full severity', async () => {
+      // resolved version 1.0.0 falls inside the [0, 2.0.0) affected range
+      const server = mockServer('vulnerable-critical@1.0.0');
       const findings = await scanPackageDeep(server);
       expect(findings.some(f => f.id === 'known-vulnerability-critical')).toBe(true);
+      expect(findings.some(f => f.id === 'known-vulnerability-unresolved')).toBe(false);
     });
 
-    it('should find high vulnerabilities from OSV.dev', async () => {
-      const server = mockServer('vulnerable-high');
+    it('pinned patched version does not fire', async () => {
+      // resolved version 2.0.0 is at the fix boundary - patched
+      const server = mockServer('vulnerable-critical@2.0.0');
+      const findings = await scanPackageDeep(server);
+      expect(findings.some(f => f.id === 'known-vulnerability-critical')).toBe(false);
+      expect(findings.some(f => f.id === 'known-vulnerability-unresolved')).toBe(false);
+    });
+
+    it('pinned vulnerable version (high severity advisory) fires', async () => {
+      const server = mockServer('vulnerable-high@1.0.0');
+      const findings = await scanPackageDeep(server);
+      expect(findings.some(f => f.id === 'known-vulnerability-high')).toBe(true);
+    });
+
+    it('pinned patched version (high severity advisory) does not fire', async () => {
+      const server = mockServer('vulnerable-high@1.5.0');
+      const findings = await scanPackageDeep(server);
+      expect(findings.some(f => f.id === 'known-vulnerability-high')).toBe(false);
+    });
+
+    it('unpinned package resolving to a patched latest does not fire critical (mcp-remote case)', async () => {
+      // npx <pkg> with no version pin: registry resolves dist-tags.latest
+      // to 0.8.2, which is at/after the advisory's fix (0.8.0). Must not
+      // fire - this is the exact false positive that was reported live.
+      const server = mockServer('mcp-remote-fixture');
+      const findings = await scanPackageDeep(server);
+      expect(findings.some(f => f.id === 'known-vulnerability-critical')).toBe(false);
+      expect(findings.some(f => f.id === 'known-vulnerability-high')).toBe(false);
+    });
+
+    it('resolution failure produces a lower-severity unresolved finding, not a critical', async () => {
+      // npm registry has no entry for this name, so latestVersion can't be
+      // resolved and the package is unpinned - version resolution fails.
+      const server = mockServer('vulnerable-critical');
+      const findings = await scanPackageDeep(server);
+      expect(findings.some(f => f.id === 'known-vulnerability-critical')).toBe(false);
+      expect(findings.some(f => f.id === 'known-vulnerability-high')).toBe(false);
+      const unresolved = findings.find(f => f.id === 'known-vulnerability-unresolved');
+      expect(unresolved).toBeDefined();
+      expect(unresolved?.severity).toBe('LOW');
+      expect(unresolved?.description).toContain('CVE-2023-1234');
+    });
+
+    it('should find high vulnerabilities from OSV.dev when the resolved version is affected', async () => {
+      const server = mockServer('vulnerable-high@1.0.0');
       const findings = await scanPackageDeep(server);
       expect(findings.some(f => f.id === 'known-vulnerability-high')).toBe(true);
     });
