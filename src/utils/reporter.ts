@@ -164,6 +164,12 @@ function printSummary(report: ScanReport, options: { ugig?: boolean }): void {
     !options.ugig &&
     report.criticalCount + report.highCount + report.mediumCount > 0
   ) {
+    // Every rule now has a page: trigger mechanics, false-positive cases, fix
+    // steps. Same URLs the SARIF helpUri fields carry.
+    logger.log(
+      dim('  What each finding means: ') +
+      brand.dim.underline('thynkq.com/docs/mcp-scan/rules')
+    );
     logger.log(
       dim('  Need a human call on these? ') +
       accentGray('MCP Risk Review (48h, fixed scope) at ') +
