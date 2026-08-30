@@ -39,11 +39,11 @@
       "findings": [
         {
           "id": "exposed-secret",
-          "severity": "CRITICAL",
-          "description": "Exposed GitHub Token in environment variable 'GITHUB_PERSONAL_ACCESS_TOKEN'.",
+          "severity": "HIGH",
+          "description": "Exposed GitHub Token in environment variable 'GITHUB_PERSONAL_ACCESS_TOKEN'. Path suggests this may be a test fixture or example \u2014 verify before treating as a live credential.",
           "fixRecommendation": "Move the secret to a secure environment variable and reference it instead (e.g., ${GITHUB_PERSONAL_ACCESS_TOKEN}).",
           "fixable": true,
-          "remediationConfidence": 99
+          "remediationConfidence": 60
         }
       ],
       "trustScore": 100,
@@ -93,11 +93,11 @@
       "findings": [
         {
           "id": "exposed-secret",
-          "severity": "CRITICAL",
-          "description": "Exposed Stripe Secret Key in environment variable 'STRIPE_KEY'.",
+          "severity": "HIGH",
+          "description": "Exposed Stripe Secret Key in environment variable 'STRIPE_KEY'. Path suggests this may be a test fixture or example \u2014 verify before treating as a live credential.",
           "fixRecommendation": "Move the secret to a secure environment variable and reference it instead (e.g., ${STRIPE_KEY}).",
           "fixable": true,
-          "remediationConfidence": 99
+          "remediationConfidence": 60
         },
         {
           "id": "unverified-source",
@@ -124,8 +124,8 @@
     }
   ],
   "totalScanned": 4,
-  "criticalCount": 3,
-  "highCount": 2,
+  "criticalCount": 1,
+  "highCount": 4,
   "mediumCount": 0,
   "lowCount": 1,
   "infoCount": 0
