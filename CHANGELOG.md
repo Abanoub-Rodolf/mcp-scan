@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.0.9] - 2026-09-01
+
+### Fixed
+- `report` no longer drops dotfile configs from its glob scan. fast-glob excludes
+  dotfiles by default, which silently skipped `.mcp.json`, the single most common
+  MCP config filename. The command could report "found N config files" while
+  scanning none of the servers those configs defined.
+- Licenses are no longer reported missing when the registry lookup falls back to
+  offline mode.
+- Placeholder credentials in example configs are no longer flagged CRITICAL.
+- Vulnerability matching compares the resolved version against the advisory range
+  instead of matching on package name alone.
+
 ## [2.0.8] - 2026-08-29
 
 ### Added
