@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.0.10] - 2026-09-01
+
+### Added
+- A one-line pointer to the GitHub repo after a `scan` that finds at least one
+  issue. Shown once per machine ever (marker in `~/.mcp-scan`), TTY-only,
+  never in `--json`, `--sarif`, or `ci` output, silenced permanently with
+  `MCP_SCAN_NO_HINTS=1`.
+
 ## [2.0.9] - 2026-09-01
 
 ### Fixed

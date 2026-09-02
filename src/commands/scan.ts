@@ -28,7 +28,8 @@ import { createSpinner } from '../utils/spinner.js';
 import { printJsonReport } from '../utils/json-reporter.js';
 import { printReport } from '../utils/reporter.js';
 import { logScan, checkFingerprints } from '../utils/audit-logger.js';
-import { recalcSeverityCounts } from '../utils/severity-tally.js';
+import { recalcSeverityCounts, countTotalFindings } from '../utils/severity-tally.js';
+import { repoHint } from '../utils/repo-hint.js';
 import { loadCustomRules, evaluateCustomRules } from '../utils/rule-engine.js';
 import { SEVERITY_ORDER, Severity } from '../types/severity.js';
 import { logger } from '../utils/logger.js';
@@ -305,9 +306,17 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       printJsonReport(report);
     } else {
       printReport(report, { ugig: options.ugig });
+      // Human path only. --json takes the branch above, --ci forces --json
+      // in the CLI handler (but runScan is also exported for embedders who
+      // may call it with ci:true directly, so guard it here too), and
+      // --sarif is excluded here explicitly since it can run alongside
+      // this branch in a TTY.
+      if (!options.sarif && !options.ci) {
+        repoHint(countTotalFindings(report) > 0);
+      }
     }
   }
-  
+
   logScan(report);
 
   if (options.sarif) {
