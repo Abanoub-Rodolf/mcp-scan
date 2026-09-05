@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Abanoub-Rodolf/mcp-scan/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Abanoub-Rodolf/mcp-scan)
 [![npm provenance](https://img.shields.io/badge/npm%20provenance-signed-brightgreen)](https://docs.npmjs.com/generating-provenance-statements)
+[![mcp-scan](https://thynkq.com/api/mcp-scan/badge/mcp-scan.svg)](https://thynkq.com/mcp-scan/check/mcp-scan)
 
 **Open-source security scanner for Model Context Protocol (MCP) servers.**
 
@@ -17,6 +18,18 @@ npx mcp-scan@latest
 ```
 
 No installation. No sign-up. No telemetry. No data leaves your machine. Supply chain scanning makes registry lookups (npm, OSV.dev, GitHub API) - disable with `--offline`.
+
+---
+
+## Badge
+
+Already scanned your MCP server? Get a public badge for its README:
+
+```bash
+npx mcp-scan badge <your-npm-package-name>
+```
+
+Prints a ready-to-paste Markdown snippet linking to a hosted scan report at thynkq.com. No network calls, no account needed.
 
 ---
 
@@ -95,6 +108,9 @@ npx mcp-scan@latest compliance
 
 # Software Bill of Materials (CycloneDX or SPDX)
 npx mcp-scan@latest sbom
+
+# Public scan badge and report link for an npm package
+npx mcp-scan@latest badge <package-name>
 
 # Validate custom security policies
 npx mcp-scan@latest policy validate
