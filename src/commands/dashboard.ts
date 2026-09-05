@@ -1,6 +1,14 @@
-import { createDashboard } from '../utils/dashboard-ui.js';
+import { reportBlessedImportError } from '../utils/dashboard-deps-hint.js';
 
 export async function runDashboard() {
+  let createDashboard;
+  try {
+    ({ createDashboard } = await import('../utils/dashboard-ui.js'));
+  } catch (err) {
+    reportBlessedImportError(err);
+    return;
+  }
+
   let dashboard;
   try {
     dashboard = createDashboard();

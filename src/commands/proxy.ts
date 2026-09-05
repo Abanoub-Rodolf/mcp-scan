@@ -6,6 +6,7 @@ import os from 'os';
 import { Transform, TransformCallback } from 'stream';
 import { loadPolicy } from '../config/parser.js';
 import { maskPii, PrivacyOptions } from '../utils/privacy-engine.js';
+import { reportBlessedImportError } from '../utils/dashboard-deps-hint.js';
 
 class JsonRpcInterceptor extends Transform {
   private buffer: string = '';
@@ -84,13 +85,21 @@ export function splitArgs(input: string): string[] {
 
 export async function runProxy(options: { command?: string, args?: string, ui?: boolean }) {
   if (!options.command) {
-    throw new Error('No command specified for proxy. Use --command <cmd>.');
+    console.error('No command specified for proxy. Use --command <cmd>.');
+    process.exitCode = 1;
+    return;
   }
 
   let dashboardCallback: undefined | ((dir: string, msg: string, pii: boolean) => void);
   const args = options.args ? splitArgs(options.args) : [];
   if (options.ui) {
-      const { createDashboard } = await import('../utils/dashboard-ui.js');
+      let createDashboard;
+      try {
+        ({ createDashboard } = await import('../utils/dashboard-ui.js'));
+      } catch (err) {
+        reportBlessedImportError(err);
+        return;
+      }
       const dashboard = createDashboard();
       dashboard.switchView('PROXY');
       dashboardCallback = dashboard.appendProxyLog;

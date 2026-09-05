@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { reportHint, findReportablePackage } from '../src/utils/repo-hint.js';
+import { ScanReport, ServerScanResult } from '../src/types/scan-result.js';
 
 function fakeStream(isTTY: boolean) {
   const writes: string[] = [];
@@ -97,5 +99,145 @@ describe('repoHint', () => {
     const { stream: second, writes: secondWrites } = fakeStream(true);
     expect(() => repoHint(true, second)).not.toThrow();
     expect(secondWrites).toHaveLength(0);
+  });
+});
+
+function fakeResult(overrides: Partial<ServerScanResult> = {}): ServerScanResult {
+  return {
+    serverName: 'server',
+    toolName: 'claude-desktop',
+    configPath: '/config.json',
+    findings: [],
+    scanDurationMs: 1,
+    ...overrides,
+  };
+}
+
+function fakeReport(results: ServerScanResult[]): ScanReport {
+  return {
+    results,
+    totalScanned: results.length,
+    criticalCount: 0,
+    highCount: 0,
+    mediumCount: 0,
+    lowCount: 0,
+    infoCount: 0,
+    totalDurationMs: 1,
+  };
+}
+
+describe('findReportablePackage', () => {
+  it('returns the package name for an npx server', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['@modelcontextprotocol/server-filesystem', '/tmp'] } })]);
+    expect(findReportablePackage(report)).toBe('@modelcontextprotocol/server-filesystem');
+  });
+
+  it('returns the first valid package across multiple servers', () => {
+    const report = fakeReport([
+      fakeResult({ serverName: 'a', connection: { command: 'node', args: ['/usr/local/bin/server.js'] } }),
+      fakeResult({ serverName: 'b', connection: { command: 'npx', args: ['-y', 'good-package'] } }),
+    ]);
+    expect(findReportablePackage(report)).toBe('good-package');
+  });
+
+  it('returns undefined when no server runs via npx/npm/node', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'python', args: ['server.py'] } })]);
+    expect(findReportablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined when the only candidate arg is a file path, not a package spec', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['/usr/local/bin/server.js'] } })]);
+    expect(findReportablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined for a bare local entrypoint (node index.js)', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['index.js'] } })]);
+    expect(findReportablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined for a bare local entrypoint (node server.mjs)', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['server.mjs'] } })]);
+    expect(findReportablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined for a bare local entrypoint (node main.cjs)', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['main.cjs'] } })]);
+    expect(findReportablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined for a nested relative entrypoint (node dist/index.js)', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['dist/index.js'] } })]);
+    expect(findReportablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined for a relative entrypoint with no extension but a path separator', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['dist/index'] } })]);
+    expect(findReportablePackage(report)).toBeUndefined();
+  });
+
+  it('rejects a local entrypoint even under npx/npm, not just node', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['./local-server.js'] } })]);
+    expect(findReportablePackage(report)).toBeUndefined();
+  });
+
+  it('returns the --package value, not the bin name, for npx --package=<pkg> <bin>', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['--package=good-package', 'some-bin'] } })]);
+    expect(findReportablePackage(report)).toBe('good-package');
+  });
+
+  it('returns the --package value, not the bin name, for npx --package <pkg> <bin>', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['--package', 'good-package', 'some-bin'] } })]);
+    expect(findReportablePackage(report)).toBe('good-package');
+  });
+
+  it('returns the -p value, not the bin name, for npx -p <pkg> <bin>', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['-p', 'good-package', 'some-bin'] } })]);
+    expect(findReportablePackage(report)).toBe('good-package');
+  });
+
+  it('returns the scoped --package value ahead of an earlier flag', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['-y', '--package=@scope/name', 'bin'] } })]);
+    expect(findReportablePackage(report)).toBe('@scope/name');
+  });
+
+  it('returns undefined for an empty report', () => {
+    expect(findReportablePackage(fakeReport([]))).toBeUndefined();
+  });
+});
+
+describe('reportHint', () => {
+  afterEach(() => { delete process.env.MCP_SCAN_NO_HINTS; });
+
+  it('writes one line with the hosted report URL when a package is given', () => {
+    const { stream, writes } = fakeStream(true);
+    reportHint('mcp-scan', stream);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain('https://thynkq.com/mcp-scan/check/mcp-scan');
+    expect(writes[0]).not.toContain('badge');
+  });
+
+  it('URL-encodes a scoped package name', () => {
+    const { stream, writes } = fakeStream(true);
+    reportHint('@modelcontextprotocol/server-filesystem', stream);
+    expect(writes[0]).toContain('https://thynkq.com/mcp-scan/check/%40modelcontextprotocol%2Fserver-filesystem');
+  });
+
+  it('stays silent when there is no package', () => {
+    const { stream, writes } = fakeStream(true);
+    reportHint(undefined, stream);
+    expect(writes).toHaveLength(0);
+  });
+
+  it('stays silent when the stream is not a TTY', () => {
+    const { stream, writes } = fakeStream(false);
+    reportHint('mcp-scan', stream);
+    expect(writes).toHaveLength(0);
+  });
+
+  it('respects MCP_SCAN_NO_HINTS', () => {
+    process.env.MCP_SCAN_NO_HINTS = '1';
+    const { stream, writes } = fakeStream(true);
+    reportHint('mcp-scan', stream);
+    expect(writes).toHaveLength(0);
   });
 });

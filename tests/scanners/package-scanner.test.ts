@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { scanPackageDeep } from '../../src/scanners/package-scanner.js';
+import { scanPackageDeep, validatePackageName } from '../../src/scanners/package-scanner.js';
 import { ResolvedServer } from '../../src/types/config.js';
 import { FindingId } from '../../src/types/scan-result.js';
 import { logger } from '../../src/utils/logger.js';
@@ -269,5 +269,56 @@ describe('Package Scanner - OSV.dev integration', () => {
       const findings = await scanPackageDeep(server);
       expect(findings.some(f => f.id === 'known-vulnerability-critical' || f.id === 'known-vulnerability-high')).toBe(false);
     });
+  });
+});
+
+describe('validatePackageName', () => {
+  it('accepts a plain lowercase name', () => {
+    expect(validatePackageName('mcp-scan')).toEqual({ valid: true, name: 'mcp-scan' });
+  });
+
+  it('accepts a scoped name', () => {
+    expect(validatePackageName('@modelcontextprotocol/server-filesystem')).toEqual({
+      valid: true,
+      name: '@modelcontextprotocol/server-filesystem',
+    });
+  });
+
+  it('strips a pinned version before validating', () => {
+    expect(validatePackageName('mcp-scan@2.0.10')).toEqual({ valid: true, name: 'mcp-scan' });
+  });
+
+  it('strips a version from a scoped spec', () => {
+    expect(validatePackageName('@scope/name@1.2.3')).toEqual({ valid: true, name: '@scope/name' });
+  });
+
+  it('rejects uppercase letters', () => {
+    const result = validatePackageName('MyPackage');
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects a leading dot', () => {
+    const result = validatePackageName('.hidden');
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects spaces', () => {
+    const result = validatePackageName('my package');
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects a bare file path', () => {
+    const result = validatePackageName('/usr/local/bin/server.js');
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects a name over 214 characters', () => {
+    const result = validatePackageName('a'.repeat(215));
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects an empty string', () => {
+    const result = validatePackageName('');
+    expect(result.valid).toBe(false);
   });
 });

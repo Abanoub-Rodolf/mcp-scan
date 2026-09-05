@@ -45,6 +45,17 @@ describe('runCi --max-severity covers LOW and INFO', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('rejects an invalid --max-severity without throwing', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(runCi({ maxSeverity: 'nonsense' })).resolves.toBeUndefined();
+
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid max severity 'nonsense'"));
+    expect(process.exitCode).toBe(1);
+    expect(runScan).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
   it('forwards config, policy, and offline options into runScan', async () => {
     vi.mocked(runScan).mockResolvedValue(report({}));
     await runCi({ maxSeverity: 'high', config: '/tmp/cfg.json', policy: '/tmp/pol.yml', offline: true });

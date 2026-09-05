@@ -1,6 +1,6 @@
 {
   "name": "mcp-scan",
-  "version": "2.0.11",
+  "version": "2.0.12",
   "description": "Open-source security scanner for Model Context Protocol (MCP) servers. Audits Claude Desktop, VS Code, Cursor, Windsurf, and 12 more AI tools for secrets, prompt injection, supply-chain risks, and 17 security checks.",
   "type": "module",
   "main": "./dist/lib.js",
@@ -41,7 +41,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://gitlab.com/abanoub.rodolf/mcp-scan.git"
+    "url": "git+https://github.com/Abanoub-Rodolf/mcp-scan.git"
   },
   "keywords": [
     "mcp",
@@ -81,8 +81,6 @@
   },
   "homepage": "https://gitlab.com/abanoub.rodolf/mcp-scan",
   "dependencies": {
-    "blessed": "^0.1.81",
-    "blessed-contrib": "^4.11.0",
     "chalk": "^5.3.0",
     "cli-table3": "^0.6.4",
     "commander": "^12.0.0",
@@ -93,6 +91,10 @@
     "uuid": "^13.0.0",
     "yaml": "^2.8.3",
     "zod": "^3.23.8"
+  },
+  "optionalDependencies": {
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0"
   },
   "devDependencies": {
     "@actions/core": "^3.0.0",
