@@ -3,7 +3,7 @@
 // weekly downloads, plus PyPI packages named mcp-server-* for coverage
 // tracking. Registry lookups only, no code execution.
 
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
 
 const OUT_DIR = path.resolve('out/ecosystem');
@@ -12,6 +12,22 @@ const NPM_SEARCH_QUERIES = ['mcp-server', 'modelcontextprotocol', 'scope:modelco
 const NPM_DOWNLOADS_CHUNK = 100;
 const PYPI_PREFIX = 'mcp-server-';
 const PYPI_TARGET_COUNT = 50;
+const BOUNTY_MAP_PATH = path.resolve('scripts/bounty-map.json');
+
+// Ranks each target by whether its vendor pays for reports, so the campaign
+// can triage the highest-value packages first instead of scanning blind.
+// Rules are a flat list, first substring match wins; see scripts/bounty-map.json.
+async function loadBountyMap() {
+  const raw = JSON.parse(await readFile(BOUNTY_MAP_PATH, 'utf8'));
+  return { rules: raw.rules ?? [], fallback: raw.default };
+}
+
+function bountyFor({ rules, fallback }, name) {
+  const lower = name.toLowerCase();
+  const rule = rules.find((r) => lower.includes(r.match.toLowerCase()));
+  const { match: _match, ...rest } = rule ?? fallback;
+  return rest;
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -122,12 +138,17 @@ async function fetchPypiMetadata(names) {
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
 
+  const bountyMap = await loadBountyMap();
+
   const npmNames = await searchNpmPackages();
   const npmRanked = await withDownloads(npmNames);
-  const npm = npmRanked.slice(0, NPM_TARGET_COUNT);
+  const npm = npmRanked
+    .slice(0, NPM_TARGET_COUNT)
+    .map((pkg) => ({ ...pkg, bounty: bountyFor(bountyMap, pkg.name) }));
 
   const pypiCandidates = await findPypiCandidates();
-  const pypi = await fetchPypiMetadata(pypiCandidates);
+  const pypi = (await fetchPypiMetadata(pypiCandidates))
+    .map((pkg) => ({ ...pkg, bounty: bountyFor(bountyMap, pkg.name) }));
 
   const targets = {
     generatedAt: new Date().toISOString(),

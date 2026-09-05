@@ -45,7 +45,7 @@ function toResolvedServer(pkg) {
   };
 }
 
-async function scanNpmPackage({ name, weeklyDownloads }) {
+async function scanNpmPackage({ name, weeklyDownloads, bounty }) {
   const server = toResolvedServer(name);
   const findings = [];
   const supplyChain = await scanSupplyChain(server, false);
@@ -59,6 +59,7 @@ async function scanNpmPackage({ name, weeklyDownloads }) {
     package: name,
     ecosystem: 'npm',
     weeklyDownloads,
+    bounty: bounty ?? null,
     trustScore: supplyChain.trustScore,
     metadata: supplyChain.metadata ?? null,
     findings,
@@ -73,6 +74,7 @@ function unsupportedPypiPackage(pkg) {
     package: pkg.name,
     ecosystem: 'pypi',
     weeklyDownloads: null,
+    bounty: pkg.bounty ?? null,
     trustScore: null,
     metadata: { version: pkg.version, license: pkg.license },
     findings: [],
@@ -116,12 +118,14 @@ async function main() {
     await writeFile(file, JSON.stringify(result, null, 2));
   }
 
-  const rows = ['package,weekly_downloads,critical,high,medium,low,info,top_finding'];
+  const rows = ['package,weekly_downloads,bounty,vendor,critical,high,medium,low,info,top_finding'];
   for (const result of results) {
     const counts = severityCounts(result.findings);
     rows.push([
       csvField(result.package),
       result.weeklyDownloads ?? 'n/a',
+      csvField(result.bounty?.bounty ?? 'unmapped'),
+      csvField(result.bounty?.vendor ?? ''),
       counts.CRITICAL,
       counts.HIGH,
       counts.MEDIUM,

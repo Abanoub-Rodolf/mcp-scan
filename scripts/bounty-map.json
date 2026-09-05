@@ -1,0 +1,108 @@
+{
+  "_comment": "Sidecar for ecosystem-scan target ranking. First matching rule wins; match is a case-insensitive substring test against the package name. Compiled from the 2026-09-05 bug bounty research pass (~/.thynkq/runs/perfect-edge-2026-09-05/income/bug-bounty-map.md). Nothing here is a claim about mcp-scan's own findings, only about whether a vendor pays for reports against that package.",
+  "rules": [
+    {
+      "match": "@modelcontextprotocol/",
+      "vendor": "Anthropic (MCP org)",
+      "program": "HackerOne (anthropic)",
+      "bounty": "excluded",
+      "payout": null,
+      "note": "github.com/modelcontextprotocol is explicitly listed out of scope on Anthropic's HackerOne program."
+    },
+    {
+      "match": "@vercel/",
+      "vendor": "Vercel",
+      "program": "HackerOne (vercel-open-source)",
+      "bounty": "yes",
+      "payout": "$50-$5,000 (Tier 2), top range to $10,250",
+      "note": "Scope names MCP client trust boundary violations and supply chain attacks against published packages, a direct match for this scanner's checks."
+    },
+    {
+      "match": "linear",
+      "vendor": "Linear",
+      "program": "Direct (linear.app/security/vulnerability)",
+      "bounty": "yes",
+      "payout": "CVSS 4.0-informed, no fixed table",
+      "note": "mcp.linear.app named explicitly; API and MCP server authorization called out as a top rewarded category."
+    },
+    {
+      "match": "cloudflare",
+      "vendor": "Cloudflare",
+      "program": "HackerOne (cloudflare)",
+      "bounty": "yes",
+      "payout": "$100-$10,000 depending on table version",
+      "note": "Proven track record of paid MCP-specific findings, e.g. $550 XSS in use-mcp's authorizeEndpoint."
+    },
+    {
+      "match": "workers-mcp",
+      "vendor": "Cloudflare",
+      "program": "HackerOne (cloudflare)",
+      "bounty": "yes",
+      "payout": "$100-$10,000 depending on table version",
+      "note": "Publishes SECURITY.md pointing back to the Cloudflare HackerOne program."
+    },
+    {
+      "match": "@azure-devops/",
+      "vendor": "Microsoft",
+      "program": "MSRC (Azure DevOps Bounty / Zero Day Quest)",
+      "bounty": "partial",
+      "payout": "up to $20,000 RCE (standing bounty); named explicitly in the 2026-02-23 Zero Day Quest scope add",
+      "note": "Confirm whether MCP coverage is live-event-only or year-round before counting on it."
+    },
+    {
+      "match": "@azure/",
+      "vendor": "Microsoft",
+      "program": "MSRC (Copilot Bounty / Zero Day Quest)",
+      "bounty": "partial",
+      "payout": "$250-$30,000 (Copilot Bounty); named explicitly in the 2026-02-23 Zero Day Quest scope add",
+      "note": "Confirm whether MCP coverage is live-event-only or year-round before counting on it."
+    },
+    {
+      "match": "@supabase/",
+      "vendor": "Supabase",
+      "program": "HackerOne (supabase)",
+      "bounty": "scope-yes-cash-unconfirmed",
+      "payout": null,
+      "note": "\"MCP Server\" explicitly in scope, but the program self-labels Vulnerability Disclosure Program; paid-vs-unpaid status not independently confirmed."
+    },
+    {
+      "match": "github-mcp-server",
+      "vendor": "GitHub",
+      "program": "GitHub Security Bug Bounty",
+      "bounty": "narrow-yes",
+      "payout": "$250-$10,000 public tier, $1,000-$30,000+ invite-only VIP",
+      "note": "Only non-prompt-injection authZ/access-control findings against the running server qualify; the repo's own code review is out of scope."
+    },
+    {
+      "match": "@neondatabase/",
+      "vendor": "Neon",
+      "program": "HackerOne (neon_bbp)",
+      "bounty": "yes",
+      "payout": "$150-$3,000",
+      "note": "General platform scope (web applications and APIs) likely covers the MCP server surface, though not named explicitly."
+    },
+    {
+      "match": "@stripe/",
+      "vendor": "Stripe",
+      "program": "HackerOne (stripe)",
+      "bounty": "unclear",
+      "payout": "$1,000-$5,000 medium cited (anecdotal)",
+      "note": "Program exists but no mention found of the Agent Toolkit (@stripe/mcp) as in or out of scope."
+    },
+    {
+      "match": "@notionhq/",
+      "vendor": "Notion",
+      "program": "HackerOne (notion)",
+      "bounty": "unclear",
+      "payout": null,
+      "note": "One anecdotal $2,000 payout reported; no MCP-specific scope language found."
+    }
+  ],
+  "default": {
+    "vendor": null,
+    "program": null,
+    "bounty": "unmapped",
+    "payout": null,
+    "note": "Not researched in the 2026-09-05 bounty map pass."
+  }
+}
