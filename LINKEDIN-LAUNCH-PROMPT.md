@@ -7,7 +7,7 @@ Paste this entire prompt into a fresh Claude session.
 ```
 You are creating a premium launch campaign for mcp-scan, an open-source CLI security scanner for MCP (Model Context Protocol) server configs.
 
-**Author:** Rodolf Boctor — open-source security engineer. Personal GitHub: github.com/rodolfboctor
+**Author:** Rodolf Boctor — open-source security engineer. Personal GitHub: gitlab.com/abanoub.rodolf/mcp-scan
 
 **CRITICAL: This is a PERSONAL open-source project. Do NOT reference any company name, brand, or employer anywhere in ANY deliverable. Everything is attributed to "Rodolf Boctor" as an individual developer. Zero company logos, zero company names, zero business branding. This is employment-safe.**
 
@@ -26,7 +26,7 @@ mcp-scan catches:
 - Package version analysis (detects outdated or suspicious versions)
 
 One command: `npx mcp-scan`
-GitHub: github.com/Abanoub-Rodolf/mcp-scan
+GitHub: gitlab.com/abanoub.rodolf/mcp-scan
 npm: npmjs.com/package/mcp-scan
 License: MIT
 Supports: Claude Desktop, Cursor, VS Code, Windsurf, Zed
@@ -237,7 +237,7 @@ Refine this into polished copy:
 Also include a **"First Comment"** section at the bottom of the file:
 ```
 First comment (post within 5 minutes of the main post):
-"Repo: github.com/Abanoub-Rodolf/mcp-scan — MIT license, one command: npx mcp-scan. Works with Claude Desktop, Cursor, VS Code, Windsurf, and Zed."
+"Repo: gitlab.com/abanoub.rodolf/mcp-scan — MIT license, one command: npx mcp-scan. Works with Claude Desktop, Cursor, VS Code, Windsurf, and Zed."
 ```
 
 ---
@@ -292,7 +292,7 @@ Structure (60% technical, 40% personal):
 - **Tweet 4 (product shot, + [IMAGE] marker):** "Here's what it looks like when it finds something." Mark where to attach terminal screenshot.
 - **Tweet 5 (why now):** MCP is everywhere. Claude, Cursor, VS Code, Zed. Nobody's auditing configs. New attack surface.
 - **Tweet 6 (what's next):** v2.0 roadmap. Prompt injection detection, CVE lookup, GitHub Action. Building in public.
-- **Tweet 7 (CTA):** "Try it: npx mcp-scan. Star the repo if useful: github.com/Abanoub-Rodolf/mcp-scan. What did you find?" GitHub link is fine on Twitter (no penalty).
+- **Tweet 7 (CTA):** "Try it: npx mcp-scan. Star the repo if useful: gitlab.com/abanoub.rodolf/mcp-scan What did you find?" GitHub link is fine on Twitter (no penalty).
 
 **Standalone backup tweet (post 2-3 hours AFTER the thread):**
 - Single tweet, not a reply. Catches people who skip threads.

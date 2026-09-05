@@ -3,7 +3,7 @@
 All drafts are ready to post manually. Do NOT post these automatically.
 
 Current facts (v2.0.3, 2026-08-15): 17 AI tool clients, 16 scanners, 17 check
-classes, 244 passing tests, GitHub public at github.com/Abanoub-Rodolf/mcp-scan,
+classes, 244 passing tests, GitHub public at gitlab.com/abanoub.rodolf/mcp-scan
 npm `mcp-scan@2.0.2` (2.0.3 publish pending NPM_TOKEN), audit record in
 docs/AUDIT-2026-08-15.md, awesome-list PR
 https://github.com/punkpeye/awesome-mcp-servers/pull/12192.
@@ -14,7 +14,7 @@ https://github.com/punkpeye/awesome-mcp-servers/pull/12192.
 
 **Title:** Show HN: mcp-scan – security scanner for MCP server configurations
 
-**URL:** https://github.com/Abanoub-Rodolf/mcp-scan
+**URL:** https://gitlab.com/abanoub.rodolf/mcp-scan
 
 **Body (first comment):**
 
@@ -68,7 +68,7 @@ Output formats: CLI table, JSON, SARIF (GitHub Security tab), HTML report, Cyclo
 
 One command: `npx mcp-scan@latest`
 
-GitHub: https://github.com/Abanoub-Rodolf/mcp-scan
+GitHub: https://gitlab.com/abanoub.rodolf/mcp-scan
 npm: https://www.npmjs.com/package/mcp-scan
 
 GitHub Action included for CI/CD integration.
@@ -95,7 +95,7 @@ It auto-detects configs for 17 AI clients: Claude Desktop, Claude Code, Cursor, 
 
 One command: `npx mcp-scan@latest`
 
-https://github.com/Abanoub-Rodolf/mcp-scan
+https://gitlab.com/abanoub.rodolf/mcp-scan
 
 ---
 
@@ -113,7 +113,7 @@ Supports Claude Desktop, Cursor, VS Code, Windsurf, Codex CLI, Zed, GitHub Copil
 
 `npx mcp-scan@latest`
 
-GitHub: https://github.com/Abanoub-Rodolf/mcp-scan
+GitHub: https://gitlab.com/abanoub.rodolf/mcp-scan
 
 ---
 
@@ -129,7 +129,7 @@ GitHub: https://github.com/Abanoub-Rodolf/mcp-scan
 
 5. I also audited mcp-scan itself: closed stored XSS, a command injection, and a raw-traffic log; killed the false-positive classes that made scanners noisy. 244 tests. Full report in the repo.
 
-Star the repo if it's useful: github.com/Abanoub-Rodolf/mcp-scan
+Star the repo if it's useful: gitlab.com/abanoub.rodolf/mcp-scan
 
 ---
 
@@ -152,7 +152,7 @@ One command: `npx mcp-scan@latest`. Zero telemetry, offline mode, SARIF for CI.
 
 I just completed a full security audit of mcp-scan itself: closed a stored XSS in HTML reports, a command injection in the doctor command, and raw unmasked traffic in the proxy log, and eliminated entire false-positive classes. 244 tests passing; the full before/after record is published with the repo.
 
-MIT licensed: github.com/Abanoub-Rodolf/mcp-scan
+MIT licensed: gitlab.com/abanoub.rodolf/mcp-scan
 
 ---
 

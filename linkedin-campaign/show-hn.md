@@ -7,7 +7,7 @@ Show HN: mcp-scan – security scanner for MCP server configs
 
 ## BODY
 
-Hey HN. I'm Rodolf, a security-focused engineer working on AI tooling. I built mcp-scan (github.com/Abanoub-Rodolf/mcp-scan) after running it on my own setup and finding an API token I forgot was there, sitting in plaintext in a Claude Desktop config from October.
+Hey HN. I'm Rodolf, a security-focused engineer working on AI tooling. I built mcp-scan (gitlab.com/abanoub.rodolf/mcp-scan) after running it on my own setup and finding an API token I forgot was there, sitting in plaintext in a Claude Desktop config from October.
 
 Snyk acquired Invariant Labs (creators of the original mcp-scan proof-of-concept) last year. Their version required Python and focused on prompt injection. This is a different tool: pure Node.js CLI, zero install friction (npx mcp-scan), and focused on the unsexy stuff that actually gets people compromised: leaked secrets, typosquatting, malicious packages, insecure transport. If you want prompt injection detection, that's a different problem. This solves the basics that nobody is checking.
 

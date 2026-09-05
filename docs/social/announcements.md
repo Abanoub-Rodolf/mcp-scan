@@ -1,6 +1,6 @@
 # mcp-scan launch announcements (v2.0.3 / v2.0.4)
 
-All copy below reflects the shipped 2.0.3/2.0.4 state. Verified facts: 246 tests, 16 scanners, 19 commands, 5 compliance frameworks, 2 SBOM formats, tool-catalog injection coverage, OIDC provenance publishing, SARIF GitHub Action, zero telemetry. The full audit record: https://github.com/Abanoub-Rodolf/mcp-scan/blob/main/docs/AUDIT-2026-08-15.md
+All copy below reflects the shipped 2.0.3/2.0.4 state. Verified facts: 246 tests, 16 scanners, 19 commands, 5 compliance frameworks, 2 SBOM formats, tool-catalog injection coverage, OIDC provenance publishing, SARIF GitHub Action, zero telemetry. The full audit record: https://gitlab.com/abanoub.rodolf/mcp-scan
 
 ---
 
@@ -16,7 +16,7 @@ All copy below reflects the shipped 2.0.3/2.0.4 state. Verified facts: 246 tests
 
 5/ Distribution got hardened too: npm publishing now runs on OIDC trusted publishing — no tokens, full provenance attestation on every release. 2.0.4 is provenance-signed.
 
-6/ 246 tests, 16 scanners, zero telemetry. `npx mcp-scan@latest` to scan your Claude/Cursor/Windsurf/VS Code MCP configs. github.com/Abanoub-Rodolf/mcp-scan
+6/ 246 tests, 16 scanners, zero telemetry. `npx mcp-scan@latest` to scan your Claude/Cursor/Windsurf/VS Code MCP configs. gitlab.com/abanoub.rodolf/mcp-scan
 
 **LinkedIn Post:**
 
@@ -34,7 +34,7 @@ The deeper finding is about the MCP threat model itself: tool catalogs are part 
 
 246 tests passing. npm publishing now runs on OIDC trusted publishing with full provenance attestation. Zero telemetry — nothing leaves your machine.
 
-Audit record: github.com/Abanoub-Rodolf/mcp-scan/blob/main/docs/AUDIT-2026-08-15.md
+Audit record: gitlab.com/abanoub.rodolf/mcp-scan
 
 `npx mcp-scan@latest`
 
@@ -60,7 +60,7 @@ I maintain mcp-scan, an open-source scanner that audits MCP server configs acros
 
 246 tests passing, 16 scanners, 19 commands, compliance mapping to SOC 2/GDPR/HIPAA/PCI-DSS/NIST, SBOM in CycloneDX/SPDX. Zero telemetry.
 
-Full audit record with every finding and fix: https://github.com/Abanoub-Rodolf/mcp-scan/blob/main/docs/AUDIT-2026-08-15.md
+Full audit record with every finding and fix: https://gitlab.com/abanoub.rodolf/mcp-scan
 
 `npx mcp-scan@latest` to try it. Feedback welcome — especially on the tool-catalog scanning approach.
 
@@ -79,7 +79,7 @@ The interesting part is the MCP threat model. Tool catalogs enter model context 
 
 Distribution: npm publishing now runs on OIDC trusted publishing with provenance attestation — 2.0.4 is provenance-signed, no tokens anywhere.
 
-246 tests, zero telemetry, MIT. `npx mcp-scan@latest`. Audit record: https://github.com/Abanoub-Rodolf/mcp-scan/blob/main/docs/AUDIT-2026-08-15.md
+246 tests, zero telemetry, MIT. `npx mcp-scan@latest`. Audit record: https://gitlab.com/abanoub.rodolf/mcp-scan
 
 ---
 
@@ -100,7 +100,7 @@ mcp-scan 2.0.3 发布。这个开源工具扫描 Claude Desktop、VS Code、Curs
 
 246 个测试通过，零遥测，MIT 协议。npm 发布已切换到 OIDC 可信发布，2.0.4 带 provenance 签名。
 
-审计全文：https://github.com/Abanoub-Rodolf/mcp-scan/blob/main/docs/AUDIT-2026-08-15.md
+审计全文：https://gitlab.com/abanoub.rodolf/mcp-scan
 
 `npx mcp-scan@latest`
 

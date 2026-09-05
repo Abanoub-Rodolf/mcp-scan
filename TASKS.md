@@ -144,7 +144,7 @@ Current problems: fake data in security lists, thin scanner coverage, stub scann
 8. Add both to `.github/assets/`
 9. Add a "Badge" section to README.md showing how to embed it:
    ```markdown
-   [![Secured by mcp-scan](https://img.shields.io/badge/Secured%20by-mcp--scan-4ade80?style=for-the-badge)](https://github.com/Abanoub-Rodolf/mcp-scan)
+   [![Secured by mcp-scan](https://img.shields.io/badge/Secured%20by-mcp--scan-4ade80?style=for-the-badge)](https://gitlab.com/abanoub.rodolf/mcp-scan)
    ```
    Also provide the custom SVG option.
 

@@ -37,7 +37,7 @@ C) Don't use MCP yet
 
 ## FIRST COMMENT (post within 5 minutes of main post)
 
-Repo: github.com/Abanoub-Rodolf/mcp-scan. MIT license, one command: npx mcp-scan. Works with 14 AI tools including Claude Desktop, Cursor, VS Code, Windsurf, Zed, Copilot, and more. 10 scanners, 43+ secret patterns. If you find something interesting, drop it in the comments.
+Repo: gitlab.com/abanoub.rodolf/mcp-scan MIT license, one command: npx mcp-scan. Works with 14 AI tools including Claude Desktop, Cursor, VS Code, Windsurf, Zed, Copilot, and more. 10 scanners, 43+ secret patterns. If you find something interesting, drop it in the comments.
 
 ---
 

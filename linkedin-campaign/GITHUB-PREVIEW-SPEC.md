@@ -44,7 +44,7 @@ Custom dimensions: 1280x640. Use their "bg color" to set #000000. Add text manua
 
 ## How to Upload to GitHub
 
-1. Go to github.com/Abanoub-Rodolf/mcp-scan/settings
+1. Go to gitlab.com/abanoub.rodolf/mcp-scan
 2. Scroll to "Social preview" section
 3. Click "Edit" → "Upload an image"
 4. Upload your 1280x640px PNG
