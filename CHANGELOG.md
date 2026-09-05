@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- Registry scanner checks npm provenance attestations before flagging a package as
+  unverified. A package published with `npm publish --provenance` now gets an INFO
+  `provenance-verified` finding instead of `unverified-source`. Packages without
+  provenance still get `unverified-source`, now at MEDIUM (unscoped) or LOW (scoped)
+  instead of HIGH/MEDIUM, since name-based unverified checks alone were flagging
+  most of npm, including mcp-scan's own package.
+
 ## [2.0.11] - 2026-09-05
 
 ### Fixed
