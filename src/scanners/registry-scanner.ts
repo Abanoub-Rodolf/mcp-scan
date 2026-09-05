@@ -123,7 +123,8 @@ export async function scanRegistry(server: ResolvedServer, offline: boolean = fa
       try {
         const resolvedVersion = await resolveVersionForProvenanceCheck(packageName, versionSpec);
         const doc = resolvedVersion ? await fetchVersionDoc(packageName, resolvedVersion) : null;
-        predicateType = doc?.dist?.attestations?.provenance?.predicateType;
+        const rawPredicateType = doc?.dist?.attestations?.provenance?.predicateType;
+        predicateType = typeof rawPredicateType === 'string' && rawPredicateType.length > 0 ? rawPredicateType : undefined;
       } catch (_error) {
         logger.warn(`Registry: provenance lookup for '${packageName}' failed or timed out. Falling back to unverified-source check.`);
       }
