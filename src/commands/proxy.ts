@@ -85,7 +85,9 @@ export function splitArgs(input: string): string[] {
 
 export async function runProxy(options: { command?: string, args?: string, ui?: boolean }) {
   if (!options.command) {
-    throw new Error('No command specified for proxy. Use --command <cmd>.');
+    console.error('No command specified for proxy. Use --command <cmd>.');
+    process.exitCode = 1;
+    return;
   }
 
   let dashboardCallback: undefined | ((dir: string, msg: string, pii: boolean) => void);
