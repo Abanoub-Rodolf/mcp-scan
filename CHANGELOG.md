@@ -23,6 +23,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `mcp-scan dashboard` and `proxy --ui` now print an install hint and exit
   1 instead of crashing if the optional install was skipped.
 
+### Added
+- `mcp-scan badge <package>` prints the README badge markdown and report link
+  for a package's hosted check at thynkq.com; `scan` now ends with the same
+  report hint for the scanned package.
+
+### Fixed
+- npm provenance publishing works again: `repository.url` must name the GitHub
+  repo the release workflow runs in, or the registry rejects the sigstore
+  bundle (the 2.0.11 tag never reached npm for this reason).
+
 ## [2.0.11] - 2026-09-05
 
 ### Fixed
