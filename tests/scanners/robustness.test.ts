@@ -46,7 +46,7 @@ describe('Scanner Robustness', () => {
   it('should not crash on URL-only server (no command, no args)', async () => {
     expect(() => scanSecrets(urlOnlyServer)).not.toThrow();
     expect(() => scanPermissions(urlOnlyServer)).not.toThrow();
-    expect(() => scanRegistry(urlOnlyServer)).not.toThrow();
+    await expect(scanRegistry(urlOnlyServer, true)).resolves.toBeDefined();
     expect(() => scanTyposquat(urlOnlyServer)).not.toThrow();
     expect(() => scanTransport(urlOnlyServer)).not.toThrow();
     expect(() => scanConfig(urlOnlyServer)).not.toThrow();
@@ -61,7 +61,7 @@ describe('Scanner Robustness', () => {
   it('should not crash on no-args server', async () => {
     expect(() => scanSecrets(noArgsServer)).not.toThrow();
     expect(() => scanPermissions(noArgsServer)).not.toThrow();
-    expect(() => scanRegistry(noArgsServer)).not.toThrow();
+    await expect(scanRegistry(noArgsServer, true)).resolves.toBeDefined();
     expect(() => scanTyposquat(noArgsServer)).not.toThrow();
     expect(() => scanTransport(noArgsServer)).not.toThrow();
     expect(() => scanConfig(noArgsServer)).not.toThrow();
@@ -76,7 +76,7 @@ describe('Scanner Robustness', () => {
   it('should not crash on no-env server', async () => {
     expect(() => scanSecrets(noEnvServer)).not.toThrow();
     expect(() => scanPermissions(noEnvServer)).not.toThrow();
-    expect(() => scanRegistry(noEnvServer)).not.toThrow();
+    await expect(scanRegistry(noEnvServer, true)).resolves.toBeDefined();
     expect(() => scanTyposquat(noEnvServer)).not.toThrow();
     expect(() => scanTransport(noEnvServer)).not.toThrow();
     expect(() => scanConfig(noEnvServer)).not.toThrow();
@@ -91,7 +91,7 @@ describe('Scanner Robustness', () => {
   it('should not crash on completely empty server', async () => {
     expect(() => scanSecrets(emptyServer)).not.toThrow();
     expect(() => scanPermissions(emptyServer)).not.toThrow();
-    expect(() => scanRegistry(emptyServer)).not.toThrow();
+    await expect(scanRegistry(emptyServer, true)).resolves.toBeDefined();
     expect(() => scanTyposquat(emptyServer)).not.toThrow();
     expect(() => scanTransport(emptyServer)).not.toThrow();
     expect(() => scanConfig(emptyServer)).not.toThrow();
