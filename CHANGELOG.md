@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.0.12] - 2026-09-05
+
+### Changed
+- npm repository metadata now points at the GitLab repo.
+
+### Fixed
+- data-controls: digit runs in the config file path are no longer flagged as PII.
+
 ## [2.0.11] - 2026-09-05
 
 ### Fixed
