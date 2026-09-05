@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { badgeHint, findBadgeablePackage } from '../src/utils/repo-hint.js';
+import { ScanReport, ServerScanResult } from '../src/types/scan-result.js';
 
 function fakeStream(isTTY: boolean) {
   const writes: string[] = [];
@@ -97,5 +99,88 @@ describe('repoHint', () => {
     const { stream: second, writes: secondWrites } = fakeStream(true);
     expect(() => repoHint(true, second)).not.toThrow();
     expect(secondWrites).toHaveLength(0);
+  });
+});
+
+function fakeResult(overrides: Partial<ServerScanResult> = {}): ServerScanResult {
+  return {
+    serverName: 'server',
+    toolName: 'claude-desktop',
+    configPath: '/config.json',
+    findings: [],
+    scanDurationMs: 1,
+    ...overrides,
+  };
+}
+
+function fakeReport(results: ServerScanResult[]): ScanReport {
+  return {
+    results,
+    totalScanned: results.length,
+    criticalCount: 0,
+    highCount: 0,
+    mediumCount: 0,
+    lowCount: 0,
+    infoCount: 0,
+    totalDurationMs: 1,
+  };
+}
+
+describe('findBadgeablePackage', () => {
+  it('returns the package name for an npx server', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['@modelcontextprotocol/server-filesystem', '/tmp'] } })]);
+    expect(findBadgeablePackage(report)).toBe('@modelcontextprotocol/server-filesystem');
+  });
+
+  it('returns the first valid package across multiple servers', () => {
+    const report = fakeReport([
+      fakeResult({ serverName: 'a', connection: { command: 'node', args: ['/usr/local/bin/server.js'] } }),
+      fakeResult({ serverName: 'b', connection: { command: 'npx', args: ['-y', 'good-package'] } }),
+    ]);
+    expect(findBadgeablePackage(report)).toBe('good-package');
+  });
+
+  it('returns undefined when no server runs via npx/npm/node', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'python', args: ['server.py'] } })]);
+    expect(findBadgeablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined when the only candidate arg is a file path, not a package spec', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['/usr/local/bin/server.js'] } })]);
+    expect(findBadgeablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined for an empty report', () => {
+    expect(findBadgeablePackage(fakeReport([]))).toBeUndefined();
+  });
+});
+
+describe('badgeHint', () => {
+  afterEach(() => { delete process.env.MCP_SCAN_NO_HINTS; });
+
+  it('writes one line naming the package when a package is given', () => {
+    const { stream, writes } = fakeStream(true);
+    badgeHint('mcp-scan', stream);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain('npx mcp-scan badge mcp-scan');
+  });
+
+  it('stays silent when there is no package', () => {
+    const { stream, writes } = fakeStream(true);
+    badgeHint(undefined, stream);
+    expect(writes).toHaveLength(0);
+  });
+
+  it('stays silent when the stream is not a TTY', () => {
+    const { stream, writes } = fakeStream(false);
+    badgeHint('mcp-scan', stream);
+    expect(writes).toHaveLength(0);
+  });
+
+  it('respects MCP_SCAN_NO_HINTS', () => {
+    process.env.MCP_SCAN_NO_HINTS = '1';
+    const { stream, writes } = fakeStream(true);
+    badgeHint('mcp-scan', stream);
+    expect(writes).toHaveLength(0);
   });
 });

@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 import { auditDir } from './audit-logger.js';
+import { validatePackageName } from '../scanners/package-scanner.js';
+import type { ScanReport } from '../types/scan-result.js';
 
 // 1,123 people/week run this via npx and never see the GitHub repo behind
 // it. One dim line, shown once per machine ever, right after a scan that
@@ -33,4 +35,36 @@ export function repoHint(hasFindings: boolean, stream: NodeJS.WriteStream = proc
     fs.mkdirSync(auditDir(), { recursive: true });
     fs.writeFileSync(markerPath, new Date().toISOString());
   } catch (_error) {}
+}
+
+/**
+ * First server in the report launched via npx/npm/node with a bare package
+ * spec as its argument, for the post-scan badge hint below. Reuses the same
+ * name validation as `mcp-scan badge` so the hint never suggests a package
+ * name that command would then reject (also filters out `node <file-path>`
+ * servers, which aren't a package spec at all).
+ */
+export function findBadgeablePackage(report: ScanReport): string | undefined {
+  for (const result of report.results) {
+    const command = result.connection?.command;
+    if (command !== 'npx' && command !== 'npm' && command !== 'node') continue;
+
+    const pkgArg = result.connection?.args?.find(a => !a.startsWith('-'));
+    if (!pkgArg) continue;
+
+    const validated = validatePackageName(pkgArg);
+    if (validated.valid) return validated.name;
+  }
+  return undefined;
+}
+
+// No marker file here, unlike repoHint: this is cheap to compute per scan
+// and only fires when the scan actually found something to badge, so
+// there's no "once ever" state worth persisting.
+export function badgeHint(packageName: string | undefined, stream: NodeJS.WriteStream = process.stdout): void {
+  if (!packageName) return;
+  if (process.env.MCP_SCAN_NO_HINTS) return;
+  if (!stream.isTTY) return;
+
+  stream.write(chalk.dim(`\nPublishing an MCP server? Add a public scan badge: npx mcp-scan badge ${packageName}\n`));
 }

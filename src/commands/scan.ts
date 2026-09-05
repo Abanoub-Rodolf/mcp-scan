@@ -29,7 +29,7 @@ import { printJsonReport } from '../utils/json-reporter.js';
 import { printReport } from '../utils/reporter.js';
 import { logScan, checkFingerprints } from '../utils/audit-logger.js';
 import { recalcSeverityCounts, countTotalFindings } from '../utils/severity-tally.js';
-import { repoHint } from '../utils/repo-hint.js';
+import { repoHint, badgeHint, findBadgeablePackage } from '../utils/repo-hint.js';
 import { loadCustomRules, evaluateCustomRules } from '../utils/rule-engine.js';
 import { SEVERITY_ORDER, Severity } from '../types/severity.js';
 import { logger } from '../utils/logger.js';
@@ -313,6 +313,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       // this branch in a TTY.
       if (!options.sarif && !options.ci) {
         repoHint(countTotalFindings(report) > 0);
+        badgeHint(findBadgeablePackage(report));
       }
     }
   }
