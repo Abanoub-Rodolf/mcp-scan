@@ -6,6 +6,7 @@ import os from 'os';
 import { Transform, TransformCallback } from 'stream';
 import { loadPolicy } from '../config/parser.js';
 import { maskPii, PrivacyOptions } from '../utils/privacy-engine.js';
+import { reportBlessedImportError } from '../utils/dashboard-deps-hint.js';
 
 class JsonRpcInterceptor extends Transform {
   private buffer: string = '';
@@ -93,8 +94,9 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
       let createDashboard;
       try {
         ({ createDashboard } = await import('../utils/dashboard-ui.js'));
-      } catch {
-        throw new Error('Install blessed and blessed-contrib to use --ui: npm i -g blessed blessed-contrib');
+      } catch (err) {
+        reportBlessedImportError(err);
+        return;
       }
       const dashboard = createDashboard();
       dashboard.switchView('PROXY');
