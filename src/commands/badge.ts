@@ -20,7 +20,11 @@ export function reportUrlFor(packageName: string): string {
 export function runBadge(pkg: string, options: BadgeOptions = {}): void {
   const validated = validatePackageName(pkg);
   if (!validated.valid) {
-    console.error(`Error: ${validated.error}`);
+    if (options.json) {
+      console.error(JSON.stringify({ error: validated.error, package: pkg }));
+    } else {
+      console.error(`Error: ${validated.error}`);
+    }
     process.exitCode = 1;
     return;
   }
