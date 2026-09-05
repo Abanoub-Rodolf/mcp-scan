@@ -286,9 +286,9 @@ program
   .command('badge <package>')
   .description('Print a public scan badge and report link for an npm package')
   .option('--json', 'Output as JSON')
-  .action(async (pkg, options) => {
+  .action(async (packageName, options) => {
     const { runBadge } = await import('./commands/badge.js');
-    runBadge(pkg, options);
+    runBadge(packageName, options);
   });
 
 program.parse();
