@@ -7,6 +7,7 @@ stages:
   - build
   - test
   - audit
+  - ecosystem
 
 variables:
   NODE_VERSION: "20"
@@ -80,3 +81,30 @@ audit:
   # risk. Audit gate is set to critical so we still block on real CVEs.
   script:
     - npm audit --audit-level=critical
+
+# Manual only: scans the top MCP server packages on npm/PyPI for the
+# ThynkQ ecosystem campaign. No tags, so it lands on shared runners like
+# every other job here (this project has shared_runners_enabled).
+ecosystem-scan:
+  stage: ecosystem
+  image: node:20
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-20"
+    paths:
+      - node_modules/
+    policy: pull
+  timeout: 25m
+  interruptible: true
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: manual
+  artifacts:
+    paths:
+      - out/ecosystem/
+    expire_in: 30 days
+  script:
+    - npm run build
+    - node scripts/top-mcp-packages.mjs
+    - node scripts/ecosystem-scan.mjs
