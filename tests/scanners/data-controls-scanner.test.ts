@@ -156,4 +156,23 @@ describe('Data Controls Scanner', () => {
     const server: ResolvedServer = { name: 'empty', toolName: 'test', configPath: '/test' };
     expect(() => scanDataControls(server)).not.toThrow();
   });
+
+  it('13. Digit run in configPath is not scanned as PII', () => {
+    const server: ResolvedServer = {
+      name: 'clean', toolName: 'test',
+      configPath: '/tmp/913784651682/mcp.json',
+      description: 'basic math operations'
+    };
+    const findings = scanDataControls(server);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('14. Real phone number in env is still flagged', () => {
+    const server: ResolvedServer = {
+      name: 'contact-tool', toolName: 'test', configPath: '/test',
+      env: { SUPPORT_PHONE: '+1-555-234-5678' }
+    };
+    const findings = scanDataControls(server);
+    expect(findings.find(f => f.id === 'data-controls-pii')).toBeDefined();
+  });
 });
