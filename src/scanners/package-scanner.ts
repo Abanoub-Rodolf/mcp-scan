@@ -99,6 +99,21 @@ export function parsePackageSpec(spec: string): { name: string; versionSpec: str
   return { name, versionSpec };
 }
 
+const NPM_PACKAGE_NAME_RE = /^(?:@[a-z0-9-][a-z0-9-._~]*\/)?[a-z0-9][a-z0-9-._~]*$/;
+
+/**
+ * Validates an npm registry package name (lowercase, URL-safe, optional
+ * @scope/, <=214 chars). Runs the input through parsePackageSpec first so
+ * a spec with a pinned version (`pkg@1.2.3`) validates the bare name.
+ */
+export function validatePackageName(input: string): { valid: true; name: string } | { valid: false; error: string } {
+  const { name } = parsePackageSpec(input);
+  if (!name || name.length > 214 || !NPM_PACKAGE_NAME_RE.test(name)) {
+    return { valid: false, error: `'${input}' is not a valid npm package name.` };
+  }
+  return { valid: true, name };
+}
+
 export type VersionMatch = true | false | 'unknown';
 
 /**

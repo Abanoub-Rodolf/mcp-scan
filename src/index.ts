@@ -282,4 +282,13 @@ program
     await runPolicyAction(action, file);
   });
 
+program
+  .command('badge <package>')
+  .description('Print a public scan badge and report link for an npm package')
+  .option('--json', 'Output as JSON')
+  .action(async (pkg, options) => {
+    const { runBadge } = await import('./commands/badge.js');
+    runBadge(pkg, options);
+  });
+
 program.parse();
