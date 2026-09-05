@@ -1,6 +1,13 @@
-import { createDashboard } from '../utils/dashboard-ui.js';
-
 export async function runDashboard() {
+  let createDashboard;
+  try {
+    ({ createDashboard } = await import('../utils/dashboard-ui.js'));
+  } catch {
+    console.error('Install blessed and blessed-contrib to use the dashboard: npm i -g blessed blessed-contrib');
+    process.exitCode = 1;
+    return;
+  }
+
   let dashboard;
   try {
     dashboard = createDashboard();

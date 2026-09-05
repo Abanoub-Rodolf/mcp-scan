@@ -90,7 +90,12 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   let dashboardCallback: undefined | ((dir: string, msg: string, pii: boolean) => void);
   const args = options.args ? splitArgs(options.args) : [];
   if (options.ui) {
-      const { createDashboard } = await import('../utils/dashboard-ui.js');
+      let createDashboard;
+      try {
+        ({ createDashboard } = await import('../utils/dashboard-ui.js'));
+      } catch {
+        throw new Error('Install blessed and blessed-contrib to use --ui: npm i -g blessed blessed-contrib');
+      }
       const dashboard = createDashboard();
       dashboard.switchView('PROXY');
       dashboardCallback = dashboard.appendProxyLog;
