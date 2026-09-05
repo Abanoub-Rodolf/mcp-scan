@@ -27,7 +27,7 @@ Already scanned your MCP server? Get a public badge for its README:
 npx mcp-scan badge <your-npm-package-name>
 ```
 
-Prints a ready-to-paste Markdown snippet linking to a hosted scan report at thynkq.com. No network calls, no account needed.
+Prints a ready-to-paste Markdown snippet linking to a hosted scan report at thynkq.com. The command itself makes no network calls and needs no account, but the badge image is served by thynkq.com and loads whenever someone views the README.
 
 ---
 
