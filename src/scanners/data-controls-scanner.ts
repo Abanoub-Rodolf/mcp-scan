@@ -16,17 +16,20 @@ const MANY_TEMP_FILES_THRESHOLD = 100;
  */
 export function scanDataControls(server: ResolvedServer, performRetentionScan: boolean = false): Finding[] {
   const findings: Finding[] = [];
-  const serverStr = JSON.stringify(server).toLowerCase();
-  
+  // configPath/toolName are filesystem metadata, not config content - a scan
+  // path containing a digit run (e.g. a UUID) otherwise fabricates PII hits.
+  const { configPath: _configPath, toolName: _toolName, ...scanTarget } = server;
+  const serverStr = JSON.stringify(scanTarget).toLowerCase();
+
   const detectedPii = new Set<string>();
-  
-  // 1. Pattern-based PII detection over the full server config. Patterns are
+
+  // 1. Pattern-based PII detection over the server config. Patterns are
   // stored without /g so repeated .test() calls never hit the lastIndex
   // trap; validate() rejects shape-only matches (Luhn, private IPs).
   for (const pattern of PII_PATTERNS) {
     if (pattern.detect === false) continue;
     const validate = pattern.validate;
-    const matches = JSON.stringify(server).match(pattern.regex);
+    const matches = JSON.stringify(scanTarget).match(pattern.regex);
     if (matches && (!validate || matches.some(m => validate(m)))) {
       detectedPii.add(pattern.name);
     }

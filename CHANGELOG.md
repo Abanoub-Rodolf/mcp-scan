@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.0.11] - 2026-09-05
+
+### Fixed
+- data-controls: config file paths no longer scanned for PII.
+
 ## [2.0.10] - 2026-09-01
 
 ### Added
