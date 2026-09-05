@@ -15,7 +15,9 @@ export async function runCi(options: {
 }) {
   const maxSeverityStr = (options.maxSeverity || 'high').toUpperCase() as Severity;
   if (!(maxSeverityStr in SEVERITY_ORDER)) {
-    throw new Error(`Invalid max severity '${options.maxSeverity}'. Valid values: ${Object.keys(SEVERITY_ORDER).join(', ').toLowerCase()}`);
+    console.error(`Invalid max severity '${options.maxSeverity}'. Valid values: ${Object.keys(SEVERITY_ORDER).join(', ').toLowerCase()}`);
+    process.exitCode = 1;
+    return;
   }
   const maxSeverityThreshold = SEVERITY_ORDER[maxSeverityStr];
 
