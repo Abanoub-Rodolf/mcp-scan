@@ -49,13 +49,16 @@ describe('runBadge', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('rejects an invalid package name in --json mode too', () => {
+  it('rejects an invalid package name in --json mode with structured JSON', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     runBadge('/etc/passwd', { json: true });
 
     expect(log).not.toHaveBeenCalled();
-    expect(error).toHaveBeenCalled();
+    expect(error).toHaveBeenCalledTimes(1);
+    const parsed = JSON.parse(error.mock.calls[0][0]);
+    expect(parsed.package).toBe('/etc/passwd');
+    expect(typeof parsed.error).toBe('string');
     expect(process.exitCode).toBe(1);
   });
 });
