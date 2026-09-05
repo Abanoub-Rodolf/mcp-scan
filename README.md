@@ -21,13 +21,13 @@ No installation. No sign-up. No telemetry. No data leaves your machine. Supply c
 
 ## Badge
 
-Already scanned your MCP server? Get a public badge for its README:
+Publish an MCP server yourself? Get a public badge for its README:
 
 ```bash
 npx mcp-scan badge <your-npm-package-name>
 ```
 
-Prints a ready-to-paste Markdown snippet linking to a hosted scan report at thynkq.com. The command itself makes no network calls and needs no account, but the badge image is served by thynkq.com and loads whenever someone views the README.
+Prints a ready-to-paste Markdown snippet linking to a hosted scan report at thynkq.com. The command itself makes no network calls and needs no account, but the badge image is served by thynkq.com and loads whenever someone views the README. Every scan also prints a public report link for each server it found, whether or not you publish it yourself.
 
 ---
 

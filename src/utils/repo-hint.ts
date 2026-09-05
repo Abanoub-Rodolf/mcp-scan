@@ -3,6 +3,7 @@ import path from 'path';
 import chalk from 'chalk';
 import { auditDir } from './audit-logger.js';
 import { validatePackageName } from '../scanners/package-scanner.js';
+import { reportUrlFor } from '../commands/badge.js';
 import type { ScanReport } from '../types/scan-result.js';
 
 // 1,123 people/week run this via npx and never see the GitHub repo behind
@@ -66,12 +67,12 @@ function packageArgFrom(args: string[]): string | undefined {
 
 /**
  * First server in the report launched via npx/npm/node with a bare package
- * spec as its argument, for the post-scan badge hint below. Reuses the same
- * name validation as `mcp-scan badge` so the hint never suggests a package
- * name that command would then reject (also filters out `node <file-path>`
- * servers, which aren't a package spec at all).
+ * spec as its argument, for the post-scan report hint below. Reuses the
+ * same name validation as `mcp-scan badge` so the hint never points at a
+ * report URL for a name that command would then reject (also filters out
+ * `node <file-path>` servers, which aren't a package spec at all).
  */
-export function findBadgeablePackage(report: ScanReport): string | undefined {
+export function findReportablePackage(report: ScanReport): string | undefined {
   for (const result of report.results) {
     const command = result.connection?.command;
     if (command !== 'npx' && command !== 'npm' && command !== 'node') continue;
@@ -86,12 +87,17 @@ export function findBadgeablePackage(report: ScanReport): string | undefined {
 }
 
 // No marker file here, unlike repoHint: this is cheap to compute per scan
-// and only fires when the scan actually found something to badge, so
+// and only fires when the scan actually found a package to report on, so
 // there's no "once ever" state worth persisting.
-export function badgeHint(packageName: string | undefined, stream: NodeJS.WriteStream = process.stdout): void {
+//
+// Points at the hosted report rather than the `badge` command: the scanned
+// server is almost always a third-party package the user doesn't own, so a
+// "publish a badge" pitch is wrong for the common case. A report link is
+// useful regardless of who owns the package.
+export function reportHint(packageName: string | undefined, stream: NodeJS.WriteStream = process.stdout): void {
   if (!packageName) return;
   if (process.env.MCP_SCAN_NO_HINTS) return;
   if (!stream.isTTY) return;
 
-  stream.write(chalk.dim(`\nPublishing an MCP server? Add a public scan badge: npx mcp-scan badge ${packageName}\n`));
+  stream.write(chalk.dim(`\nPublic scan report for ${packageName}: ${reportUrlFor(packageName)}\n`));
 }
