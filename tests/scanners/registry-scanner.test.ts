@@ -145,4 +145,62 @@ describe('Registry Scanner', () => {
     const finding = findings.find(f => f.id === 'unverified-source');
     expect(finding?.fixRecommendation).toContain('--provenance');
   });
+
+  it('does not fall through to latest provenance when a range spec resolves to an older, unattested version', async () => {
+    mockFetch
+      .mockResolvedValueOnce(createMockFetchResponse(true, {
+        'dist-tags': { latest: '2.0.0' },
+        versions: { '1.0.0': {}, '1.5.0': {}, '2.0.0': {} },
+      }))
+      .mockResolvedValueOnce(createMockFetchResponse(true, {
+        version: '1.5.0',
+        dist: {},
+      }));
+
+    const findings = await scanRegistry({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', 'range-spec-pkg@^1.0.0']
+    }, false);
+
+    expect(mockFetch).toHaveBeenNthCalledWith(1, 'https://registry.npmjs.org/range-spec-pkg', expect.anything());
+    expect(mockFetch).toHaveBeenNthCalledWith(2, 'https://registry.npmjs.org/range-spec-pkg/1.5.0', expect.anything());
+    expect(findings.some(f => f.id === 'provenance-verified')).toBe(false);
+    expect(findings.some(f => f.id === 'unverified-source')).toBe(true);
+  });
+
+  it('resolves a dist-tag spec through dist-tags rather than defaulting to latest', async () => {
+    mockFetch
+      .mockResolvedValueOnce(createMockFetchResponse(true, {
+        'dist-tags': { latest: '2.0.0', beta: '3.0.0-beta.1' },
+        versions: { '2.0.0': {}, '3.0.0-beta.1': {} },
+      }))
+      .mockResolvedValueOnce(createMockFetchResponse(true, {
+        version: '3.0.0-beta.1',
+        dist: { attestations: { provenance: { predicateType: 'https://slsa.dev/provenance/v1' } } },
+      }));
+
+    const findings = await scanRegistry({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', 'tag-spec-pkg@beta']
+    }, false);
+
+    expect(mockFetch).toHaveBeenNthCalledWith(2, 'https://registry.npmjs.org/tag-spec-pkg/3.0.0-beta.1', expect.anything());
+    expect(findings.some(f => f.id === 'provenance-verified')).toBe(true);
+  });
+
+  it('falls back to unverified-source when the version spec cannot be resolved at all', async () => {
+    mockFetch.mockResolvedValueOnce(createMockFetchResponse(true, {
+      'dist-tags': { latest: '2.0.0' },
+      versions: { '2.0.0': {} },
+    }));
+
+    const findings = await scanRegistry({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', 'unresolvable-spec-pkg@nonexistent-tag']
+    }, false);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(findings.some(f => f.id === 'unverified-source')).toBe(true);
+    expect(findings.some(f => f.id === 'provenance-verified')).toBe(false);
+  });
 });
