@@ -8,7 +8,7 @@ import { parseCvssVector } from 'vuln-vects';
 import semver from 'semver';
 
 interface NpmRegistryResponse {
-  'dist-tags'?: { latest?: string };
+  'dist-tags'?: Record<string, string>;
   time?: Record<string, string>;
   versions?: Record<string, unknown>;
 }
@@ -167,14 +167,16 @@ export function matchVersionAgainstVuln(version: string, vuln: OsvVuln, packageN
 /**
  * Resolves what version would actually be installed for a package spec:
  * an exact pin is used as-is, a semver range is resolved against the
- * registry's published versions, and an unpinned/`latest` spec resolves
- * to dist-tags.latest. Returns version: null when resolution isn't
- * possible (registry lookup failed, or nothing satisfies the range) -
- * callers must not assume a vulnerable version in that case.
+ * registry's published versions, a dist-tag (`beta`, `next`, ...)
+ * resolves through dist-tags, and an unpinned spec resolves to
+ * dist-tags.latest. Returns version: null when resolution isn't
+ * possible (registry lookup failed, tag unknown, or nothing satisfies
+ * the range) - callers must not assume a vulnerable version, or a clean
+ * one, in that case.
  */
-function resolveEffectiveVersion(
+export function resolveEffectiveVersion(
   versionSpec: string | null,
-  latestVersion: string,
+  distTags: Record<string, string> | undefined,
   publishedVersions: string[]
 ): { version: string | null; pinned: boolean } {
   if (versionSpec) {
@@ -185,9 +187,14 @@ function resolveEffectiveVersion(
       const max = publishedVersions.length > 0 ? semver.maxSatisfying(publishedVersions, versionSpec) : null;
       return { version: max, pinned: false };
     }
-    // Unparseable version spec (e.g. a git URL or tag) - can't resolve.
+    const tagged = distTags?.[versionSpec];
+    if (tagged && semver.valid(tagged)) {
+      return { version: tagged, pinned: false };
+    }
+    // Unparseable version spec (e.g. a git URL, or an unknown tag) - can't resolve.
     return { version: null, pinned: false };
   }
+  const latestVersion = distTags?.latest;
   if (latestVersion && semver.valid(latestVersion)) {
     return { version: latestVersion, pinned: false };
   }
@@ -215,6 +222,7 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
   }
 
   let latestVersion = '';
+  let distTags: Record<string, string> | undefined;
   let publishedVersions: string[] = [];
   try {
     const res = await fetchWithTimeout(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`, {}, 8000);
@@ -223,7 +231,8 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
       logger.warn(`Failed to fetch package info for ${packageName} from npm registry.`);
     } else {
       const data = await res.json() as NpmRegistryResponse;
-      latestVersion = data['dist-tags']?.latest || '';
+      distTags = data['dist-tags'];
+      latestVersion = distTags?.latest || '';
       publishedVersions = data.versions ? Object.keys(data.versions) : [];
       if (data && typeof data === 'object' && data.time && typeof data.time.modified === 'string') {
         const lastModified = new Date(data.time.modified);
@@ -244,7 +253,7 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
     return scanPackageOffline(packageName, versionSpec);
   }
 
-  const { version: resolvedVersion, pinned } = resolveEffectiveVersion(versionSpec, latestVersion, publishedVersions);
+  const { version: resolvedVersion, pinned } = resolveEffectiveVersion(versionSpec, distTags, publishedVersions);
   const versionResolutionFailed = resolvedVersion === null;
   if (versionResolutionFailed) {
     logger.warn(`Could not resolve an installable version for '${packageSpec}'; vulnerability matching will be degraded to an unresolved-version finding.`);

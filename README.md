@@ -44,7 +44,7 @@ mcp-scan was built after analyzing hundreds of publicly available MCP server con
 | Overly Broad Permissions | HIGH | Server requests filesystem or shell access it does not need |
 | Telemetry Tracking | MEDIUM | Server contacts known analytics or tracking domains |
 | Privacy Gaps | MEDIUM | Missing data retention, deletion, or encryption-at-rest policies |
-| Unverified Source | HIGH | Package not from a verified registry or organization |
+| Unverified Source | MEDIUM | Package not from a verified registry or organization, and not published with npm provenance |
 | Data Minimization | LOW | Tool requests significantly more data fields than necessary |
 | Missing Transport | HIGH | MCP server communicates over unencrypted transport |
 

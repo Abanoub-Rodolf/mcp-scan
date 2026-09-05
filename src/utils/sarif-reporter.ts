@@ -263,6 +263,11 @@ const SARIF_RULES: Record<string, { short: string, full: string, helpUri?: strin
      full: 'Server uses an outdated transport configuration.',
      helpUri: 'https://thynkq.com/docs/mcp-scan/rules/outdated-transport'
   },
+  'provenance-verified': {
+     short: 'Provenance verified',
+     full: 'Package was published with a signed npm provenance attestation.',
+     helpUri: 'https://thynkq.com/docs/mcp-scan/rules/provenance-verified'
+  },
   'prompt-injection-pattern': {
      short: 'Prompt injection risk',
      full: 'Suspicious instruction patterns detected in descriptions or arguments.',
