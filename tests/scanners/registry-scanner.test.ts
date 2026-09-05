@@ -203,4 +203,34 @@ describe('Registry Scanner', () => {
     expect(findings.some(f => f.id === 'unverified-source')).toBe(true);
     expect(findings.some(f => f.id === 'provenance-verified')).toBe(false);
   });
+
+  it('treats a non-string predicateType (object) as no provenance', async () => {
+    mockFetch.mockResolvedValueOnce(createMockFetchResponse(true, {
+      version: '1.0.0',
+      dist: { attestations: { provenance: { predicateType: {} } } },
+    }));
+
+    const findings = await scanRegistry({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', 'weird-predicate-object-pkg']
+    }, false);
+
+    expect(findings.some(f => f.id === 'provenance-verified')).toBe(false);
+    expect(findings.some(f => f.id === 'unverified-source')).toBe(true);
+  });
+
+  it('treats a non-string predicateType (array) as no provenance', async () => {
+    mockFetch.mockResolvedValueOnce(createMockFetchResponse(true, {
+      version: '1.0.0',
+      dist: { attestations: { provenance: { predicateType: [] } } },
+    }));
+
+    const findings = await scanRegistry({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', 'weird-predicate-array-pkg']
+    }, false);
+
+    expect(findings.some(f => f.id === 'provenance-verified')).toBe(false);
+    expect(findings.some(f => f.id === 'unverified-source')).toBe(true);
+  });
 });
