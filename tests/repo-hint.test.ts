@@ -180,6 +180,26 @@ describe('findBadgeablePackage', () => {
     expect(findBadgeablePackage(report)).toBeUndefined();
   });
 
+  it('returns the --package value, not the bin name, for npx --package=<pkg> <bin>', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['--package=good-package', 'some-bin'] } })]);
+    expect(findBadgeablePackage(report)).toBe('good-package');
+  });
+
+  it('returns the --package value, not the bin name, for npx --package <pkg> <bin>', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['--package', 'good-package', 'some-bin'] } })]);
+    expect(findBadgeablePackage(report)).toBe('good-package');
+  });
+
+  it('returns the -p value, not the bin name, for npx -p <pkg> <bin>', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['-p', 'good-package', 'some-bin'] } })]);
+    expect(findBadgeablePackage(report)).toBe('good-package');
+  });
+
+  it('returns the scoped --package value ahead of an earlier flag', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['-y', '--package=@scope/name', 'bin'] } })]);
+    expect(findBadgeablePackage(report)).toBe('@scope/name');
+  });
+
   it('returns undefined for an empty report', () => {
     expect(findBadgeablePackage(fakeReport([]))).toBeUndefined();
   });

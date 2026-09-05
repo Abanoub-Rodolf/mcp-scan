@@ -50,6 +50,20 @@ function looksLikeFilePath(candidate: string): boolean {
   return rest.includes('/');
 }
 
+// `npx --package=<pkg> <bin>` (and the space-separated / `-p` variants) runs
+// a different binary than the package that provides it, so the first
+// non-flag arg is the bin name, not the package. Look for an explicit
+// --package/-p first and only fall back to "first bare arg" when there isn't one.
+function packageArgFrom(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--package' || arg === '-p') return args[i + 1];
+    if (arg.startsWith('--package=')) return arg.slice('--package='.length);
+    if (arg.startsWith('-p=')) return arg.slice('-p='.length);
+  }
+  return args.find(a => !a.startsWith('-'));
+}
+
 /**
  * First server in the report launched via npx/npm/node with a bare package
  * spec as its argument, for the post-scan badge hint below. Reuses the same
@@ -62,7 +76,7 @@ export function findBadgeablePackage(report: ScanReport): string | undefined {
     const command = result.connection?.command;
     if (command !== 'npx' && command !== 'npm' && command !== 'node') continue;
 
-    const pkgArg = result.connection?.args?.find(a => !a.startsWith('-'));
+    const pkgArg = packageArgFrom(result.connection?.args ?? []);
     if (!pkgArg || looksLikeFilePath(pkgArg)) continue;
 
     const validated = validatePackageName(pkgArg);
