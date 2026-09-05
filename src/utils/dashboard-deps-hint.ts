@@ -10,10 +10,17 @@ interface NodeImportError extends Error {
   code?: string;
 }
 
+// Matches Node's own wording for a missing specifier, quotes and all, so
+// "Cannot find module 'blessed-something-else'" (a real but different
+// package) doesn't get mistaken for our missing optional dep. Covers both
+// ERR_MODULE_NOT_FOUND ("Cannot find package 'x' imported from ...", ESM)
+// and MODULE_NOT_FOUND ("Cannot find module 'x'", CJS).
+const MISSING_BLESSED_SPECIFIER = /Cannot find (?:module|package) '(?:blessed|blessed-contrib)'/;
+
 function isMissingBlessedError(err: unknown): err is NodeImportError {
   if (!(err instanceof Error)) return false;
   const code = (err as NodeImportError).code;
-  return (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') && err.message.includes('blessed');
+  return (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') && MISSING_BLESSED_SPECIFIER.test(err.message);
 }
 
 // Prints a hint for the known "optional dep not installed" case, or the
