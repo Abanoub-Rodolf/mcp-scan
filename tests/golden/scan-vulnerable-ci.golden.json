@@ -101,9 +101,9 @@
         },
         {
           "id": "unverified-source",
-          "severity": "HIGH",
-          "description": "Server 'stripe-server' is an unscoped package from an unverified source (higher typosquatting risk).",
-          "fixRecommendation": "Verify the publisher of 'stripe-server' on npmjs.com before trusting this server."
+          "severity": "MEDIUM",
+          "description": "Server 'stripe-server' is an unscoped package from an unverified source (typosquatting risk).",
+          "fixRecommendation": "Verify the publisher of 'stripe-server' on npmjs.com before trusting this server, or ask the maintainer to publish with npm provenance (npm publish --provenance from GitHub Actions or GitLab CI) so mcp-scan can confirm it automatically."
         }
       ],
       "trustScore": 30,
@@ -125,8 +125,8 @@
   ],
   "totalScanned": 4,
   "criticalCount": 1,
-  "highCount": 4,
-  "mediumCount": 0,
+  "highCount": 3,
+  "mediumCount": 1,
   "lowCount": 1,
   "infoCount": 0
 }
