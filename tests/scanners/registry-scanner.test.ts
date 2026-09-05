@@ -233,4 +233,25 @@ describe('Registry Scanner', () => {
     expect(findings.some(f => f.id === 'provenance-verified')).toBe(false);
     expect(findings.some(f => f.id === 'unverified-source')).toBe(true);
   });
+
+  it('retries after a rejected registry lookup instead of caching the failure', async () => {
+    mockFetch
+      .mockRejectedValueOnce(new Error('transient network blip'))
+      .mockResolvedValueOnce(createMockFetchResponse(true, {
+        version: '4.0.0',
+        dist: { attestations: { provenance: { predicateType: 'https://slsa.dev/provenance/v1' } } },
+      }));
+
+    const server = {
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', 'cache-retry-pkg']
+    };
+
+    const first = await scanRegistry(server, false);
+    expect(first.some(f => f.id === 'unverified-source')).toBe(true);
+
+    const second = await scanRegistry(server, false);
+    expect(second.some(f => f.id === 'provenance-verified')).toBe(true);
+    expect(second.some(f => f.id === 'unverified-source')).toBe(false);
+  });
 });

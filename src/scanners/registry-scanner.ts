@@ -22,40 +22,40 @@ interface NpmPackument {
 // A scan run often resolves the same package for several server entries
 // (or several tools pointing at the same server). Memoize the registry
 // lookups per package+version for the life of the process so we don't hit
-// the registry twice for the same thing.
+// the registry twice for the same thing. A rejected lookup is evicted
+// right away so a transient failure doesn't poison every later reference
+// to the same package in this run.
 const versionDocCache = new Map<string, Promise<NpmVersionDoc | null>>();
 const packumentCache = new Map<string, Promise<NpmPackument | null>>();
 
-function fetchPackument(packageName: string): Promise<NpmPackument | null> {
-  let pending = packumentCache.get(packageName);
+function cached<T>(cache: Map<string, Promise<T | null>>, key: string, fetcher: () => Promise<T | null>): Promise<T | null> {
+  let pending = cache.get(key);
   if (!pending) {
-    pending = (async () => {
-      const res = await fetchWithTimeout(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`, {}, 8000);
-      if (!res.ok) return null;
-      return await res.json() as NpmPackument;
-    })();
-    packumentCache.set(packageName, pending);
+    pending = fetcher();
+    pending.catch(() => cache.delete(key));
+    cache.set(key, pending);
   }
   return pending;
 }
 
-function fetchVersionDoc(packageName: string, version: string): Promise<NpmVersionDoc | null> {
-  const cacheKey = `${packageName}@${version}`;
+function fetchPackument(packageName: string): Promise<NpmPackument | null> {
+  return cached(packumentCache, packageName, async () => {
+    const res = await fetchWithTimeout(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`, {}, 8000);
+    if (!res.ok) return null;
+    return await res.json() as NpmPackument;
+  });
+}
 
-  let pending = versionDocCache.get(cacheKey);
-  if (!pending) {
-    pending = (async () => {
-      const res = await fetchWithTimeout(
-        `https://registry.npmjs.org/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`,
-        {},
-        8000
-      );
-      if (!res.ok) return null;
-      return await res.json() as NpmVersionDoc;
-    })();
-    versionDocCache.set(cacheKey, pending);
-  }
-  return pending;
+function fetchVersionDoc(packageName: string, version: string): Promise<NpmVersionDoc | null> {
+  return cached(versionDocCache, `${packageName}@${version}`, async () => {
+    const res = await fetchWithTimeout(
+      `https://registry.npmjs.org/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`,
+      {},
+      8000
+    );
+    if (!res.ok) return null;
+    return await res.json() as NpmVersionDoc;
+  });
 }
 
 /**
