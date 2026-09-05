@@ -37,6 +37,19 @@ export function repoHint(hasFindings: boolean, stream: NodeJS.WriteStream = proc
   } catch (_error) {}
 }
 
+// A JS/TS entrypoint like `index.js` or `dist/index.js` is a legal npm
+// package name character-for-character (dots and slashes-after-scope are
+// both allowed by the registry name rules), so validatePackageName alone
+// waves it through. Catch it before that: a script extension or a path
+// separator outside the `@scope/` position means "file", not "package".
+const SCRIPT_EXTENSION_RE = /\.(js|mjs|cjs|ts|mts|cts)$/;
+
+function looksLikeFilePath(candidate: string): boolean {
+  if (SCRIPT_EXTENSION_RE.test(candidate)) return true;
+  const rest = candidate.startsWith('@') ? candidate.replace(/^@[^/]+\//, '') : candidate;
+  return rest.includes('/');
+}
+
 /**
  * First server in the report launched via npx/npm/node with a bare package
  * spec as its argument, for the post-scan badge hint below. Reuses the same
@@ -50,7 +63,7 @@ export function findBadgeablePackage(report: ScanReport): string | undefined {
     if (command !== 'npx' && command !== 'npm' && command !== 'node') continue;
 
     const pkgArg = result.connection?.args?.find(a => !a.startsWith('-'));
-    if (!pkgArg) continue;
+    if (!pkgArg || looksLikeFilePath(pkgArg)) continue;
 
     const validated = validatePackageName(pkgArg);
     if (validated.valid) return validated.name;

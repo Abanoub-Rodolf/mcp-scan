@@ -150,6 +150,36 @@ describe('findBadgeablePackage', () => {
     expect(findBadgeablePackage(report)).toBeUndefined();
   });
 
+  it('returns undefined for a bare local entrypoint (node index.js)', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['index.js'] } })]);
+    expect(findBadgeablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined for a bare local entrypoint (node server.mjs)', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['server.mjs'] } })]);
+    expect(findBadgeablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined for a bare local entrypoint (node main.cjs)', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['main.cjs'] } })]);
+    expect(findBadgeablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined for a nested relative entrypoint (node dist/index.js)', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['dist/index.js'] } })]);
+    expect(findBadgeablePackage(report)).toBeUndefined();
+  });
+
+  it('returns undefined for a relative entrypoint with no extension but a path separator', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'node', args: ['dist/index'] } })]);
+    expect(findBadgeablePackage(report)).toBeUndefined();
+  });
+
+  it('rejects a local entrypoint even under npx/npm, not just node', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npx', args: ['./local-server.js'] } })]);
+    expect(findBadgeablePackage(report)).toBeUndefined();
+  });
+
   it('returns undefined for an empty report', () => {
     expect(findBadgeablePackage(fakeReport([]))).toBeUndefined();
   });
