@@ -13,6 +13,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   provenance still get `unverified-source`, now at MEDIUM (unscoped) or LOW (scoped)
   instead of HIGH/MEDIUM, since name-based unverified checks alone were flagging
   most of npm, including mcp-scan's own package.
+- `blessed` and `blessed-contrib` (the TUI dashboard's terminal-rendering
+  libraries) moved from `dependencies` to `optionalDependencies`. They're
+  still installed by default for `npx`/CLI users, but `import { runScan }
+  from 'mcp-scan'` no longer pulls in 2MB of terminal-UI packages (and
+  their `xml2js` transitive) for consumers who never touch the dashboard.
+  `mcp-scan dashboard` and `proxy --ui` now print an install hint and exit
+  1 instead of crashing if the optional install was skipped.
 
 ## [2.0.10] - 2026-09-01
 

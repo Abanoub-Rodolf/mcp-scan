@@ -99,6 +99,10 @@ npx mcp-scan@latest policy validate
 
 # CI mode: exit 1 on CRITICAL or HIGH findings (plain scans report without failing)
 npx mcp-scan@latest --ci --severity high
+
+# Interactive TUI dashboard (blessed/blessed-contrib install as optional
+# dependencies; if the install was skipped, this prints an install hint)
+npx mcp-scan@latest dashboard
 ```
 
 ---
