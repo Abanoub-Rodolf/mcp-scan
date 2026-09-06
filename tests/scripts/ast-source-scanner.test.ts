@@ -311,6 +311,105 @@ const homepage = 'https://example.com/docs';
       expect(findings.some((f: any) => f.id === 'suspicious-execution')).toBe(false);
     });
   });
+
+  // review4 P1: calleeName() returned null for every PropertyAccessExpression
+  // callee, so the structural checks below silently stopped seeing
+  // `child_process.execSync(...)`, `cp.spawn(...)`, etc - the single most
+  // common shape a malicious MCP server actually uses. execSync/spawn/
+  // spawnSync/execFile/execFileSync are not ambiguous method names the way
+  // exec/eval are (nothing legitimate calls .execSync() on an unrelated
+  // object), so they are flagged through a property-access callee
+  // unconditionally, regardless of whether the receiver resolves to a known
+  // child_process binding.
+  describe('suspicious-execution via property-access callee (review4 regression)', () => {
+    it('flags child_process.execSync(...) with a dynamic argument', () => {
+      const findings = scanAstSource(fileServer(
+        `child_process.execSync("rm -rf " + x);`
+      ));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it("flags child_process.spawn('bash', ['-c', payload])", () => {
+      const findings = scanAstSource(fileServer(
+        `child_process.spawn('bash', ['-c', payload]);`
+      ));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it("flags cp.execSync(...) after import * as cp from 'child_process'", () => {
+      const findings = scanAstSource(fileServer(
+        `import * as cp from 'child_process';\ncp.execSync('rm -rf ' + x);`
+      ));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it("flags child_process.spawnSync('bash', ['-c', payload])", () => {
+      const findings = scanAstSource(fileServer(
+        `child_process.spawnSync('bash', ['-c', payload]);`
+      ));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it("flags child_process.execFileSync('sh', ['-c', payload])", () => {
+      const findings = scanAstSource(fileServer(
+        `child_process.execFileSync('sh', ['-c', payload]);`
+      ));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it("flags child_process.execFile('sh', ['-c', payload])", () => {
+      const findings = scanAstSource(fileServer(
+        `child_process.execFile('sh', ['-c', payload]);`
+      ));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it('does not flag myEmitter.spawn() on an unrelated object with no shell -c', () => {
+      const findings = scanAstSource(fileServer(
+        `myEmitter.spawn();`
+      ));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution')).toBe(false);
+    });
+  });
+
+  // exec/eval keep the pre-existing property-access exemption (someRegex.exec,
+  // page.$eval are common and legitimate) - but a real AST lets us do better
+  // than a blanket exemption for `exec` specifically: when the receiver
+  // resolves to a known child_process binding (require('child_process'),
+  // `import * as X from 'child_process'`, or the bare `child_process`
+  // identifier), it is unambiguously a real exec call, not RegExp#exec.
+  // eval has no child_process equivalent to resolve against, so it keeps
+  // the blanket property-access exemption unchanged.
+  describe('suspicious-execution via property-access exec, resolved against child_process (optional hardening)', () => {
+    it('flags child_process.exec(...) with a dynamic argument', () => {
+      const findings = scanAstSource(fileServer(
+        `child_process.exec("rm -rf " + x);`
+      ));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it("flags cp.exec(...) after const cp = require('child_process')", () => {
+      const findings = scanAstSource(fileServer(
+        `const cp = require('child_process');\ncp.exec('rm -rf ' + x);`
+      ));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it('still does not flag someRegex.exec(str) on an unresolved receiver', () => {
+      const findings = scanAstSource(fileServer(`const m = someRegex.exec(str);`));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution')).toBe(false);
+    });
+
+    it('still does not flag page.$eval(sel, fn)', () => {
+      const findings = scanAstSource(fileServer(`page.$eval(sel, fn);`));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution')).toBe(false);
+    });
+
+    it('still does not flag globalThis.eval(...) (pre-existing gap, not this regression)', () => {
+      const findings = scanAstSource(fileServer(`globalThis.eval(payload);`));
+      expect(findings.some((f: any) => f.id === 'suspicious-execution')).toBe(false);
+    });
+  });
 });
 
 describe('AST source scanner - P1-1: a dangerous string wrapped in a real regex character class', () => {

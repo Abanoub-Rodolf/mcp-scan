@@ -99,6 +99,43 @@ function regexLiteralBody(node, sourceFile) {
   return m ? m[1] : raw;
 }
 
+// Local bindings that resolve to Node's `child_process` module in this file:
+// `require('child_process')` assigned to a const/let/var, `import * as X`,
+// `import X from 'child_process'`, plus the bare `child_process` identifier
+// itself. Used to disambiguate `exec` (a common method name on unrelated
+// objects - someRegex.exec, page.exec) from a real child_process call
+// without resorting to a blanket property-access exemption. This is
+// syntactic, not real data-flow: reassignment, re-export, or an alias built
+// through indirection (`const cp2 = cp`) isn't tracked.
+function collectChildProcessAliases(sourceFile) {
+  const aliases = new Set(['child_process']);
+  function visit(node) {
+    if (
+      ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer &&
+      ts.isCallExpression(node.initializer) && ts.isIdentifier(node.initializer.expression) &&
+      node.initializer.expression.text === 'require' &&
+      node.initializer.arguments.length === 1 && ts.isStringLiteral(node.initializer.arguments[0]) &&
+      node.initializer.arguments[0].text === 'child_process'
+    ) {
+      aliases.add(node.name.text);
+    } else if (
+      ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) &&
+      node.moduleSpecifier.text === 'child_process' && node.importClause
+    ) {
+      if (node.importClause.name) aliases.add(node.importClause.name.text); // import cp from '...'
+      const bindings = node.importClause.namedBindings;
+      if (bindings && ts.isNamespaceImport(bindings)) aliases.add(bindings.name.text); // import * as cp from '...'
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return aliases;
+}
+
+function isChildProcessReceiver(expr, aliases) {
+  return ts.isIdentifier(expr) && aliases.has(expr.text);
+}
+
 function isImportOrRequireSpecifier(node) {
   const parent = node.parent;
   if (!parent) return false;
@@ -192,6 +229,7 @@ export function scanAstSource(server, allowedDomains = []) {
     }
 
     const commentRanges = collectCommentRanges(sourceFile);
+    const childProcessAliases = collectChildProcessAliases(sourceFile);
     // { text, line (0-based), shellShapedOnly } - shellShapedOnly literals
     // (regex bodies) only go through rules 2/6/7/8/9 below, not the
     // domain/IP network-exfiltration rules, to avoid a legitimate
@@ -203,9 +241,18 @@ export function scanAstSource(server, allowedDomains = []) {
     }
 
     // --- 1/1b: structural call checks (eval/new Function/exec/execSync/spawn/execFile) ---
+    // Bare identifier (`exec(...)`, including after destructuring) or a
+    // property-access callee whose property name is an identifier
+    // (`cp.exec(...)`, `child_process.execSync(...)`). Property access used
+    // to be unconditionally excluded here (see the fixed review4 P1: that
+    // silently killed detection on execSync/spawn/execFile/spawnSync/
+    // execFileSync too, not just the ambiguous exec/eval names it was meant
+    // for). Each caller below now decides for itself whether property access
+    // is ambiguous enough to need receiver resolution.
     function calleeName(expr) {
       if (ts.isIdentifier(expr)) return expr.text;
-      return null; // property-access calls (page.$eval, someRegex.exec, cp.exec) deliberately excluded - see below
+      if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.name)) return expr.name.text;
+      return null;
     }
 
     function isPlainLiteralArg(node) {
@@ -213,14 +260,30 @@ export function scanAstSource(server, allowedDomains = []) {
     }
 
     function checkCall(node) {
-      const name = calleeName(node.expression);
+      const calleeExpr = node.expression;
+      const isPropAccess = ts.isPropertyAccessExpression(calleeExpr);
+      const name = calleeName(calleeExpr);
       if (name === 'eval') {
+        // eval has no child_process-style binding to resolve a property-access
+        // receiver against, so it keeps the original blanket property-access
+        // exemption (page.$eval, someObj.eval are common and legitimate).
+        // This is a known, pre-existing, accepted gap - not the regression
+        // this fix addresses (globalThis.eval(...) stays invisible).
+        if (isPropAccess) return;
         findings.push({
           id: 'suspicious-execution', severity: 'HIGH',
           description: `Source calls eval(: '${quote(node.getText(sourceFile).slice(0, CALL_TEXT_LIMIT))}'.`,
           fixRecommendation: 'Avoid eval(). Use JSON.parse or an explicit parser instead.',
         });
       } else if (name === 'exec' || name === 'execSync') {
+        // exec is a common, legitimate method name on unrelated objects
+        // (someRegex.exec, page.exec) - a property-access call only counts
+        // when the receiver resolves to a real child_process binding.
+        // execSync is not ambiguous the same way (nothing legitimate calls
+        // .execSync() on an unrelated object), so it is flagged through
+        // property access unconditionally - restoring the exact detection
+        // the tokenizer version had and the AST rewrite silently dropped.
+        if (name === 'exec' && isPropAccess && !isChildProcessReceiver(calleeExpr.expression, childProcessAliases)) return;
         const firstArg = node.arguments[0];
         const dynamic = !isPlainLiteralArg(firstArg);
         findings.push({
@@ -232,7 +295,10 @@ export function scanAstSource(server, allowedDomains = []) {
         // spawn/execFile(Sync) invoking a shell with -c - a capability
         // scanAst covered on the whole joined command line and the
         // exec/execSync check above doesn't, since the shell name and the
-        // -c flag are two separate array elements here.
+        // -c flag are two separate array elements here. Same reasoning as
+        // execSync above: these names are not ambiguous in practice, so
+        // they are flagged whether reached via a bare identifier or a
+        // property-access callee (child_process.spawn(...), cp.execFile(...)).
         const firstArg = node.arguments[0];
         // Known accepted gap: only matches a shell name given as a literal
         // argv[0] string. `const shell = 'bash'; spawn(shell, ['-c', x])`
