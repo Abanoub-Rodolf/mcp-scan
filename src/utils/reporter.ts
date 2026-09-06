@@ -42,7 +42,7 @@ function printBanner(version: string): void {
   const innerWidth = boxWidth - 4; // 46 visible chars between │ and │
   const border = brand;
 
-  // Compute padding by measuring visible width (strip ANSI, count emoji as 2 cols)
+  // Pad to the box width from the visible length the caller counted, not the ANSI-laden string
   function pad(content: string, visibleLen: number): string {
     return content + ' '.repeat(Math.max(0, innerWidth - visibleLen));
   }
