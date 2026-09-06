@@ -12,6 +12,8 @@ import {
   scanSupplyChain,
   scanLicense,
 } from '../dist/lib.js';
+import { deepScanPackage } from './source-scan.mjs';
+import { writeFindingsRanked } from './findings-ranked.mjs';
 
 const OUT_DIR = path.resolve('out/ecosystem');
 const TARGETS_PATH = path.join(OUT_DIR, 'targets.json');
@@ -35,6 +37,21 @@ async function runPool(items, limit, worker) {
   return results;
 }
 
+// The per-package/version registry document, distinct from the package-wide
+// doc scanSupplyChain/scanPackageDeep already fetch: this is the only place
+// dist.tarball and the resolved `dependencies` map for that exact version
+// live, which the source/dependency deep scan needs.
+async function fetchVersionManifest(name, version) {
+  if (!version) return null;
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(version)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 function toResolvedServer(pkg) {
   return {
     name: pkg,
@@ -45,15 +62,26 @@ function toResolvedServer(pkg) {
   };
 }
 
+// Tags each finding with the scanner that produced it - findings-ranked.md
+// needs this and a couple of finding ids (unicode-injection, tool-name-shadow)
+// are shared between scanners, so it can't be reconstructed from id alone.
+function tag(scanner, findings) {
+  return findings.map((f) => ({ ...f, scanner }));
+}
+
 async function scanNpmPackage({ name, weeklyDownloads, bounty }) {
   const server = toResolvedServer(name);
   const findings = [];
   const supplyChain = await scanSupplyChain(server, false);
-  findings.push(...supplyChain.findings);
-  findings.push(...await scanRegistry(server, false));
-  findings.push(...scanTyposquat(server));
-  findings.push(...await scanPackageDeep(server, false));
-  findings.push(...scanLicense(supplyChain.metadata));
+  findings.push(...tag('supply-chain-scanner', supplyChain.findings));
+  findings.push(...tag('registry-scanner', await scanRegistry(server, false)));
+  findings.push(...tag('typosquat-scanner', scanTyposquat(server)));
+  findings.push(...tag('package-scanner', await scanPackageDeep(server, false)));
+  findings.push(...tag('license-scanner', scanLicense(supplyChain.metadata)));
+
+  const manifest = await fetchVersionManifest(name, supplyChain.metadata?.version);
+  const deep = await deepScanPackage(name, manifest);
+  findings.push(...deep.findings);
 
   return {
     package: name,
@@ -63,6 +91,7 @@ async function scanNpmPackage({ name, weeklyDownloads, bounty }) {
     trustScore: supplyChain.trustScore,
     metadata: supplyChain.metadata ?? null,
     findings,
+    sourceScan: deep.summary,
     scannedAt: new Date().toISOString(),
   };
 }
@@ -136,7 +165,14 @@ async function main() {
   }
   await writeFile(path.join(OUT_DIR, 'summary.csv'), rows.join('\n') + '\n');
 
-  console.log(`scanned ${npmResults.length} npm + ${pypiResults.length} pypi packages, wrote out/ecosystem/summary.csv`);
+  const rankedFindings = await writeFindingsRanked(results, OUT_DIR);
+
+  const totals = severityCounts(npmResults.flatMap((r) => r.findings));
+  console.log(`scanned ${npmResults.length} npm + ${pypiResults.length} pypi packages`);
+  console.log('severity totals (npm only):');
+  console.table(totals);
+  console.log(`${rankedFindings.length} finding(s) at HIGH/CRITICAL - see out/ecosystem/findings-ranked.md`);
+  console.log('wrote out/ecosystem/summary.csv');
 }
 
 main();
