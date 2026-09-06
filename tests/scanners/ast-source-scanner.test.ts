@@ -228,8 +228,81 @@ const homepage = 'https://example.com/docs';
     });
 
     it('does not flag a minifier-renamed single-letter variable as an env-var secret', () => {
-      const findings = scanAstSource(fileServer(`fetch(\`supabase-mcp/\${Z} (\${e.name}/\${e.version})\`);`));
+      const findings = scanAstSource(fileServer(`fetch(\`demo-mcp-server/\${Z} (\${e.name}/\${e.version})\`);`));
       expect(findings.some(f => f.id === 'exfiltration-vector' && f.severity === 'HIGH')).toBe(false);
+    });
+  });
+
+  describe('regex-literal awareness in tokenize (a `//` inside a regex is not a comment)', () => {
+    it('does not eat the rest of the line after a protocol-stripping regex literal', () => {
+      // The exact P1 repro: /^https?:\/\// ends in an escaped slash right
+      // before its closing delimiter, which a tokenizer with no regex
+      // concept reads as `//` and treats as a line comment, silently
+      // deleting the eval( call that follows on the same line.
+      const findings = scanAstSource(fileServer(
+        `const stripProto = s.replace(/^https?:\\/\\//, ''); eval(userSuppliedPayload);`
+      ));
+      expect(findings.some(f => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it('handles a character class containing a literal slash', () => {
+      const findings = scanAstSource(fileServer(
+        `const clean = path.replace(/[/]/g, '_'); eval(userSuppliedPayload);`
+      ));
+      expect(findings.some(f => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it('still treats a real // line comment as a comment, not a regex', () => {
+      const findings = scanAstSource(fileServer(
+        `// eval(userSuppliedPayload) mentioned only in a comment\nconst x = 1;`
+      ));
+      expect(findings.some(f => f.id === 'suspicious-execution')).toBe(false);
+    });
+
+    it('still treats division as division, not a regex literal', () => {
+      const findings = scanAstSource(fileServer(
+        `const ratio = total / count; eval(userSuppliedPayload);`
+      ));
+      expect(findings.some(f => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+  });
+
+  describe('sensitive-glob-pattern (adjacent string concatenation is joined before evaluating)', () => {
+    it('flags a sensitive path assembled from adjacent concatenated literals', () => {
+      const findings = scanAstSource(fileServer(
+        `const pattern = '/home/user/' + '.ssh' + '/**';`
+      ));
+      expect(findings.some(f => f.id === 'sensitive-glob-pattern')).toBe(true);
+    });
+
+    it('does not flag unrelated adjacent string concatenation', () => {
+      const findings = scanAstSource(fileServer(
+        `const greeting = 'hello ' + name + '!';`
+      ));
+      expect(findings.some(f => f.id === 'sensitive-glob-pattern')).toBe(false);
+    });
+  });
+
+  describe('suspicious-execution (shell exec via spawn/exec/execFile with a -c argument)', () => {
+    it('flags spawn(\'bash\', [\'-c\', payload]) as shell exec', () => {
+      const findings = scanAstSource(fileServer(
+        `const { spawn } = require('child_process'); spawn('bash', ['-c', payload]);`
+      ));
+      expect(findings.some(f => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it('flags execFile(\'sh\', [\'-c\', payload]) as shell exec', () => {
+      const findings = scanAstSource(fileServer(
+        `execFile('sh', ['-c', payload]);`
+      ));
+      expect(findings.some(f => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+    });
+
+    it('does not flag spawn on a plain binary with no shell -c', () => {
+      const findings = scanAstSource(fileServer(
+        `const { spawn } = require('child_process'); spawn('node', ['index.js']);`
+      ));
+      expect(findings.some(f => f.id === 'suspicious-execution')).toBe(false);
     });
   });
 });

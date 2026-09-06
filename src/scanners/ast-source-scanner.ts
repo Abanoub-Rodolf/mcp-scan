@@ -24,13 +24,78 @@ interface Literal {
   line: number; // 1-based, into strippedLines
 }
 
+// Chars after which a `/` cannot be division - a value can't precede a
+// regex, so these are the operator/punctuator/start-of-expression contexts
+// where a regex literal is legal. Not exhaustive (this is a heuristic, not
+// a parser): a `)` or `}` closing a previous expression is deliberately
+// left out even though `}` closing a *block* (not an object literal) can
+// legally precede a regex too - the tokenizer can't tell those two `}`
+// cases apart, and treating both as division-only is the safer default
+// for a security scanner (it can miss a regex there and fall back to the
+// pre-fix behavior on that one `/`, but it will never mis-consume a real
+// division as a regex and eat code past it).
+const REGEX_PRECEDING_CHARS = new Set(['(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';']);
+const REGEX_PRECEDING_KEYWORDS = new Set([
+  'return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void',
+  'throw', 'case', 'do', 'else', 'yield', 'await',
+]);
+
+// Looks at the last significant (non-whitespace) token already written to
+// `out` to decide whether a `/` at the current position could legally
+// start a regex literal. `out` only ever contains already-processed code
+// (comments are stripped as we go), so this reflects real preceding syntax.
+function canPrecedeRegex(out: string): boolean {
+  let k = out.length - 1;
+  while (k >= 0 && /\s/.test(out[k])) k--;
+  if (k < 0) return true; // start of file/arg string
+  const c = out[k];
+  if (REGEX_PRECEDING_CHARS.has(c)) return true;
+  if (!/[A-Za-z0-9_$]/.test(c)) return false;
+  let wordStart = k;
+  while (wordStart >= 0 && /[A-Za-z0-9_$]/.test(out[wordStart])) wordStart--;
+  return REGEX_PRECEDING_KEYWORDS.has(out.slice(wordStart + 1, k + 1));
+}
+
+// Attempts to consume a regex literal starting at source[start] (source[start]
+// is '/'). Returns the index just past the literal (including any trailing
+// flags), or -1 if this can't be a valid regex here (unterminated before a
+// newline or end of input) - callers fall back to treating the '/' as an
+// ordinary character, same as before this function existed. Handles
+// backslash escapes and character classes (`[...]`, where an unescaped `/`
+// does not close the literal) since both are routine in real regexes
+// (`/^https?:\/\//`, `/[/]/`). Not a full parser: does not validate that
+// bracket/escape nesting inside an adversarially malformed literal is
+// well-formed, only that it does not run past a newline.
+function consumeRegexLiteral(source: string, start: number): number {
+  const n = source.length;
+  let j = start + 1;
+  let inClass = false;
+  while (j < n) {
+    const ch = source[j];
+    if (ch === '\n') return -1;
+    if (ch === '\\') { j += 2; continue; }
+    if (ch === '[') { inClass = true; j++; continue; }
+    if (ch === ']') { inClass = false; j++; continue; }
+    if (ch === '/' && !inClass) {
+      j++;
+      while (j < n && /[a-zA-Z]/.test(source[j])) j++;
+      return j;
+    }
+    j++;
+  }
+  return -1;
+}
+
 /**
- * Minimal string/comment-aware tokenizer - not a real JS/TS parser. Strips
- * // and /* comments (so a doc-comment URL or a "TODO: .env" note can never
- * feed a rule) and collects every quoted string's raw contents as a
- * separate literal, tagged with the line it starts on so rules can check
- * "is this URL on a line that also calls fetch(" without rejoining the
- * whole file into one blob.
+ * Minimal string/comment/regex-aware tokenizer - not a real JS/TS parser.
+ * Strips // and /* comments (so a doc-comment URL or a "TODO: .env" note
+ * can never feed a rule), skips over regex literals without treating their
+ * contents as comment syntax (a `\/` immediately before a regex's closing
+ * `/` looks exactly like a `//` line-comment opener to a tokenizer with no
+ * regex concept - see canPrecedeRegex/consumeRegexLiteral), and collects
+ * every quoted string's raw contents as a separate literal, tagged with the
+ * line it starts on so rules can check "is this URL on a line that also
+ * calls fetch(" without rejoining the whole file into one blob.
  */
 function tokenize(source: string): { strippedLines: string[]; literals: Literal[] } {
   let i = 0;
@@ -53,6 +118,16 @@ function tokenize(source: string): { strippedLines: string[]; literals: Literal[
       }
       i += 2;
       continue;
+    }
+    if (c === '/' && canPrecedeRegex(out)) {
+      const end = consumeRegexLiteral(source, i);
+      if (end !== -1) {
+        out += source.slice(i, end);
+        i = end;
+        continue;
+      }
+      // Not actually a valid regex here (unterminated) - fall through and
+      // treat the '/' as an ordinary character below.
     }
     if (c === "'" || c === '"' || c === '`') {
       const quoteChar = c;
@@ -89,11 +164,11 @@ function isPlainStringArg(argText: string): boolean {
   return false;
 }
 
-// Best-effort match of a call's FIRST argument only, up to its top-level
-// comma or closing paren - so `execSync('a' + b)` reads as dynamic while
-// `execSync('a', { encoding: 'utf8' })` still reads its command as the
-// plain literal 'a' instead of being poisoned by the options object.
-function extractFirstArg(code: string, openParenIndex: number): string {
+// Shared string/paren/bracket-depth-aware scan from just past a call's `(`
+// up to either its top-level comma (stopAtTopComma) or its matching closing
+// paren - the building block for extractFirstArg (one argument) and
+// extractCallArgs (the whole argument list).
+function extractCallSpan(code: string, openParenIndex: number, stopAtTopComma: boolean): string {
   let depth = 1;
   let j = openParenIndex + 1;
   let inString: string | null = null;
@@ -110,11 +185,30 @@ function extractFirstArg(code: string, openParenIndex: number): string {
     if (ch === "'" || ch === '"' || ch === '`') { inString = ch; buf += ch; j++; continue; }
     if (ch === '(' || ch === '[' || ch === '{') { depth++; buf += ch; j++; continue; }
     if (ch === ')' || ch === ']' || ch === '}') { depth--; if (depth === 0) break; buf += ch; j++; continue; }
-    if (ch === ',' && depth === 1) break;
+    if (stopAtTopComma && ch === ',' && depth === 1) break;
     buf += ch;
     j++;
   }
   return buf;
+}
+
+// Best-effort match of a call's FIRST argument only, up to its top-level
+// comma or closing paren - so `execSync('a' + b)` reads as dynamic while
+// `execSync('a', { encoding: 'utf8' })` still reads its command as the
+// plain literal 'a' instead of being poisoned by the options object.
+function extractFirstArg(code: string, openParenIndex: number): string {
+  return extractCallSpan(code, openParenIndex, true);
+}
+
+// Full argument list of a call, up to its matching closing paren - used by
+// rules that need to see two arguments together (e.g. a shell name in arg
+// 0 and a `-c` flag in arg 1 of a spawn()/execFile() call).
+function extractCallArgs(code: string, openParenIndex: number): string {
+  return extractCallSpan(code, openParenIndex, false);
+}
+
+function unquote(literalToken: string): string {
+  return literalToken.slice(1, -1);
 }
 
 const IP_RE = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
@@ -130,6 +224,18 @@ const FILE_EXTENSIONS = new Set([
 const DOC_HOST_RE = /(?:^|\.)(?:json-schema\.org|w3\.org|spdx\.org|schema\.org)$/i;
 const NETWORK_CALL_CTX_RE = /\b(?:fetch|axios|got|undici|ky|XMLHttpRequest)\s*\(|https?\.(?:request|get)\s*\(|new\s+WebSocket\s*\(|new\s+URL\s*\(/;
 const SENSITIVE_PATH_RE = /(?:^|[/~])\.(?:ssh|aws|gnupg)(?:\/|$)|(?:^|[/~])\.env(?:\.[\w.-]+)?(?:\/|$)/;
+// scanAst (ast-scanner.ts) flagged a bare "bash|sh|zsh|fish|ksh|csh -c"
+// anywhere in the joined command string; the source-mode rewrite dropped
+// that coverage entirely since spawn('bash', ['-c', payload]) never puts
+// the shell name and -c adjacent with only whitespace between them the way
+// a CLI argv join does. This regex is scoped to one call's argument list
+// (see extractCallArgs) rather than the whole file, so a 40-char window
+// between the shell name and -c is enough to span the array/quote/comma
+// punctuation of a real spawn()/execFile() call without over-matching
+// unrelated code elsewhere. Known false-positive: a literal package name
+// containing one of these shell names as its own token (e.g. "fish-cli")
+// within 40 chars of an unrelated "-c" flag.
+const SHELL_EXEC_C_RE = /\b(?:bash|sh|zsh|fish|ksh|csh)\b[\s\S]{0,40}-c\b/;
 
 function isAllowedHost(host: string, allowedDomains: string[]): boolean {
   const h = host.toLowerCase();
@@ -185,6 +291,62 @@ export function scanAstSource(server: ResolvedServer, allowedDomains: string[] =
         description: `Command execution call ${dynamic ? 'with a dynamic/built argument' : 'on a hardcoded literal'}: '${quote(m[0] + firstArg)}'.`,
         fixRecommendation: 'Avoid shell exec with dynamic input. Use execFile with an argument array instead.',
       });
+    }
+
+    // 1b. spawn/execFile(Sync) invoking a shell with -c - the capability
+    // scanAst covered on the whole joined command line (see SHELL_EXEC_C_RE
+    // comment) and the per-literal exec/execSync checks above don't, since
+    // the shell name and the -c flag are two separate array elements here,
+    // not a substring of one command string.
+    for (const m of strippedCode.matchAll(/\b(?:spawn|execFile)(?:Sync)?\s*\(/g)) {
+      const openParen = m.index! + m[0].length - 1;
+      const callArgs = extractCallArgs(strippedCode, openParen);
+      if (SHELL_EXEC_C_RE.test(callArgs)) {
+        findings.push({
+          id: 'suspicious-execution', severity: 'HIGH',
+          description: `Shell exec via ${m[0].trim()} with a shell -c argument: '${quote(m[0] + callArgs)}'.`,
+          fixRecommendation: 'Avoid spawning a shell with -c and untrusted input. Pass the command and its arguments directly instead of invoking a shell.',
+        });
+      }
+    }
+
+    // 9b. Sensitive-glob evasion via string concatenation - joins a run of
+    // two or more string literals connected only by `+` (whitespace
+    // allowed) into one virtual string and re-checks the glob rule against
+    // it, so '/home/user/' + '.ssh' + '/**' is caught the same as a single
+    // literal would be. Deliberately narrow: a chain broken by a bare
+    // identifier ('/home/' + dir + '/**') stops there, since that value is
+    // truly dynamic and can't be evaluated statically.
+    {
+      const literalTokenRe = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g;
+      let match: RegExpExecArray | null;
+      let prevEnd = -1;
+      let joined = '';
+      let count = 0;
+      const flushChain = () => {
+        if (count >= 2 && /\/\*\*/.test(joined) && SENSITIVE_PATH_RE.test(joined)) {
+          findings.push({
+            id: 'sensitive-glob-pattern', severity: 'HIGH',
+            description: `Glob pattern assembled from concatenated string literals may expose a sensitive directory: '${quote(joined)}'.`,
+            fixRecommendation: 'Avoid building sensitive glob patterns from concatenated string literals; write the path directly so it is reviewable.',
+          });
+        }
+        joined = '';
+        count = 0;
+      };
+      while ((match = literalTokenRe.exec(strippedCode)) !== null) {
+        const text = unquote(match[0]);
+        if (prevEnd !== -1 && /^\s*\+\s*$/.test(strippedCode.slice(prevEnd, match.index))) {
+          joined += text;
+          count += 1;
+        } else {
+          flushChain();
+          joined = text;
+          count = 1;
+        }
+        prevEnd = match.index + match[0].length;
+      }
+      flushChain();
     }
 
     // Per-literal checks. Real dangerous shell strings, glob patterns, and
@@ -255,6 +417,15 @@ export function scanAstSource(server: ResolvedServer, allowedDomains: string[] =
       const isDocHost = DOC_HOST_RE.test(host);
       const hasExternalDomain = !!domainMatch && !isPathLike && !isFilePath && !isDocHost && !isAllowedHost(host, allowedDomains);
 
+      // Known accepted gap (reviewed 2026-09-06, not an oversight): this
+      // only looks at the line the literal itself starts on, so a
+      // Prettier-wrapped multi-line call (`fetch(\n  'https://...' + env\n)`)
+      // or a URL built in a variable and passed to fetch() elsewhere never
+      // matches here. The HIGH env-var-in-URL signal below is knowingly
+      // lost in that shape - network-egress-scanner still independently
+      // catches the bare URL at MEDIUM (network-egress-unknown), so the
+      // finding is downgraded, not silently dropped. Left as-is: fixing it
+      // needs real call-boundary tracking across lines, not a per-line regex.
       const lineText = strippedLines[lit.line - 1] ?? '';
       const inNetworkContext = NETWORK_CALL_CTX_RE.test(lineText);
       const isModuleSpecifier = isImportOrRequireLine(lineText);
