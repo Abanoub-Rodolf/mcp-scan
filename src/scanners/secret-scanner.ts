@@ -39,7 +39,7 @@ const DEV_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', 'host', '
 
 // Path fragments that suggest a config is a test fixture, template, or
 // documentation sample rather than a real deployed config. This LOWERS
-// confidence (severity is downgraded one notch) but never grants immunity —
+// confidence (severity is downgraded one notch) but never grants immunity:
 // a real credential committed under examples/ still fires CRITICAL.
 const FIXTURE_PATH_REGEX = /(^|[\\/])(tests?|fixtures?|examples?|docs)([\\/]|$)|\.(template|sample|example|disabled)(\.|$)/i;
 
@@ -184,7 +184,7 @@ export function scanSecrets(server: ResolvedServer): Finding[] {
         findings.push({
           id: 'exposed-secret',
           severity: inFixturePath ? 'HIGH' : 'CRITICAL',
-          description: `Exposed ${pattern.name} in ${source}${key ? ` '${key}'` : ''}.${inFixturePath ? ' Path suggests this may be a test fixture or example — verify before treating as a live credential.' : ''}`,
+          description: `Exposed ${pattern.name} in ${source}${key ? ` '${key}'` : ''}.${inFixturePath ? ' Path suggests a test fixture or example. Verify before treating it as a live credential.' : ''}`,
           fixRecommendation: `Move the secret to a secure environment variable and reference it instead (e.g., \${${key || 'VAR_NAME'}}).`,
           fixable: true,
           remediationConfidence: inFixturePath ? 60 : 99
