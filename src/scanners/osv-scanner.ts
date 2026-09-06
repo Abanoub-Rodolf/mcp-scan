@@ -21,6 +21,14 @@ const BASE_BACKOFF_MS = 500;
 export interface ResolvedDependency {
   name: string;
   version: string;
+  // 'lockfile' means this is the version npm actually installed (read from
+  // a shipped package-lock.json/npm-shrinkwrap.json); 'manifest-range' means
+  // it was inferred by resolving the package.json semver range against the
+  // registry's published versions - the real installed version could differ
+  // once the whole dependency graph (hoisting, other packages' constraints)
+  // is accounted for. Findings built from a manifest-range resolution must
+  // say so, since a name+range match alone is not proof of impact.
+  resolvedFrom: 'lockfile' | 'manifest-range';
 }
 
 export interface PackageJsonLike {
@@ -120,9 +128,9 @@ export async function resolveDependencies(
 
   return runPool(direct, VULN_FETCH_CONCURRENCY, async ([name, range]) => {
     const locked = lockfileVersion(name);
-    if (locked) return { name, version: locked };
+    if (locked) return { name, version: locked, resolvedFrom: 'lockfile' as const };
 
-    if (semver.valid(range)) return { name, version: range };
+    if (semver.valid(range)) return { name, version: range, resolvedFrom: 'manifest-range' as const };
 
     try {
       const res = await fetchWithTimeout(`https://registry.npmjs.org/${encodeURIComponent(name)}`, {}, 8000);
@@ -130,7 +138,7 @@ export async function resolveDependencies(
       const data = (await res.json()) as { 'dist-tags'?: Record<string, string>; versions?: Record<string, unknown> };
       const publishedVersions = data.versions ? Object.keys(data.versions) : [];
       const { version } = resolveEffectiveVersion(range, data['dist-tags'], publishedVersions);
-      return version ? { name, version } : null;
+      return version ? { name, version, resolvedFrom: 'manifest-range' as const } : null;
     } catch (err) {
       logger.warn(`Failed to resolve dependency version for ${name}@${range}: ${err instanceof Error ? err.message : String(err)}`);
       return null;
@@ -340,10 +348,13 @@ export async function scanDependencyCves(
 
       const severity = severityFromVuln(vuln);
       const fixedVersion = fixedVersionText(vuln, dep.name);
+      const provenance = dep.resolvedFrom === 'lockfile'
+        ? 'lockfile-confirmed'
+        : 'manifest-inferred, verify the real installed version before reporting';
       findings.push({
         id: findingIdForSeverity(severity),
         severity,
-        description: `${severity} vulnerability in dependency '${dep.name}@${dep.version}': ${vuln.id} ` +
+        description: `${severity} vulnerability in dependency '${dep.name}@${dep.version}' (${provenance}): ${vuln.id} ` +
           `(affected ${affectedRangeText(vuln, dep.name)}, fixed ${fixedVersion ?? 'no fix published'}) - ` +
           `${vuln.summary || vuln.details || 'no summary available'}. Advisory: ${advisoryUrl(vuln)}`,
         fixRecommendation: fixedVersion

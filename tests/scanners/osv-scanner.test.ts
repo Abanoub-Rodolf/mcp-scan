@@ -50,7 +50,7 @@ describe('osv-scanner: resolveDependencies', () => {
       { dependencies: { lodash: '^4.17.0' } },
       { packages: { 'node_modules/lodash': { version: '4.17.15' } } }
     );
-    expect(deps).toEqual([{ name: 'lodash', version: '4.17.15' }]);
+    expect(deps).toEqual([{ name: 'lodash', version: '4.17.15', resolvedFrom: 'lockfile' }]);
   });
 
   it('falls back to a registry lookup when no lockfile is shipped', async () => {
@@ -61,7 +61,7 @@ describe('osv-scanner: resolveDependencies', () => {
     global.fetch = mockFetch as unknown as typeof fetch;
 
     const deps = await resolveDependencies({ dependencies: { lodash: '^4.17.0' } }, null);
-    expect(deps).toEqual([{ name: 'lodash', version: '4.17.21' }]);
+    expect(deps).toEqual([{ name: 'lodash', version: '4.17.21', resolvedFrom: 'manifest-range' }]);
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch.mock.calls[0][0]).toBe('https://registry.npmjs.org/lodash');
   });
@@ -79,7 +79,7 @@ describe('osv-scanner: resolveDependencies', () => {
 
 describe('osv-scanner: queryOsvBatch', () => {
   it('chunks requests at 100 dependencies per call', async () => {
-    const deps = Array.from({ length: 150 }, (_, i) => ({ name: `pkg${i}`, version: '1.0.0' }));
+    const deps = Array.from({ length: 150 }, (_, i) => ({ name: `pkg${i}`, version: '1.0.0', resolvedFrom: 'lockfile' as const }));
     const mockFetch = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ results: Array.from({ length: 100 }, () => ({ vulns: [] })) }))
       .mockResolvedValueOnce(jsonResponse({ results: Array.from({ length: 50 }, () => ({ vulns: [] })) }));
@@ -94,7 +94,7 @@ describe('osv-scanner: queryOsvBatch', () => {
   });
 
   it('maps returned vuln ids back to the dependency at the same index', async () => {
-    const deps = [{ name: 'lodash', version: '4.17.15' }, { name: 'left-pad', version: '1.0.0' }];
+    const deps = [{ name: 'lodash', version: '4.17.15', resolvedFrom: 'lockfile' as const }, { name: 'left-pad', version: '1.0.0', resolvedFrom: 'lockfile' as const }];
     global.fetch = vi.fn().mockResolvedValue(jsonResponse({
       results: [{ vulns: [{ id: 'GHSA-p6mc-m468-83gw' }] }, { vulns: [] }],
     })) as unknown as typeof fetch;
@@ -110,7 +110,7 @@ describe('osv-scanner: queryOsvBatch', () => {
       .mockResolvedValueOnce(jsonResponse({ results: [{ vulns: [] }] }));
     global.fetch = mockFetch as unknown as typeof fetch;
 
-    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch([{ name: 'lodash', version: '4.17.15' }]);
+    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch([{ name: 'lodash', version: '4.17.15', resolvedFrom: 'lockfile' }]);
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(vulnIdsByDep).toEqual([[]]);
     expect(failedDepNames).toEqual([]);
@@ -118,13 +118,13 @@ describe('osv-scanner: queryOsvBatch', () => {
 
   it('reports the chunk as failed, not clean, when it exhausts retries on 500s', async () => {
     global.fetch = vi.fn().mockResolvedValue(jsonResponse({}, 500)) as unknown as typeof fetch;
-    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch([{ name: 'lodash', version: '4.17.15' }]);
+    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch([{ name: 'lodash', version: '4.17.15', resolvedFrom: 'lockfile' }]);
     expect(vulnIdsByDep).toEqual([[]]);
     expect(failedDepNames).toEqual(['lodash']);
   }, 15000);
 
   it('marks a dependency as failed rather than clean when the response returns fewer results than queried', async () => {
-    const deps = [{ name: 'lodash', version: '4.17.15' }, { name: 'left-pad', version: '1.0.0' }];
+    const deps = [{ name: 'lodash', version: '4.17.15', resolvedFrom: 'lockfile' as const }, { name: 'left-pad', version: '1.0.0', resolvedFrom: 'lockfile' as const }];
     global.fetch = vi.fn().mockResolvedValue(jsonResponse({ results: [{ vulns: [] }] })) as unknown as typeof fetch;
 
     const { vulnIdsByDep, failedDepNames } = await queryOsvBatch(deps);
@@ -140,7 +140,7 @@ describe('osv-scanner: queryOsvBatch', () => {
       json: vi.fn().mockRejectedValue(new Error('unexpected token')),
     }) as unknown as typeof fetch;
 
-    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch([{ name: 'lodash', version: '4.17.15' }]);
+    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch([{ name: 'lodash', version: '4.17.15', resolvedFrom: 'lockfile' }]);
     expect(vulnIdsByDep).toEqual([[]]);
     expect(failedDepNames).toEqual(['lodash']);
   });
@@ -183,6 +183,26 @@ describe('osv-scanner: scanDependencyCves end to end', () => {
     expect(findings[0].description).toContain('fixed 4.17.21');
     expect(findings[0].description).toContain('https://github.com/advisories/GHSA-p6mc-m468-83gw');
     expect(findings[0].fixRecommendation).toContain('4.17.21');
+    // No lockfile was shipped, so the version came from resolving the
+    // manifest's semver range - the finding must say so, not imply proof.
+    expect(findings[0].description).toContain('manifest-inferred');
+  });
+
+  it('marks a dependency vulnerability as lockfile-confirmed when a real lockfile resolved the version', async () => {
+    const mockFetch = vi.fn()
+      // queryOsvBatch (resolveDependencies needs no fetch: the lockfile has the version)
+      .mockResolvedValueOnce(jsonResponse({ results: [{ vulns: [{ id: 'GHSA-p6mc-m468-83gw' }] }] }))
+      // fetchVulnDetails
+      .mockResolvedValueOnce(jsonResponse(LODASH_VULN));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const findings = await scanDependencyCves(
+      { dependencies: { lodash: '^4.17.0' } },
+      { packages: { 'node_modules/lodash': { version: '4.17.15' } } }
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0].description).toContain('lockfile-confirmed');
+    expect(findings[0].description).not.toContain('manifest-inferred');
   });
 
   it('does not report a vulnerability whose fixed range excludes the resolved version', async () => {
