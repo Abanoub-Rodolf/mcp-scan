@@ -46,7 +46,7 @@ interface OsvVuln {
  * throws and never guesses - returns null when nothing is parseable
  * so the caller can fall back to qualitative severity.
  */
-function extractCvssScore(severities: Array<{ type: string; score: string }>): number | null {
+export function extractCvssScore(severities: Array<{ type: string; score: string }>): number | null {
   if (!Array.isArray(severities)) return null;
   for (const s of severities) {
     if (!s || typeof s.score !== 'string' || s.score.length === 0) continue;
