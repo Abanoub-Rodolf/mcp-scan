@@ -9,6 +9,7 @@ import { scanPackageDeep } from './scanners/package-scanner.js';
 import { scanSupplyChain } from './scanners/supply-chain-scanner.js';
 import { scanLicense } from './scanners/license-scanner.js';
 import { scanAst } from './scanners/ast-scanner.js';
+import { scanAstSource } from './scanners/ast-source-scanner.js';
 import { scanSecrets } from './scanners/secret-scanner.js';
 import { scanToolPoisoning } from './scanners/tool-poisoning-scanner.js';
 import { scanPromptInjection } from './scanners/prompt-injection-scanner.js';
@@ -38,6 +39,10 @@ export {
   // config) builds a synthetic server whose command/args/env carry the
   // file content to scan - see scripts/ecosystem-scan.mjs.
   scanAst,
+  // Source-aware sibling of scanAst for exactly that whole-file case -
+  // see ast-source-scanner.ts. scanAst itself must stay untouched for
+  // real MCP config scans; never call scanAst on package source.
+  scanAstSource,
   scanSecrets,
   scanToolPoisoning,
   scanPromptInjection,

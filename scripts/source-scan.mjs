@@ -11,7 +11,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import {
-  scanAst,
+  scanAstSource,
   scanSecrets,
   scanToolPoisoning,
   scanPromptInjection,
@@ -64,7 +64,12 @@ function locateLine(content, description) {
 function scanFileForFindings(pkgName, relPath, absPath, content) {
   const server = toFileServer(pkgName, relPath, content);
   const tagged = [
-    ['ast-scanner', scanAst(server)],
+    // scanAst is tuned for short CLI argument strings and produces massive
+    // false-positive volume against a whole file (see ast-source-scanner.ts);
+    // scanAstSource runs the same rules per string literal / stripped-comment
+    // context instead. Tagged 'ast-scanner' so sarif-reporter's id map and
+    // findings-ranked.mjs's per-scanner grouping keep working unchanged.
+    ['ast-scanner', scanAstSource(server)],
     ['secret-scanner', scanSecrets(server)],
     ['tool-poisoning-scanner', scanToolPoisoning(server)],
     ['prompt-injection-scanner', scanPromptInjection(server)],
