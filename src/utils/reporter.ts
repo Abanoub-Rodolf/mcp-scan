@@ -1,4 +1,6 @@
 
+import os from 'os';
+import path from 'path';
 import { ScanReport, ServerScanResult } from '../types/scan-result.js';
 import { logger } from './logger.js';
 import { SEVERITY_ORDER, BRAND_COLOR, SEVERITY_COLORS } from '../types/severity.js';
@@ -6,6 +8,7 @@ import { countTotalFindings } from './severity-tally.js';
 
 import chalk from 'chalk';
 
+const homeDir = os.homedir();
 const brand = chalk.hex(BRAND_COLOR);
 const accentGray = chalk.hex(SEVERITY_COLORS.INFO);
 const criticalBg = chalk.bgHex(SEVERITY_COLORS.CRITICAL).white.bold;
@@ -15,6 +18,13 @@ const lowBg = chalk.bgHex(SEVERITY_COLORS.LOW).white;
 const infoBg = chalk.bgHex(BRAND_COLOR).white;
 const passGreen = chalk.hex('#3FB950').bold;
 const dim = chalk.dim;
+
+// Terminal output only: JSON/SARIF/HTML reports keep the absolute path.
+export function shortenHomePath(configPath: string): string {
+  if (configPath === homeDir) return '~';
+  if (configPath.startsWith(homeDir + path.sep)) return '~' + configPath.slice(homeDir.length);
+  return configPath;
+}
 
 function severityBadge(severity: string): string {
   switch (severity) {
@@ -90,7 +100,7 @@ function printResultSection(result: ServerScanResult): void {
   const rail = brand.dim('  │ ');
 
   logger.log(brand('  ┌ ') + brand.bold(result.toolName) + accentGray(' › ') + chalk.white.bold(result.serverName));
-  logger.log(rail + dim(result.configPath));
+  logger.log(rail + dim(shortenHomePath(result.configPath)));
   logger.log(rail);
 
   for (const finding of sortedFindings) {
