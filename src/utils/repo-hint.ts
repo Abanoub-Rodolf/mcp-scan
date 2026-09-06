@@ -21,6 +21,8 @@ export function repoHint(hasFindings: boolean, stream: NodeJS.WriteStream = proc
   if (process.env.MCP_SCAN_NO_HINTS) return;
   if (!hasFindings) return;
   if (!stream.isTTY) return;
+  // A CI runner can hand the process a pseudo-TTY; same signal the spinner honors.
+  if (process.env.CI === 'true') return;
   if (shownThisProcess) return;
 
   const markerPath = path.join(auditDir(), MARKER_FILE);
