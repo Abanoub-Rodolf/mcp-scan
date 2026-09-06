@@ -5,6 +5,7 @@
 
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 const OUT_DIR = path.resolve('out/ecosystem');
 const NPM_TARGET_COUNT = 150;
@@ -228,5 +229,10 @@ async function main() {
   }
 }
 
-const isMain = import.meta.url === `file://${process.argv[1]}`;
+// Plain-path comparison instead of a raw `file://${argv[1]}` string match -
+// the string form breaks on spaces/unicode in the path (needs URL-encoding)
+// and on a relative argv[1] (invoked as `node scripts/foo.mjs` rather than
+// an absolute path), both of which make isMain false when this *is* the
+// entrypoint and main() silently never runs.
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isMain) main();
