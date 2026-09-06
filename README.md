@@ -7,6 +7,8 @@
 [![npm provenance](https://img.shields.io/badge/npm%20provenance-signed-brightgreen)](https://docs.npmjs.com/generating-provenance-statements)
 [![mcp-scan](https://thynkq.com/api/mcp-scan/badge/mcp-scan.svg)](https://thynkq.com/mcp-scan/check/mcp-scan)
 
+<p align="center"><img src="https://raw.githubusercontent.com/Abanoub-Rodolf/mcp-scan/main/assets/demo.gif" width="800" alt="mcp-scan scanning four MCP servers and reporting one critical, three high, one medium, one low finding"></p>
+
 **Open-source security scanner for Model Context Protocol (MCP) servers.**
 
 MCP servers run with full access to your filesystem, API keys, and network. mcp-scan audits every MCP server configuration on your system, detecting leaked secrets, prompt injection risks, supply-chain vulnerabilities, and data flow issues before they become incidents.
