@@ -7,7 +7,7 @@
 [![npm provenance](https://img.shields.io/badge/npm%20provenance-signed-brightgreen)](https://docs.npmjs.com/generating-provenance-statements)
 [![mcp-scan](https://thynkq.com/api/mcp-scan/badge/mcp-scan.svg)](https://thynkq.com/mcp-scan/check/mcp-scan)
 
-<p align="center"><img src="https://raw.githubusercontent.com/Abanoub-Rodolf/mcp-scan/main/assets/demo.gif" width="800" alt="mcp-scan scanning four MCP servers and reporting one critical, three high, one medium, one low finding"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/Abanoub-Rodolf/mcp-scan/main/assets/demo.gif" width="800" alt="mcp-scan auto-detecting two clients and reporting two critical findings"></p>
 
 **Open-source security scanner for Model Context Protocol (MCP) servers.**
 
