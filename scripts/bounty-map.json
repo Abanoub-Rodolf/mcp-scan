@@ -67,11 +67,11 @@
     },
     {
       "match": "github-mcp-server",
-      "vendor": "GitHub",
-      "program": "GitHub Security Bug Bounty",
-      "bounty": "narrow-yes",
-      "payout": "$250-$10,000 public tier, $1,000-$30,000+ invite-only VIP",
-      "note": "Only non-prompt-injection authZ/access-control findings against the running server qualify; the repo's own code review is out of scope."
+      "vendor": "Independent (not GitHub's own package)",
+      "program": "n/a",
+      "bounty": "no",
+      "payout": null,
+      "note": "Verified 2026-09-06: the npm package literally named 'github-mcp-server' is a third-party clone (maintainer giglepeople/jungchihoon), not GitHub's official MCP server. GitHub's own server ships as a Go binary/Docker image at github.com/github/github-mcp-server, outside npm entirely. GitHub's bounty program would not cover this npm package."
     },
     {
       "match": "@neondatabase/",
@@ -96,6 +96,14 @@
       "bounty": "unclear",
       "payout": null,
       "note": "One anecdotal $2,000 payout reported; no MCP-specific scope language found."
+    },
+    {
+      "match": "@sentry/",
+      "vendor": "Sentry",
+      "program": "HackerOne (appears moved to a private/invite program; public listing found as 'sentry_old')",
+      "bounty": "unclear",
+      "payout": null,
+      "note": "getsentry/sentry-mcp is Sentry's own repo (npm maintainer sentry-bot), but the current bounty program's live scope and payout status were not independently confirmed in this pass."
     }
   ],
   "default": {
