@@ -17,20 +17,20 @@ interface OsvResponse {
   vulns?: OsvVuln[];
 }
 
-interface OsvAffectedRangeEvent {
+export interface OsvAffectedRangeEvent {
   introduced?: string;
   fixed?: string;
   last_affected?: string;
   limit?: string;
 }
 
-interface OsvAffected {
+export interface OsvAffected {
   package?: { ecosystem?: string; name?: string };
   ranges?: Array<{ type: string; events?: OsvAffectedRangeEvent[] }>;
   versions?: string[];
 }
 
-interface OsvVuln {
+export interface OsvVuln {
   id: string;
   summary?: string;
   details?: string;
@@ -38,6 +38,7 @@ interface OsvVuln {
   database_specific?: { severity?: string };
   affected?: OsvAffected[];
   fixed_in?: string[];
+  references?: Array<{ type?: string; url?: string }>;
 }
 
 /**
@@ -46,7 +47,7 @@ interface OsvVuln {
  * throws and never guesses - returns null when nothing is parseable
  * so the caller can fall back to qualitative severity.
  */
-function extractCvssScore(severities: Array<{ type: string; score: string }>): number | null {
+export function extractCvssScore(severities: Array<{ type: string; score: string }>): number | null {
   if (!Array.isArray(severities)) return null;
   for (const s of severities) {
     if (!s || typeof s.score !== 'string' || s.score.length === 0) continue;

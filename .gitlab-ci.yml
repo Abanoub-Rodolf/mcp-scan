@@ -93,7 +93,7 @@ ecosystem-scan:
     paths:
       - node_modules/
     policy: pull
-  timeout: 25m
+  timeout: 60m
   interruptible: true
   allow_failure: true
   rules:
@@ -103,7 +103,7 @@ ecosystem-scan:
   artifacts:
     paths:
       - out/ecosystem/
-    expire_in: 30 days
+    expire_in: 7 days
   script:
     - npm run build
     - node scripts/top-mcp-packages.mjs

@@ -145,6 +145,69 @@ describe('Supply Chain Scanner', () => {
     expect(result.metadata?.licenseVerified).toBeFalsy();
   });
 
+  it('should mark a GitHub rate limit as unverified, not as a low-trust finding', async () => {
+    mockFetch.mockImplementation(async (url) => {
+      if (url.includes('registry.npmjs.org')) {
+        return createMockFetchResponse(true, {
+          repository: { url: 'git+https://github.com/some/repo.git' }
+        });
+      }
+      if (url.includes('api.github.com')) {
+        return createMockFetchResponse(false, { message: 'API rate limit exceeded' }, 403);
+      }
+      return createMockFetchResponse(false, {});
+    });
+
+    const server = mockServer('rate-limited-pkg');
+    const result = await scanSupplyChain(server);
+
+    expect(result.trustScore).toBe(40);
+    expect(result.findings.some(f => f.id === 'github-metadata-unverified')).toBe(true);
+    expect(result.findings.some(f => f.id === 'supply-chain-low-trust')).toBe(false);
+    expect(result.findings.find(f => f.id === 'github-metadata-unverified')?.severity).toBe('INFO');
+  });
+
+  it('should mark a GitHub network failure as unverified, not as a low-trust finding', async () => {
+    mockFetch.mockImplementation(async (url) => {
+      if (url.includes('registry.npmjs.org')) {
+        return createMockFetchResponse(true, {
+          repository: { url: 'git+https://github.com/some/repo.git' }
+        });
+      }
+      if (url.includes('api.github.com')) {
+        throw new Error('network unreachable');
+      }
+      return createMockFetchResponse(false, {});
+    });
+
+    const server = mockServer('network-fail-pkg');
+    const result = await scanSupplyChain(server);
+
+    expect(result.trustScore).toBe(40);
+    expect(result.findings.some(f => f.id === 'github-metadata-unverified')).toBe(true);
+  });
+
+  it('should treat a genuine GitHub 404 as a real low-trust signal', async () => {
+    mockFetch.mockImplementation(async (url) => {
+      if (url.includes('registry.npmjs.org')) {
+        return createMockFetchResponse(true, {
+          repository: { url: 'git+https://github.com/nobody/deleted-repo.git' }
+        });
+      }
+      if (url.includes('api.github.com')) {
+        return createMockFetchResponse(false, { message: 'Not Found' }, 404);
+      }
+      return createMockFetchResponse(false, {});
+    });
+
+    const server = mockServer('deleted-repo-pkg');
+    const result = await scanSupplyChain(server);
+
+    expect(result.trustScore).toBe(20);
+    expect(result.findings.some(f => f.id === 'supply-chain-low-trust')).toBe(true);
+    expect(result.findings.some(f => f.id === 'github-metadata-unverified')).toBe(false);
+  });
+
   it('should return perfect score for local servers (no package name)', async () => {
     const server = { ...mockServer('local'), command: '/usr/local/bin/server' };
     server.args = []; // No package name arg
