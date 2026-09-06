@@ -88,12 +88,36 @@ export async function scanSupplyChain(server: ResolvedServer, offline: boolean =
       return { findings, trustScore: 20, metadata };
     }
 
-    const githubMeta = await fetchGitHubMetadata(repoUrl);
-    if (!githubMeta) {
-      logger.warn(`Supply Chain: Failed to fetch GitHub metadata for ${repoUrl}.`);
+    const githubResult = await fetchGitHubMetadata(repoUrl);
+    if (!githubResult.ok) {
+      if (githubResult.reason === 'not-found') {
+        // The API call itself succeeded (not rate-limited, not a network
+        // error) and GitHub says this repo doesn't exist: a genuine
+        // low-trust signal, not a lookup failure.
+        findings.push({
+          id: 'supply-chain-low-trust',
+          severity: 'MEDIUM',
+          description: `Package '${packageName}' links a repository URL that does not resolve on GitHub (${repoUrl}).`,
+          fixRecommendation: 'Verify the authenticity of this package manually; the linked repository may be deleted, renamed, or fabricated.'
+        });
+        return { findings, trustScore: 20, metadata };
+      }
+
+      // Rate-limited or a network/timeout failure: the scanner learned
+      // nothing about the repo either way, so this must not read as "no
+      // repo found" (unauthenticated GitHub API calls are capped at 60/hr
+      // and a campaign scanning 100+ packages exhausts that fast).
+      logger.warn(`Supply Chain: Failed to fetch GitHub metadata for ${repoUrl} (${githubResult.reason}).`);
+      findings.push({
+        id: 'github-metadata-unverified',
+        severity: 'INFO',
+        description: `Package '${packageName}' repository metadata could not be verified via GitHub (${githubResult.reason === 'rate-limited' ? 'GitHub API rate limit' : 'network failure'}). This is not evidence the repository is missing or untrustworthy.`,
+        fixRecommendation: 'Re-run with a GITHUB_TOKEN environment variable set, or verify the repository manually.'
+      });
       return { findings, trustScore: 40, metadata };
     }
 
+    const githubMeta = githubResult.data;
     trustScore = calculateTrustScore(githubMeta);
 
     if (trustScore < 40) {
@@ -156,7 +180,11 @@ function extractRepoUrl(npmData: NpmPackageData): string | null {
   return null;
 }
 
-async function fetchGitHubMetadata(repoUrl: string): Promise<RepoMetadata | null> {
+type GitHubFetchResult =
+  | { ok: true; data: RepoMetadata }
+  | { ok: false; reason: 'rate-limited' | 'not-found' | 'network' };
+
+async function fetchGitHubMetadata(repoUrl: string): Promise<GitHubFetchResult> {
   try {
     const parts = repoUrl.split('github.com/')[1].split('/');
     const owner = parts[0];
@@ -176,19 +204,27 @@ async function fetchGitHubMetadata(repoUrl: string): Promise<RepoMetadata | null
     const timeout = setTimeout(() => controller.abort(), 10000);
     const res = await fetch(apiUrl, { headers, signal: controller.signal });
     clearTimeout(timeout);
-    
-    if (!res.ok) return null;
+
+    // 403 covers both the primary and secondary GitHub rate limits;
+    // unauthenticated requests are capped at 60/hr, which a campaign scan
+    // of 100+ packages burns through well before it finishes.
+    if (res.status === 403 || res.status === 429) return { ok: false, reason: 'rate-limited' };
+    if (res.status === 404) return { ok: false, reason: 'not-found' };
+    if (!res.ok) return { ok: false, reason: 'network' };
 
     const data = await res.json() as GitHubRepoData;
     return {
-      stars: data.stargazers_count,
-      forks: data.forks_count,
-      updatedAt: data.updated_at,
-      pushedAt: data.pushed_at,
-      owner: data.owner.login
+      ok: true,
+      data: {
+        stars: data.stargazers_count,
+        forks: data.forks_count,
+        updatedAt: data.updated_at,
+        pushedAt: data.pushed_at,
+        owner: data.owner.login
+      }
     };
   } catch (_error) {
-    return null;
+    return { ok: false, reason: 'network' };
   }
 }
 
