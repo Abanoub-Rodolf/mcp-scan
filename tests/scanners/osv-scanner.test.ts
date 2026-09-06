@@ -122,6 +122,28 @@ describe('osv-scanner: queryOsvBatch', () => {
     expect(vulnIdsByDep).toEqual([[]]);
     expect(failedDepNames).toEqual(['lodash']);
   }, 15000);
+
+  it('marks a dependency as failed rather than clean when the response returns fewer results than queried', async () => {
+    const deps = [{ name: 'lodash', version: '4.17.15' }, { name: 'left-pad', version: '1.0.0' }];
+    global.fetch = vi.fn().mockResolvedValue(jsonResponse({ results: [{ vulns: [] }] })) as unknown as typeof fetch;
+
+    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch(deps);
+    expect(vulnIdsByDep).toEqual([[], []]);
+    expect(failedDepNames).toEqual(['left-pad']);
+  });
+
+  it('treats a malformed (non-JSON) 200 response as a failed chunk instead of throwing', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: vi.fn().mockRejectedValue(new Error('unexpected token')),
+    }) as unknown as typeof fetch;
+
+    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch([{ name: 'lodash', version: '4.17.15' }]);
+    expect(vulnIdsByDep).toEqual([[]]);
+    expect(failedDepNames).toEqual(['lodash']);
+  });
 });
 
 describe('osv-scanner: fetchVulnDetails', () => {

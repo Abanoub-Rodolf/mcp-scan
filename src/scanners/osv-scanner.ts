@@ -170,11 +170,29 @@ export async function queryOsvBatch(deps: ResolvedDependency[]): Promise<OsvBatc
       continue;
     }
 
-    const data = (await res.json()) as { results?: Array<{ vulns?: Array<{ id: string }> }> };
-    (data.results ?? []).forEach((entry, idx) => {
+    let results: Array<{ vulns?: Array<{ id: string }> }>;
+    try {
+      const data = (await res.json()) as { results?: Array<{ vulns?: Array<{ id: string }> }> };
+      results = data.results ?? [];
+    } catch (err) {
+      // A malformed/non-JSON 200 response must degrade the same as a
+      // failed request - not throw out of the whole campaign scan.
+      logger.warn(`Failed to parse querybatch response: ${err instanceof Error ? err.message : String(err)}`);
+      failedDepNames.push(...c.map(({ d }) => d.name));
+      continue;
+    }
+
+    results.forEach((entry, idx) => {
       const { i } = c[idx];
       vulnIdsByDep[i] = (entry.vulns ?? []).map((v) => v.id);
     });
+    // OSV documents pagination past 1000 vulns for one query / 3000 for
+    // the whole batch; a shorter `results` array than the chunk means some
+    // queries in this chunk got no answer at all - those must count as
+    // failed, not as "queried, zero vulnerabilities."
+    if (results.length < c.length) {
+      failedDepNames.push(...c.slice(results.length).map(({ d }) => d.name));
+    }
   }
 
   return { vulnIdsByDep, failedDepNames };
