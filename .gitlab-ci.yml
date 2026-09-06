@@ -27,7 +27,9 @@ variables:
 # showed nothing but the manual ecosystem-scan job, "skipped" overall, even
 # with a green push pipeline on the same commit. This adds MR pipelines
 # without narrowing anything: a branch with an open MR now gets both a push
-# and an MR pipeline until it merges, never fewer than before.
+# and an MR pipeline until it merges, never fewer than before. The tag rule
+# is required too: $CI_COMMIT_BRANCH is unset on a tag pipeline, so without
+# it a release tag would silently drop lint/build/test/audit entirely.
 .mr-and-branch: &mr-and-branch
   - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   - if: '$CI_COMMIT_BRANCH'
