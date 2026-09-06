@@ -361,6 +361,7 @@ export async function scanDependencyCves(
           ? `Upgrade '${dep.name}' to ${fixedVersion} or later.`
           : `No fixed version published yet for '${dep.name}'; track ${vuln.id} for an update.`,
         fixable: fixedVersion !== null,
+        dependencyResolution: dep.resolvedFrom,
       });
     }
   });

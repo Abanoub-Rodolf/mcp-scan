@@ -186,6 +186,7 @@ describe('osv-scanner: scanDependencyCves end to end', () => {
     // No lockfile was shipped, so the version came from resolving the
     // manifest's semver range - the finding must say so, not imply proof.
     expect(findings[0].description).toContain('manifest-inferred');
+    expect(findings[0].dependencyResolution).toBe('manifest-range');
   });
 
   it('marks a dependency vulnerability as lockfile-confirmed when a real lockfile resolved the version', async () => {
@@ -203,6 +204,7 @@ describe('osv-scanner: scanDependencyCves end to end', () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].description).toContain('lockfile-confirmed');
     expect(findings[0].description).not.toContain('manifest-inferred');
+    expect(findings[0].dependencyResolution).toBe('lockfile');
   });
 
   it('does not report a vulnerability whose fixed range excludes the resolved version', async () => {

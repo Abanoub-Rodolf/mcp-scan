@@ -32,6 +32,13 @@ export function collectRankedFindings(results) {
   for (const result of results) {
     if (result.unsupported) continue;
     for (const finding of result.findings ?? []) {
+      // Heuristic hits (config-oriented scanners run against whole source
+      // files - see scripts/heuristic-findings.mjs) are for manual triage,
+      // never a severity count. Excluded here even though the downgrade
+      // already drops them below REPORTABLE_SEVERITIES, so this list stays
+      // correct if a future scanner ever flags something heuristic above
+      // INFO.
+      if (finding.heuristic) continue;
       if (!REPORTABLE_SEVERITIES.has(finding.severity)) continue;
       rows.push({
         package: result.package,
@@ -45,6 +52,10 @@ export function collectRankedFindings(results) {
         description: oneSentence(finding.description),
         confidence: confidenceFor(finding.id),
         severity: finding.severity,
+        // Only set on OSV dependency-CVE findings: whether the resolved
+        // version came from a shipped lockfile or was inferred from the
+        // manifest's semver range. 'n/a' for every other finding type.
+        dependencyResolution: finding.dependencyResolution ?? 'n/a',
       });
     }
   }
@@ -65,18 +76,22 @@ export async function writeFindingsRanked(results, outDir) {
     '# High and critical findings, ranked',
     '',
     `Generated ${new Date().toISOString()}. ${rows.length} finding(s) at HIGH or CRITICAL severity ` +
-      `across ${results.filter((r) => !r.unsupported).length} scanned npm packages. Nothing here is a ` +
-      "confirmed, reported vulnerability - see docs/disclosure-policy.md before reporting anything.",
+      `across ${results.filter((r) => !r.unsupported).length} scanned npm packages. Heuristic hits ` +
+      "(config-oriented scanners run against whole source files) are excluded regardless of severity - " +
+      "see out/ecosystem/<package>.json for the full heuristic:true list. Dep. Resolution is 'lockfile' " +
+      "only when a shipped lockfile confirmed the installed version; 'manifest-range' means the version " +
+      "was inferred from a semver range and needs a real install to confirm before reporting. Nothing " +
+      "here is a confirmed, reported vulnerability - see docs/disclosure-policy.md before reporting anything.",
     '',
-    '| Severity | Package | Version | Weekly DL | Vendor | Bounty | Payout | Scanner | Location | Finding | Confidence |',
-    '|---|---|---|---:|---|---|---|---|---|---|---|',
+    '| Severity | Package | Version | Weekly DL | Vendor | Bounty | Payout | Scanner | Location | Finding | Confidence | Dep. Resolution |',
+    '|---|---|---|---:|---|---|---|---|---|---|---|---|',
   ];
 
   for (const row of rows) {
     lines.push(
       `| ${row.severity} | ${mdEscape(row.package)} | ${mdEscape(row.version)} | ${row.weeklyDownloads ?? 'n/a'} | ` +
         `${mdEscape(row.vendor ?? 'unmapped')} | ${mdEscape(row.bountyProgram ?? 'n/a')} | ${mdEscape(row.payout ?? 'n/a')} | ` +
-        `${mdEscape(row.scanner)} | ${mdEscape(row.location)} | ${mdEscape(row.description)} | ${row.confidence} |`
+        `${mdEscape(row.scanner)} | ${mdEscape(row.location)} | ${mdEscape(row.description)} | ${row.confidence} | ${row.dependencyResolution} |`
     );
   }
 
