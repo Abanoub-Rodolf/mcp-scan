@@ -100,6 +100,7 @@ export function reportHint(packageName: string | undefined, stream: NodeJS.Write
   if (!packageName) return;
   if (process.env.MCP_SCAN_NO_HINTS) return;
   if (!stream.isTTY) return;
+  if (process.env.CI === 'true') return;
 
   stream.write(chalk.dim(`\nPublic scan report for ${packageName}: ${reportUrlFor(packageName)}\n`));
 }
