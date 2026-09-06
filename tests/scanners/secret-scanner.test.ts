@@ -271,6 +271,24 @@ describe('Secret Scanner', () => {
       expect(findings.filter(f => f.severity === 'CRITICAL' && f.id === 'exposed-secret')).toHaveLength(1);
     });
 
+    it('should not join an unrelated URL and a later "@" across lines into a fake DB credential (run2 upstash false positive, FP-REVIEW-2026-09-05)', () => {
+      // Reproduces the exact false positive found scanning @upstash/context7-mcp@4.0.5's
+      // dist/index.js and dist/lib/api.js: the old regex's [^:]+ and [^@]+ classes matched
+      // across newlines, joining a URL early in the file to an unrelated '@' in a jsdoc
+      // comment (e.g. "@param") tens of lines later, producing a 12KB+ "match".
+      const blob = [
+        'const manifest = { src: "https://context7.com/logo.png" };',
+        '// see note: nothing sensitive on this line',
+        'x'.repeat(200),
+        ' * @param context Client context including IP, API key, and client info',
+      ].join('\n');
+      const findings = scanSecrets({
+        name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
+        args: [blob]
+      });
+      expect(findings.filter(f => f.id === 'exposed-secret')).toHaveLength(0);
+    });
+
     it('should downgrade (not suppress) a real-looking secret found in a test fixture path', () => {
       const findings = scanSecrets({
         name: 'test', toolName: 't', configPath: 'tests/fixtures/mcp_configs/config.json', command: 'cmd',

@@ -61,7 +61,12 @@ export const SECRET_PATTERNS: SecretPattern[] = [
   { name: 'PlanetScale Token', regex: /\bpscale_tkn_[a-zA-Z0-9-_]{43}\b/ },
   { name: 'Neon Database Token', regex: /\bdb_[a-zA-Z0-9]{32}\b/ },
   { name: 'Private Key', regex: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
-  { name: 'Database URL with Credentials', regex: /[a-zA-Z]+:\/\/[^:]+:[^@]+@[^/]+/ },
+  // Bounded to a single line with no whitespace in any field (matches the
+  // extraction regex in secret-scanner.ts). The old [^:]+/[^@]+ classes
+  // matched across newlines, joining an unrelated URL early in a source
+  // file to the nearest later '@' (e.g. a jsdoc "@param") - confirmed
+  // false-positive shape from the run2 ecosystem scan (FP-REVIEW-2026-09-05).
+  { name: 'Database URL with Credentials', regex: /[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^:@/\s]+:[^@/\s]+@[^/\s]+/ },
   { name: 'xAI / Grok API Key', regex: /xai-[a-zA-Z0-9]{50,}/ },
   { name: 'Cerebras API Key', regex: /csk-[a-zA-Z0-9]{50,}/ },
   { name: 'Fireworks AI API Key', regex: /fw_[a-zA-Z0-9]{40,}/ },
