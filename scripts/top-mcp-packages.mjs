@@ -100,6 +100,35 @@ async function downloadsForChunk(chunk) {
   return results;
 }
 
+// Named priority-vendor targets must not fall out of the scan just because
+// npm's downloads endpoint has nothing for them this run (new package, API
+// hiccup, or a name pattern the bulk endpoint mishandles) - withDownloads'
+// `downloads !== null` filter was silently dropping them (run2 campaign,
+// 2026-09-05: 6 of 12 named targets never made it into targets.json). A
+// named target only ends up excluded when it doesn't exist on the registry
+// at all, and that gets recorded with a reason instead of vanishing.
+export async function resolveNamedTargets(names) {
+  const results = [];
+  for (const name of names) {
+    const point = await fetchJson(`https://api.npmjs.org/downloads/point/last-week/${encodeURIComponent(name)}`);
+    if (point && typeof point.downloads === 'number') {
+      results.push({ name, weeklyDownloads: point.downloads });
+      await sleep(150);
+      continue;
+    }
+    // No download figure - confirm the package actually exists before
+    // scanning it with an unknown download count, or recording a real skip.
+    const meta = await fetchJson(`https://registry.npmjs.org/${encodeURIComponent(name)}`);
+    if (meta) {
+      results.push({ name, weeklyDownloads: null });
+    } else {
+      results.push({ name, weeklyDownloads: null, skipped: 'package not found on npm registry' });
+    }
+    await sleep(150);
+  }
+  return results;
+}
+
 async function withDownloads(names) {
   const ranked = [];
   for (let i = 0; i < names.length; i += NPM_DOWNLOADS_CHUNK) {
@@ -171,7 +200,9 @@ async function main() {
   // search terms don't match) still gets scanned every run.
   const alreadyRanked = new Set(topRanked.map((pkg) => pkg.name));
   const missingNamed = NAMED_TARGETS.filter((name) => !alreadyRanked.has(name));
-  const namedRanked = missingNamed.length > 0 ? await withDownloads(missingNamed) : [];
+  const namedResolved = missingNamed.length > 0 ? await resolveNamedTargets(missingNamed) : [];
+  const namedRanked = namedResolved.filter((pkg) => !pkg.skipped);
+  const namedSkipped = namedResolved.filter((pkg) => pkg.skipped);
 
   const npm = [...topRanked, ...namedRanked]
     .map((pkg) => ({ ...pkg, bounty: bountyFor(bountyMap, pkg.name) }));
@@ -184,11 +215,18 @@ async function main() {
     generatedAt: new Date().toISOString(),
     npm,
     pypi,
+    // Named priority-vendor targets that still didn't make it in even after
+    // bypassing the download-count filter, with why - see resolveNamedTargets.
+    skippedNamedTargets: namedSkipped.map(({ name, skipped }) => ({ name, reason: skipped })),
   };
 
   const outPath = path.join(OUT_DIR, 'targets.json');
   await writeFile(outPath, JSON.stringify(targets, null, 2));
   console.log(`wrote ${npm.length} npm + ${pypi.length} pypi targets to ${outPath}`);
+  if (namedSkipped.length > 0) {
+    console.log(`${namedSkipped.length} named target(s) skipped: ${namedSkipped.map((p) => `${p.name} (${p.skipped})`).join(', ')}`);
+  }
 }
 
-main();
+const isMain = import.meta.url === `file://${process.argv[1]}`;
+if (isMain) main();
