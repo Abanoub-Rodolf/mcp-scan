@@ -9,7 +9,6 @@ import { scanPackageDeep } from './scanners/package-scanner.js';
 import { scanSupplyChain } from './scanners/supply-chain-scanner.js';
 import { scanLicense } from './scanners/license-scanner.js';
 import { scanAst } from './scanners/ast-scanner.js';
-import { scanAstSource } from './scanners/ast-source-scanner.js';
 import { scanSecrets } from './scanners/secret-scanner.js';
 import { scanToolPoisoning } from './scanners/tool-poisoning-scanner.js';
 import { scanPromptInjection } from './scanners/prompt-injection-scanner.js';
@@ -39,10 +38,12 @@ export {
   // config) builds a synthetic server whose command/args/env carry the
   // file content to scan - see scripts/ecosystem-scan.mjs.
   scanAst,
-  // Source-aware sibling of scanAst for exactly that whole-file case -
-  // see ast-source-scanner.ts. scanAst itself must stay untouched for
-  // real MCP config scans; never call scanAst on package source.
-  scanAstSource,
+  // Source-aware sibling of scanAst (scanAstSource) used to live here too,
+  // but its only real caller is scripts/source-scan.mjs (internal
+  // ecosystem-campaign tooling), not this published package's own scan
+  // path - see scripts/lib/ast-source-scanner.mjs. Keeping it off this
+  // export surface keeps `typescript` a devDependency instead of a ~7MB
+  // runtime dependency of the CLI.
   scanSecrets,
   scanToolPoisoning,
   scanPromptInjection,

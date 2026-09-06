@@ -11,7 +11,6 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import {
-  scanAstSource,
   scanSecrets,
   scanToolPoisoning,
   scanPromptInjection,
@@ -21,6 +20,7 @@ import {
   scanDataFlow,
   scanDependencyCves,
 } from '../dist/lib.js';
+import { scanAstSource } from './lib/ast-source-scanner.mjs';
 import { downgradeIfHeuristic } from './heuristic-findings.mjs';
 
 const execFileAsync = promisify(execFile);
