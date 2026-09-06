@@ -291,16 +291,12 @@ describe('Secret Scanner', () => {
 
     it('known gap: misses a real DB credential when the password has an unencoded slash', () => {
       // The [^@/\s]+ password class that stops the newline-join false positive
-      // above (FP-REVIEW-2026-09-05) also stops matching at a literal '/' inside
-      // the password field itself. A password with a raw, unencoded '/' (should
-      // be percent-encoded as %2F per the URI spec, but real-world connection
-      // strings sometimes ship it raw) makes the whole pattern fail to match, so
-      // this credential is not flagged as 'exposed-secret' at all - a false
-      // negative, not a downgrade. Accepted for now: tightening the password
-      // class to admit '/' while still refusing to cross a newline/whitespace
-      // boundary is a larger regex change than this false-positive fix pass
-      // covers. This test exists so that gap is a known, asserted behavior
-      // instead of a silent one.
+      // above also stops at a literal '/' inside the password itself (should
+      // be percent-encoded as %2F, but real connection strings sometimes ship
+      // it raw) - a false negative, not a downgrade. Accepted for now: letting
+      // '/' through while still refusing to cross a line boundary is a bigger
+      // regex change than this false-positive pass covers. Asserted here so
+      // the gap is known instead of silent.
       const findings = scanSecrets({
         name: 'test', toolName: 't', configPath: 'p', command: 'cmd',
         env: { DATABASE_URL: 'postgresql://svc_prod:kR8x2Qm9v/Tz4wYb3nJ6hLpF7@db.internal-prod-cluster.net:5432/app' }

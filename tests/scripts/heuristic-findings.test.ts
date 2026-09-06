@@ -6,14 +6,12 @@ import { downgradeIfHeuristic, HEURISTIC_SOURCE_SCANNERS } from '../../scripts/h
 
 const SOURCE_SCAN_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../scripts/source-scan.mjs');
 
-// scripts/source-scan.mjs never imports HEURISTIC_SOURCE_SCANNERS directly -
-// it calls downgradeIfHeuristic(withMeta, scanner) with a scanner-id string
-// literal it owns itself (the first element of each pair in its `tagged`
-// array). A typo or rename on either side (e.g. 'env-leak-scanner' drifting
-// to 'env-var-leak-scanner' in one file but not the other) would silently
-// stop that scanner's findings from ever being downgraded, and none of the
-// tests above would catch it since they call downgradeIfHeuristic directly
-// with hand-picked strings, not the real ones source-scan.mjs uses.
+// source-scan.mjs calls downgradeIfHeuristic(withMeta, scanner) with a
+// scanner-id string literal it owns itself, not an import of
+// HEURISTIC_SOURCE_SCANNERS. A rename on either side would silently stop
+// that scanner's findings from ever being downgraded, and the tests above
+// wouldn't catch it - they call downgradeIfHeuristic with hand-picked
+// strings, not the real ones source-scan.mjs uses.
 function taggedScannerIds() {
   const text = readFileSync(SOURCE_SCAN_PATH, 'utf8');
   const ids = [...text.matchAll(/^\s*\['([a-z-]+)',/gm)].map((m) => m[1]);
