@@ -9,6 +9,28 @@ import path from 'path';
 const OUT_DIR = path.resolve('out/ecosystem');
 const NPM_TARGET_COUNT = 150;
 const NPM_SEARCH_QUERIES = ['mcp-server', 'modelcontextprotocol', 'scope:modelcontextprotocol'];
+
+// Named vendor packages that the npm search-term pass above misses (wrong
+// naming convention, low download count vs the 150-package cutoff, or just
+// not surfaced by npm's ranking for these query terms). Added explicitly so
+// the campaign's priority vendors (Vercel, Cloudflare first) are always
+// scanned instead of depending on search luck. Verified to exist on the
+// npm registry 2026-09-06; 'github-mcp-server' is intentionally included
+// even though it is NOT GitHub's official package - see bounty-map.json.
+const NAMED_TARGETS = [
+  '@vercel/mcp-adapter',
+  '@cloudflare/mcp-server-cloudflare',
+  'mcp-server-cloudflare',
+  'workers-mcp',
+  '@neondatabase/mcp-server-neon',
+  '@supabase/mcp-server-supabase',
+  '@stripe/mcp',
+  '@notionhq/notion-mcp-server',
+  '@azure/mcp',
+  '@azure-devops/mcp',
+  '@sentry/mcp-server',
+  'github-mcp-server',
+];
 const NPM_DOWNLOADS_CHUNK = 100;
 const PYPI_PREFIX = 'mcp-server-';
 const PYPI_TARGET_COUNT = 50;
@@ -142,8 +164,16 @@ async function main() {
 
   const npmNames = await searchNpmPackages();
   const npmRanked = await withDownloads(npmNames);
-  const npm = npmRanked
-    .slice(0, NPM_TARGET_COUNT)
+  const topRanked = npmRanked.slice(0, NPM_TARGET_COUNT);
+
+  // Named targets ride along outside the download-count cutoff so a
+  // priority vendor package with modest download counts (or a name the
+  // search terms don't match) still gets scanned every run.
+  const alreadyRanked = new Set(topRanked.map((pkg) => pkg.name));
+  const missingNamed = NAMED_TARGETS.filter((name) => !alreadyRanked.has(name));
+  const namedRanked = missingNamed.length > 0 ? await withDownloads(missingNamed) : [];
+
+  const npm = [...topRanked, ...namedRanked]
     .map((pkg) => ({ ...pkg, bounty: bountyFor(bountyMap, pkg.name) }));
 
   const pypiCandidates = await findPypiCandidates();
