@@ -69,6 +69,7 @@ export const FINDING_IDS = [
   'dependency-known-vulnerability-medium',
   'dependency-known-vulnerability-low',
   'dependency-known-vulnerability-unresolved',
+  'dependency-osv-lookup-incomplete',
   'github-metadata-unverified',
 ] as const;
 

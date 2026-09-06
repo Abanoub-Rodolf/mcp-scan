@@ -138,13 +138,22 @@ export async function resolveDependencies(
   }).then((results) => results.filter((r): r is ResolvedDependency => r !== null));
 }
 
+export interface OsvBatchResult {
+  vulnIdsByDep: string[][];
+  // Dependency names whose chunk never got a usable response after
+  // retries - these must not read as "no vulnerabilities found", since
+  // the query for them never actually completed.
+  failedDepNames: string[];
+}
+
 /**
  * Queries OSV's batch endpoint (id + modified only per the documented
  * response shape) in chunks of 100, returning the vuln ids found for
  * each dependency at the same index as the input array.
  */
-export async function queryOsvBatch(deps: ResolvedDependency[]): Promise<string[][]> {
-  const results: string[][] = deps.map(() => []);
+export async function queryOsvBatch(deps: ResolvedDependency[]): Promise<OsvBatchResult> {
+  const vulnIdsByDep: string[][] = deps.map(() => []);
+  const failedDepNames: string[] = [];
   const chunks = chunk(deps.map((d, i) => ({ d, i })), BATCH_CHUNK_SIZE);
 
   for (const c of chunks) {
@@ -156,16 +165,27 @@ export async function queryOsvBatch(deps: ResolvedDependency[]): Promise<string[
       headers: { 'Content-Type': 'application/json' },
       body,
     }, `querybatch (${c.length} deps)`);
-    if (!res) continue;
+    if (!res) {
+      failedDepNames.push(...c.map(({ d }) => d.name));
+      continue;
+    }
 
     const data = (await res.json()) as { results?: Array<{ vulns?: Array<{ id: string }> }> };
     (data.results ?? []).forEach((entry, idx) => {
       const { i } = c[idx];
-      results[i] = (entry.vulns ?? []).map((v) => v.id);
+      vulnIdsByDep[i] = (entry.vulns ?? []).map((v) => v.id);
     });
   }
 
-  return results;
+  return { vulnIdsByDep, failedDepNames };
+}
+
+export interface VulnDetailsResult {
+  found: Map<string, OsvVuln>;
+  // ids querybatch confirmed exist for a dependency, but whose full
+  // advisory (severity, affected ranges) could not be hydrated - must not
+  // be silently dropped, since querybatch already proved a vuln is there.
+  failedIds: string[];
 }
 
 /**
@@ -174,22 +194,27 @@ export async function queryOsvBatch(deps: ResolvedDependency[]): Promise<string[
  * same CVE (e.g. a lodash prototype pollution) recurs across many
  * dependents in one campaign run.
  */
-export async function fetchVulnDetails(ids: string[]): Promise<Map<string, OsvVuln>> {
+export async function fetchVulnDetails(ids: string[]): Promise<VulnDetailsResult> {
   const unique = [...new Set(ids)];
   const found = new Map<string, OsvVuln>();
+  const failedIds: string[] = [];
 
   await runPool(unique, VULN_FETCH_CONCURRENCY, async (id) => {
     const res = await fetchWithBackoff(`${OSV_VULN_URL}/${encodeURIComponent(id)}`, {}, id);
-    if (!res) return;
+    if (!res) {
+      failedIds.push(id);
+      return;
+    }
     try {
       const vuln = (await res.json()) as OsvVuln;
       found.set(id, vuln);
     } catch (err) {
+      failedIds.push(id);
       logger.warn(`Failed to parse OSV advisory ${id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
 
-  return found;
+  return { found, failedIds };
 }
 
 function severityFromVuln(vuln: OsvVuln): Severity {
@@ -272,18 +297,19 @@ export async function scanDependencyCves(
   const deps = await resolveDependencies(pkgJson, lockfile);
   if (deps.length === 0) return findings;
 
-  const vulnIdsByDep = await queryOsvBatch(deps);
+  const { vulnIdsByDep, failedDepNames } = await queryOsvBatch(deps);
   const allIds = vulnIdsByDep.flat();
-  if (allIds.length === 0) return findings;
 
-  const vulnDetails = await fetchVulnDetails(allIds);
+  const vulnDetails = allIds.length > 0
+    ? await fetchVulnDetails(allIds)
+    : { found: new Map<string, OsvVuln>(), failedIds: [] as string[] };
   let unresolvedCount = 0;
   const unresolvedIds = new Set<string>();
 
   deps.forEach((dep, i) => {
     for (const vulnId of vulnIdsByDep[i]) {
-      const vuln = vulnDetails.get(vulnId);
-      if (!vuln) continue; // hydration failed after retries; skip rather than guess
+      const vuln = vulnDetails.found.get(vulnId);
+      if (!vuln) continue; // counted in failedIds below; not silently treated as clean
 
       const matchStatus = matchVersionAgainstVuln(dep.version, vuln, dep.name);
       if (matchStatus === false) continue;
@@ -318,6 +344,22 @@ export async function scanDependencyCves(
         `(${[...unresolvedIds].join(', ')}) by name but carry no structured version range to confirm against the ` +
         `resolved dependency version. Not a confirmed vulnerability - verify manually.`,
       fixRecommendation: 'Check each advisory manually against the resolved dependency version.',
+      fixable: false,
+    });
+  }
+
+  // A batch query that failed after retries, or a vuln id querybatch
+  // confirmed but whose detail fetch failed, must read as "not checked" -
+  // never as the same silence a genuinely clean dependency would produce.
+  if (failedDepNames.length > 0 || vulnDetails.failedIds.length > 0) {
+    const parts: string[] = [];
+    if (failedDepNames.length > 0) parts.push(`${failedDepNames.length} dependenc${failedDepNames.length === 1 ? 'y' : 'ies'} (${failedDepNames.join(', ')}) could not be queried against OSV`);
+    if (vulnDetails.failedIds.length > 0) parts.push(`${vulnDetails.failedIds.length} advisory record${vulnDetails.failedIds.length === 1 ? '' : 's'} (${vulnDetails.failedIds.join(', ')}) matched but could not be hydrated`);
+    findings.push({
+      id: 'dependency-osv-lookup-incomplete',
+      severity: 'INFO',
+      description: `OSV dependency check was incomplete: ${parts.join('; ')}, after retries. This is not evidence these dependencies are clean.`,
+      fixRecommendation: 'Re-run the scan; if it persists, check OSV.dev API status.',
       fixable: false,
     });
   }

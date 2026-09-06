@@ -99,8 +99,9 @@ describe('osv-scanner: queryOsvBatch', () => {
       results: [{ vulns: [{ id: 'GHSA-p6mc-m468-83gw' }] }, { vulns: [] }],
     })) as unknown as typeof fetch;
 
-    const result = await queryOsvBatch(deps);
-    expect(result).toEqual([['GHSA-p6mc-m468-83gw'], []]);
+    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch(deps);
+    expect(vulnIdsByDep).toEqual([['GHSA-p6mc-m468-83gw'], []]);
+    expect(failedDepNames).toEqual([]);
   });
 
   it('retries once on a 429 then succeeds', async () => {
@@ -109,15 +110,17 @@ describe('osv-scanner: queryOsvBatch', () => {
       .mockResolvedValueOnce(jsonResponse({ results: [{ vulns: [] }] }));
     global.fetch = mockFetch as unknown as typeof fetch;
 
-    const result = await queryOsvBatch([{ name: 'lodash', version: '4.17.15' }]);
+    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch([{ name: 'lodash', version: '4.17.15' }]);
     expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(result).toEqual([[]]);
+    expect(vulnIdsByDep).toEqual([[]]);
+    expect(failedDepNames).toEqual([]);
   }, 10000);
 
-  it('degrades to empty results for a chunk that exhausts retries on 500s', async () => {
+  it('reports the chunk as failed, not clean, when it exhausts retries on 500s', async () => {
     global.fetch = vi.fn().mockResolvedValue(jsonResponse({}, 500)) as unknown as typeof fetch;
-    const result = await queryOsvBatch([{ name: 'lodash', version: '4.17.15' }]);
-    expect(result).toEqual([[]]);
+    const { vulnIdsByDep, failedDepNames } = await queryOsvBatch([{ name: 'lodash', version: '4.17.15' }]);
+    expect(vulnIdsByDep).toEqual([[]]);
+    expect(failedDepNames).toEqual(['lodash']);
   }, 15000);
 });
 
@@ -126,15 +129,17 @@ describe('osv-scanner: fetchVulnDetails', () => {
     const mockFetch = vi.fn().mockResolvedValue(jsonResponse(LODASH_VULN));
     global.fetch = mockFetch as unknown as typeof fetch;
 
-    const details = await fetchVulnDetails(['GHSA-p6mc-m468-83gw', 'GHSA-p6mc-m468-83gw']);
+    const { found, failedIds } = await fetchVulnDetails(['GHSA-p6mc-m468-83gw', 'GHSA-p6mc-m468-83gw']);
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(details.get('GHSA-p6mc-m468-83gw')?.summary).toBe('Prototype Pollution in lodash');
+    expect(found.get('GHSA-p6mc-m468-83gw')?.summary).toBe('Prototype Pollution in lodash');
+    expect(failedIds).toEqual([]);
   });
 
-  it('skips an id whose fetch fails after retries rather than throwing', async () => {
+  it('reports an id whose fetch fails after retries as failed rather than silently dropping it', async () => {
     global.fetch = vi.fn().mockResolvedValue(jsonResponse({}, 404)) as unknown as typeof fetch;
-    const details = await fetchVulnDetails(['does-not-exist']);
-    expect(details.size).toBe(0);
+    const { found, failedIds } = await fetchVulnDetails(['does-not-exist']);
+    expect(found.size).toBe(0);
+    expect(failedIds).toEqual(['does-not-exist']);
   });
 });
 
@@ -186,4 +191,30 @@ describe('osv-scanner: scanDependencyCves end to end', () => {
   it('returns no findings for a package with no dependencies', async () => {
     expect(await scanDependencyCves({}, null)).toEqual([]);
   });
+
+  it('surfaces an incomplete-lookup finding when the batch query fails, instead of reading as clean', async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ 'dist-tags': { latest: '4.17.15' }, versions: { '4.17.15': {} } }))
+      .mockResolvedValue(jsonResponse({}, 500));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const findings = await scanDependencyCves({ dependencies: { lodash: '^4.17.0' } }, null);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].id).toBe('dependency-osv-lookup-incomplete');
+    expect(findings[0].severity).toBe('INFO');
+    expect(findings[0].description).toContain('lodash');
+  }, 15000);
+
+  it('surfaces an incomplete-lookup finding when a matched advisory fails to hydrate', async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ 'dist-tags': { latest: '4.17.15' }, versions: { '4.17.15': {} } }))
+      .mockResolvedValueOnce(jsonResponse({ results: [{ vulns: [{ id: 'GHSA-p6mc-m468-83gw' }] }] }))
+      .mockResolvedValue(jsonResponse({}, 500));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const findings = await scanDependencyCves({ dependencies: { lodash: '^4.17.0' } }, null);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].id).toBe('dependency-osv-lookup-incomplete');
+    expect(findings[0].description).toContain('GHSA-p6mc-m468-83gw');
+  }, 15000);
 });
