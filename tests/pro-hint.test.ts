@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { proHint } from '../src/utils/pro-hint.js';
 
 function fakeStream(isTTY: boolean) {
@@ -10,7 +10,15 @@ function fakeStream(isTTY: boolean) {
 }
 
 describe('proHint', () => {
-  afterEach(() => { delete process.env.MCP_SCAN_NO_HINTS; });
+  let savedCi: string | undefined;
+  beforeEach(() => {
+    savedCi = process.env.CI;
+    delete process.env.CI;
+  });
+  afterEach(() => {
+    delete process.env.MCP_SCAN_NO_HINTS;
+    if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+  });
 
   it('writes one line to a TTY stream', () => {
     const { stream, writes } = fakeStream(true);
@@ -21,6 +29,13 @@ describe('proHint', () => {
 
   it('stays silent when the stream is not a TTY (pipes, CI, json consumers)', () => {
     const { stream, writes } = fakeStream(false);
+    proHint(stream);
+    expect(writes).toHaveLength(0);
+  });
+
+  it('stays silent under CI even with a pseudo-TTY', () => {
+    process.env.CI = 'true';
+    const { stream, writes } = fakeStream(true);
     proHint(stream);
     expect(writes).toHaveLength(0);
   });
