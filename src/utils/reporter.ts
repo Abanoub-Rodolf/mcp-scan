@@ -158,7 +158,7 @@ function printSummary(report: ScanReport, options: { ugig?: boolean }): void {
   logger.emptyLine();
   // Interactive-only paid next step: this function is only called in non-json
   // mode (CI forces json and takes printJsonReport instead), so the guard is
-  // findings-present + not the ugig listing flow. One line, no spam — the free
+  // findings-present + not the ugig listing flow. One line, no spam: the free
   // scanner stays the whole product.
   if (
     !options.ugig &&

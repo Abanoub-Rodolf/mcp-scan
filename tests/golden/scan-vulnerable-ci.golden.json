@@ -40,7 +40,7 @@
         {
           "id": "exposed-secret",
           "severity": "HIGH",
-          "description": "Exposed GitHub Token in environment variable 'GITHUB_PERSONAL_ACCESS_TOKEN'. Path suggests this may be a test fixture or example \u2014 verify before treating as a live credential.",
+          "description": "Exposed GitHub Token in environment variable 'GITHUB_PERSONAL_ACCESS_TOKEN'. Path suggests a test fixture or example. Verify before treating it as a live credential.",
           "fixRecommendation": "Move the secret to a secure environment variable and reference it instead (e.g., ${GITHUB_PERSONAL_ACCESS_TOKEN}).",
           "fixable": true,
           "remediationConfidence": 60
@@ -94,7 +94,7 @@
         {
           "id": "exposed-secret",
           "severity": "HIGH",
-          "description": "Exposed Stripe Secret Key in environment variable 'STRIPE_KEY'. Path suggests this may be a test fixture or example \u2014 verify before treating as a live credential.",
+          "description": "Exposed Stripe Secret Key in environment variable 'STRIPE_KEY'. Path suggests a test fixture or example. Verify before treating it as a live credential.",
           "fixRecommendation": "Move the secret to a secure environment variable and reference it instead (e.g., ${STRIPE_KEY}).",
           "fixable": true,
           "remediationConfidence": 60
