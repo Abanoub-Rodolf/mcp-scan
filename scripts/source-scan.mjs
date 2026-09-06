@@ -81,13 +81,23 @@ function scanFileForFindings(pkgName, relPath, absPath, content) {
   return findings;
 }
 
+// Returns { files, truncated }: truncated is true when the walk hit
+// MAX_FILES_PER_PACKAGE with candidate files still unvisited, so callers
+// can report "scanned 40 of N+" instead of silently implying full coverage.
 async function walkSourceFiles(rootDir) {
   const files = [];
+  let truncated = false;
   async function walk(dir) {
-    if (files.length >= MAX_FILES_PER_PACKAGE) return;
+    if (files.length >= MAX_FILES_PER_PACKAGE) {
+      truncated = true;
+      return;
+    }
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (files.length >= MAX_FILES_PER_PACKAGE) return;
+      if (files.length >= MAX_FILES_PER_PACKAGE) {
+        truncated = true;
+        return;
+      }
       if (entry.name.startsWith('.')) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -102,13 +112,14 @@ async function walkSourceFiles(rootDir) {
     }
   }
   await walk(rootDir);
-  return files;
+  return { files, truncated };
 }
 
 /**
- * Downloads `tarballUrl` fully into memory only after confirming its
- * declared size is under the cap; if the response omits Content-Length,
- * downloads it and checks the actual size before writing anything to disk.
+ * Streams `tarballUrl` to `destPath`, aborting as soon as the byte count
+ * crosses the cap - a Content-Length header lying or missing must not let
+ * an oversized (or unbounded) body get buffered into memory first, which
+ * would make the cap a no-op against a malicious or misconfigured host.
  * Returns { skipped: true, reason } instead of throwing on any failure -
  * one bad tarball must not abort the campaign.
  */
@@ -126,16 +137,53 @@ async function downloadTarball(tarballUrl, destPath) {
     await res.body?.cancel?.();
     return { skipped: true, reason: `tarball is ${declaredSize} bytes, over the ${MAX_TARBALL_BYTES} byte cap` };
   }
+  if (!res.body) return { skipped: true, reason: 'download had no response body' };
 
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.byteLength > MAX_TARBALL_BYTES) {
-    return { skipped: true, reason: `tarball is ${buf.byteLength} bytes, over the ${MAX_TARBALL_BYTES} byte cap` };
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_TARBALL_BYTES) {
+      await reader.cancel();
+      return { skipped: true, reason: `tarball exceeded the ${MAX_TARBALL_BYTES} byte cap while streaming` };
+    }
+    chunks.push(value);
   }
-  await writeFile(destPath, buf);
+  await writeFile(destPath, Buffer.concat(chunks));
   return { skipped: false };
 }
 
+// Path segments that would let a tar entry write outside destDir once
+// extracted - a crafted tarball is exactly the kind of input this campaign
+// scans, so "unpacked but never executed" cannot also mean "unpacked
+// wherever its own paths say to write."
+function isUnsafeTarEntry(entryPath) {
+  const normalized = entryPath.replace(/\\/g, '/');
+  if (normalized.startsWith('/')) return true;
+  return normalized.split('/').some((segment) => segment === '..');
+}
+
+async function listTarballEntries(tgzPath) {
+  const { stdout } = await execFileAsync('tar', ['-tzf', tgzPath]);
+  return stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
 async function extractTarball(tgzPath, destDir) {
+  let entries;
+  try {
+    entries = await listTarballEntries(tgzPath);
+  } catch (err) {
+    return { ok: false, reason: `could not list tarball entries: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  const unsafe = entries.find(isUnsafeTarEntry);
+  if (unsafe) {
+    return { ok: false, reason: `refused to extract: unsafe path entry '${unsafe}'` };
+  }
+
   try {
     await execFileAsync('tar', ['-xzf', tgzPath, '-C', destDir]);
     return { ok: true };
@@ -165,7 +213,7 @@ async function readJsonIfExists(filePath) {
  * is the registry's per-version document (needs dist.tarball + dependencies).
  */
 export async function deepScanPackage(pkgName, manifest) {
-  const summary = { filesScanned: 0, filesSkipped: 0, tarball: 'not attempted' };
+  const summary = { filesScanned: 0, filesSkipped: 0, filesTruncated: false, tarball: 'not attempted' };
   const findings = [];
 
   const tarballUrl = manifest?.dist?.tarball;
@@ -189,7 +237,8 @@ export async function deepScanPackage(pkgName, manifest) {
           const packageRoot = path.join(tmpDir, 'package');
           const rootForWalk = existsSync(packageRoot) ? packageRoot : tmpDir;
 
-          const files = await walkSourceFiles(rootForWalk);
+          const { files, truncated } = await walkSourceFiles(rootForWalk);
+          summary.filesTruncated = truncated;
           for (const absPath of files) {
             const relPath = path.relative(rootForWalk, absPath);
             const st = await stat(absPath);
