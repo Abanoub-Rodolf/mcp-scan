@@ -45,6 +45,7 @@ describe('repoHint', () => {
     const { stream, writes } = fakeStream(true);
     repoHint(true, stream);
     expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain('a star helps others find it');
     expect(writes[0]).toContain('github.com/Abanoub-Rodolf/mcp-scan');
   });
 

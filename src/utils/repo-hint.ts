@@ -26,7 +26,7 @@ export function repoHint(hasFindings: boolean, stream: NodeJS.WriteStream = proc
   const markerPath = path.join(auditDir(), MARKER_FILE);
   if (fs.existsSync(markerPath)) return;
 
-  stream.write(chalk.dim('\nmcp-scan is MIT and maintained by one person: github.com/Abanoub-Rodolf/mcp-scan\n'));
+  stream.write(chalk.dim('\nmcp-scan is MIT, built by one person. If it earned its keep, a star helps others find it: github.com/Abanoub-Rodolf/mcp-scan\n'));
   shownThisProcess = true;
 
   // Claim the one-time slot now that the line has actually printed.
