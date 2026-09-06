@@ -14,6 +14,8 @@ const SECRET_KEY_REGEX = /.*(KEY|SECRET|TOKEN|PASSWORD|API_|AUTH_|CREDENTIAL|BEA
 const ENV_FILE_NAMES = ['.env', '.env.local', '.env.production', '.env.development', '.env.staging'];
 
 export function scanEnvLeak(server: ResolvedServer, serverFilePath: string): Finding[] {
+  // deliberate type error to prove the mr pipeline gate bites, reverted after
+  const gateRedcheck: number = 'not-a-number';
   const findings: Finding[] = [];
   const serverDir = path.dirname(path.resolve(serverFilePath));
 
