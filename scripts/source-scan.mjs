@@ -171,14 +171,36 @@ async function listTarballEntries(tgzPath) {
   return stdout.split('\n').map((line) => line.trim()).filter(Boolean);
 }
 
+// A path check on entry NAMES alone misses the classic tar-slip variant:
+// a symlink entry named e.g. "assets" pointing outside destDir, followed
+// by a normal-looking "assets/pwned" entry that writes through it on
+// extraction - every entry name in that pair passes isUnsafeTarEntry.
+// GNU and BSD tar's verbose listing both mark a symlink with a leading
+// 'l' and a "-> target" suffix; GNU tar marks a hard link with a leading
+// 'h' and a "link to" suffix. Legitimate npm packages don't ship either,
+// so any link entry at all is refused rather than trying to validate
+// where it points.
+async function hasLinkEntries(tgzPath) {
+  const { stdout } = await execFileAsync('tar', ['-tvzf', tgzPath]);
+  return stdout.split('\n').some((line) => {
+    if (!line.trim()) return false;
+    return line[0] === 'l' || line[0] === 'h' || line.includes(' -> ') || line.includes(' link to ');
+  });
+}
+
 async function extractTarball(tgzPath, destDir) {
   let entries;
+  let linked;
   try {
     entries = await listTarballEntries(tgzPath);
+    linked = await hasLinkEntries(tgzPath);
   } catch (err) {
-    return { ok: false, reason: `could not list tarball entries: ${err instanceof Error ? err.message : String(err)}` };
+    return { ok: false, reason: `could not inspect tarball entries: ${err instanceof Error ? err.message : String(err)}` };
   }
 
+  if (linked) {
+    return { ok: false, reason: 'refused to extract: tarball contains a symlink or hardlink entry' };
+  }
   const unsafe = entries.find(isUnsafeTarEntry);
   if (unsafe) {
     return { ok: false, reason: `refused to extract: unsafe path entry '${unsafe}'` };
