@@ -17,20 +17,20 @@ interface OsvResponse {
   vulns?: OsvVuln[];
 }
 
-interface OsvAffectedRangeEvent {
+export interface OsvAffectedRangeEvent {
   introduced?: string;
   fixed?: string;
   last_affected?: string;
   limit?: string;
 }
 
-interface OsvAffected {
+export interface OsvAffected {
   package?: { ecosystem?: string; name?: string };
   ranges?: Array<{ type: string; events?: OsvAffectedRangeEvent[] }>;
   versions?: string[];
 }
 
-interface OsvVuln {
+export interface OsvVuln {
   id: string;
   summary?: string;
   details?: string;
@@ -38,6 +38,7 @@ interface OsvVuln {
   database_specific?: { severity?: string };
   affected?: OsvAffected[];
   fixed_in?: string[];
+  references?: Array<{ type?: string; url?: string }>;
 }
 
 /**
