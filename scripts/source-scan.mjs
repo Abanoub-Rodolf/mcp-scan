@@ -21,6 +21,7 @@ import {
   scanDataFlow,
   scanDependencyCves,
 } from '../dist/lib.js';
+import { downgradeIfHeuristic } from './heuristic-findings.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -75,7 +76,8 @@ function scanFileForFindings(pkgName, relPath, absPath, content) {
   const findings = [];
   for (const [scanner, raw] of tagged) {
     for (const f of raw) {
-      findings.push({ ...f, scanner, sourceFile: relPath, sourceLine: locateLine(content, f.description) });
+      const withMeta = { ...f, scanner, sourceFile: relPath, sourceLine: locateLine(content, f.description) };
+      findings.push(downgradeIfHeuristic(withMeta, scanner));
     }
   }
   return findings;

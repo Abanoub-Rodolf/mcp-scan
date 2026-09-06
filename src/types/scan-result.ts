@@ -82,6 +82,13 @@ export interface Finding {
   fixRecommendation?: string;
   fixable?: boolean;
   remediationConfidence?: number; // 1-100
+  // Set only by osv-scanner.ts's dependency-CVE findings: whether the
+  // resolved dependency version came from a shipped lockfile (proof of
+  // what npm actually installs) or was inferred from the manifest's semver
+  // range (a name+range match only - the real installed version could
+  // differ once the whole dependency graph is resolved). Surfaced as its
+  // own column in findings-ranked.mjs so it isn't lost in truncated text.
+  dependencyResolution?: 'lockfile' | 'manifest-range';
 }
 
 /**
