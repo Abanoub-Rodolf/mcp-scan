@@ -14,6 +14,8 @@ Set TypingSpeed 40ms
 # the two client configs planted under a scratch $HOME instead. The repo-hint
 # marker is cleared so the post-scan star hint (fires once per machine)
 # actually shows up in the recording.
+# Everything here lives under /tmp/mcp-scan-demo and never ships: package.json
+# `files` excludes assets/, so the shim can't reach a user's PATH.
 Hide
 Type "mkdir -p /tmp/mcp-scan-demo/bin"
 Enter
