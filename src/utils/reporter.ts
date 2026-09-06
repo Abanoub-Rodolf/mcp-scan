@@ -37,9 +37,9 @@ function printBanner(version: string): void {
     return content + ' '.repeat(Math.max(0, innerWidth - visibleLen));
   }
 
-  // 🛡️ = 2 cols, rest ASCII: 3 + 2 + 2 + 8 + 2 + 1 + version.length
-  const titleVisLen = 18 + version.length;
-  const titleContent = `   🛡️  ${chalk.white.bold('mcp-scan')}  ${dim('v' + version)}`;
+  // plain ASCII: 3 + 8 + 2 + 1 + version.length
+  const titleVisLen = 14 + version.length;
+  const titleContent = `   ${chalk.white.bold('mcp-scan')}  ${dim('v' + version)}`;
 
   // subtitle is pure ASCII: 3 + 39 = 42. If the subtitle text changes,
   // update subtitleVisLen AND boxWidth together or the right rail drifts.
