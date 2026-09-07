@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.0.13] - 2026-09-07
+
+### Changed
+- Terminal output shows config paths under your home directory as `~`
+  instead of the full path. JSON, SARIF, HTML, and audit-log output are
+  unaffected, still absolute.
+- Fixed the header box border misaligning in most terminals (a double-width
+  emoji threw off the padding math).
+
+### Added
+- A one-line, once-per-machine hint after a scan finds something: mcp-scan
+  is maintained by one person, a star helps others find it. Only prints on
+  a real terminal, never under `--json`, `--sarif`, CI, or piped output.
+  Silence it permanently with `MCP_SCAN_NO_HINTS=1`.
+
 ## [2.0.12] - 2026-09-05
 
 ### Changed
