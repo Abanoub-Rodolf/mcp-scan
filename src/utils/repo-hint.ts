@@ -21,12 +21,14 @@ export function repoHint(hasFindings: boolean, stream: NodeJS.WriteStream = proc
   if (process.env.MCP_SCAN_NO_HINTS) return;
   if (!hasFindings) return;
   if (!stream.isTTY) return;
+  // A CI runner can hand the process a pseudo-TTY; same signal the spinner honors.
+  if (process.env.CI === 'true') return;
   if (shownThisProcess) return;
 
   const markerPath = path.join(auditDir(), MARKER_FILE);
   if (fs.existsSync(markerPath)) return;
 
-  stream.write(chalk.dim('\nmcp-scan is MIT and maintained by one person: github.com/Abanoub-Rodolf/mcp-scan\n'));
+  stream.write(chalk.dim('\nmcp-scan is MIT, built by one person. If it earned its keep, a star helps others find it: github.com/Abanoub-Rodolf/mcp-scan\n'));
   shownThisProcess = true;
 
   // Claim the one-time slot now that the line has actually printed.
@@ -98,6 +100,7 @@ export function reportHint(packageName: string | undefined, stream: NodeJS.Write
   if (!packageName) return;
   if (process.env.MCP_SCAN_NO_HINTS) return;
   if (!stream.isTTY) return;
+  if (process.env.CI === 'true') return;
 
   stream.write(chalk.dim(`\nPublic scan report for ${packageName}: ${reportUrlFor(packageName)}\n`));
 }

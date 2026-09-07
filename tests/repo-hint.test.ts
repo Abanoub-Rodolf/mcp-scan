@@ -24,17 +24,21 @@ async function freshRepoHint() {
 
 describe('repoHint', () => {
   let tmpHome: string;
+  let savedCi: string | undefined;
 
   beforeEach(() => {
     // Marker lives under MCP_SCAN_HOME (auditDir()); redirect it to a temp
     // dir per test so the real ~/.mcp-scan is never touched.
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-repo-hint-'));
     process.env.MCP_SCAN_HOME = tmpHome;
+    savedCi = process.env.CI;
+    delete process.env.CI;
   });
 
   afterEach(() => {
     delete process.env.MCP_SCAN_HOME;
     delete process.env.MCP_SCAN_NO_HINTS;
+    if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
     // Restore permissions before recursive removal in case a test locked the dir down.
     fs.chmodSync(tmpHome, 0o700);
     fs.rmSync(tmpHome, { recursive: true, force: true });
@@ -45,6 +49,7 @@ describe('repoHint', () => {
     const { stream, writes } = fakeStream(true);
     repoHint(true, stream);
     expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain('a star helps others find it');
     expect(writes[0]).toContain('github.com/Abanoub-Rodolf/mcp-scan');
   });
 
@@ -71,6 +76,14 @@ describe('repoHint', () => {
   it('respects MCP_SCAN_NO_HINTS', async () => {
     const repoHint = await freshRepoHint();
     process.env.MCP_SCAN_NO_HINTS = '1';
+    const { stream, writes } = fakeStream(true);
+    repoHint(true, stream);
+    expect(writes).toHaveLength(0);
+  });
+
+  it('stays silent under CI even with a pseudo-TTY', async () => {
+    const repoHint = await freshRepoHint();
+    process.env.CI = 'true';
     const { stream, writes } = fakeStream(true);
     repoHint(true, stream);
     expect(writes).toHaveLength(0);
@@ -206,7 +219,15 @@ describe('findReportablePackage', () => {
 });
 
 describe('reportHint', () => {
-  afterEach(() => { delete process.env.MCP_SCAN_NO_HINTS; });
+  let savedCi: string | undefined;
+  beforeEach(() => {
+    savedCi = process.env.CI;
+    delete process.env.CI;
+  });
+  afterEach(() => {
+    delete process.env.MCP_SCAN_NO_HINTS;
+    if (savedCi === undefined) delete process.env.CI; else process.env.CI = savedCi;
+  });
 
   it('writes one line with the hosted report URL when a package is given', () => {
     const { stream, writes } = fakeStream(true);
@@ -236,6 +257,13 @@ describe('reportHint', () => {
 
   it('respects MCP_SCAN_NO_HINTS', () => {
     process.env.MCP_SCAN_NO_HINTS = '1';
+    const { stream, writes } = fakeStream(true);
+    reportHint('mcp-scan', stream);
+    expect(writes).toHaveLength(0);
+  });
+
+  it('stays silent under CI even with a pseudo-TTY', () => {
+    process.env.CI = 'true';
     const { stream, writes } = fakeStream(true);
     reportHint('mcp-scan', stream);
     expect(writes).toHaveLength(0);

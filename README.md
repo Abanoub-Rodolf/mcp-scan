@@ -7,6 +7,8 @@
 [![npm provenance](https://img.shields.io/badge/npm%20provenance-signed-brightgreen)](https://docs.npmjs.com/generating-provenance-statements)
 [![mcp-scan](https://thynkq.com/api/mcp-scan/badge/mcp-scan.svg)](https://thynkq.com/mcp-scan/check/mcp-scan)
 
+<p align="center"><img src="https://raw.githubusercontent.com/Abanoub-Rodolf/mcp-scan/main/assets/demo.gif" width="800" alt="mcp-scan auto-detecting two clients and reporting two critical findings"></p>
+
 **Open-source security scanner for Model Context Protocol (MCP) servers.**
 
 MCP servers run with full access to your filesystem, API keys, and network. mcp-scan audits every MCP server configuration on your system, detecting leaked secrets, prompt injection risks, supply-chain vulnerabilities, and data flow issues before they become incidents.
@@ -248,12 +250,12 @@ brew install mcp-scan
 ## Paid next steps
 
 `mcp-scan` itself is free and MIT. When a scan finds something that needs a
-decision, two paid options exist — neither is required to use the scanner:
+decision, two paid options exist. Neither is required to use the scanner:
 
-- **MCP Risk Review** — a human-led, 48-hour review of a real MCP setup by the
+- **MCP Risk Review**: a human-led, 48-hour review of a real MCP setup by the
   maintainer, with a clear go / fix / escalate recommendation. See
   [thynkq.com/pricing#specialist-review](https://thynkq.com/pricing#specialist-review).
-- **mcp-scan Pro waitlist** — hosted reports, policy packs, and buyer-safe risk
+- **mcp-scan Pro waitlist**: hosted reports, policy packs, and buyer-safe risk
   summaries for teams that need a shareable artifact after a local scan. Join at
   [thynkq.com/products/mcp-scan#mcp-pro-waitlist](https://thynkq.com/products/mcp-scan#mcp-pro-waitlist).
 

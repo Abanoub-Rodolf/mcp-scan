@@ -1,4 +1,6 @@
 
+import os from 'os';
+import path from 'path';
 import { ScanReport, ServerScanResult } from '../types/scan-result.js';
 import { logger } from './logger.js';
 import { SEVERITY_ORDER, BRAND_COLOR, SEVERITY_COLORS } from '../types/severity.js';
@@ -6,6 +8,7 @@ import { countTotalFindings } from './severity-tally.js';
 
 import chalk from 'chalk';
 
+const homeDir = os.homedir();
 const brand = chalk.hex(BRAND_COLOR);
 const accentGray = chalk.hex(SEVERITY_COLORS.INFO);
 const criticalBg = chalk.bgHex(SEVERITY_COLORS.CRITICAL).white.bold;
@@ -15,6 +18,13 @@ const lowBg = chalk.bgHex(SEVERITY_COLORS.LOW).white;
 const infoBg = chalk.bgHex(BRAND_COLOR).white;
 const passGreen = chalk.hex('#3FB950').bold;
 const dim = chalk.dim;
+
+// Terminal output only: JSON/SARIF/HTML reports keep the absolute path.
+export function shortenHomePath(configPath: string): string {
+  if (configPath === homeDir) return '~';
+  if (configPath.startsWith(homeDir + path.sep)) return '~' + configPath.slice(homeDir.length);
+  return configPath;
+}
 
 function severityBadge(severity: string): string {
   switch (severity) {
@@ -32,14 +42,14 @@ function printBanner(version: string): void {
   const innerWidth = boxWidth - 4; // 46 visible chars between │ and │
   const border = brand;
 
-  // Compute padding by measuring visible width (strip ANSI, count emoji as 2 cols)
+  // Pad to the box width from the visible length the caller counted, not the ANSI-laden string
   function pad(content: string, visibleLen: number): string {
     return content + ' '.repeat(Math.max(0, innerWidth - visibleLen));
   }
 
-  // 🛡️ = 2 cols, rest ASCII: 3 + 2 + 2 + 8 + 2 + 1 + version.length
-  const titleVisLen = 18 + version.length;
-  const titleContent = `   🛡️  ${chalk.white.bold('mcp-scan')}  ${dim('v' + version)}`;
+  // plain ASCII: 3 + 8 + 2 + 1 + version.length
+  const titleVisLen = 14 + version.length;
+  const titleContent = `   ${chalk.white.bold('mcp-scan')}  ${dim('v' + version)}`;
 
   // subtitle is pure ASCII: 3 + 39 = 42. If the subtitle text changes,
   // update subtitleVisLen AND boxWidth together or the right rail drifts.
@@ -90,7 +100,7 @@ function printResultSection(result: ServerScanResult): void {
   const rail = brand.dim('  │ ');
 
   logger.log(brand('  ┌ ') + brand.bold(result.toolName) + accentGray(' › ') + chalk.white.bold(result.serverName));
-  logger.log(rail + dim(result.configPath));
+  logger.log(rail + dim(shortenHomePath(result.configPath)));
   logger.log(rail);
 
   for (const finding of sortedFindings) {
@@ -158,7 +168,7 @@ function printSummary(report: ScanReport, options: { ugig?: boolean }): void {
   logger.emptyLine();
   // Interactive-only paid next step: this function is only called in non-json
   // mode (CI forces json and takes printJsonReport instead), so the guard is
-  // findings-present + not the ugig listing flow. One line, no spam — the free
+  // findings-present + not the ugig listing flow. One line, no spam: the free
   // scanner stays the whole product.
   if (
     !options.ugig &&
