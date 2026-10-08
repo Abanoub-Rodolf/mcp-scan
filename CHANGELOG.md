@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- `mcp-scan serve` runs mcp-scan as a stdio MCP server with three read-only,
+  offline tools: `scan_configs`, `list_scanners`, `list_detected_clients`.
+- Dockerfile and `glama.json` for listing on Glama.
+
 ## [2.0.13] - 2026-09-07
 
 ### Changed

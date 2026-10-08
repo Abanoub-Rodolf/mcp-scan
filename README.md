@@ -125,6 +125,35 @@ npx mcp-scan@latest dashboard
 
 ---
 
+## Run as an MCP server
+
+mcp-scan can also run as an MCP server over stdio, so an agent can audit its own MCP configs:
+
+```bash
+npx mcp-scan serve
+```
+
+Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "mcp-scan": {
+      "command": "npx",
+      "args": ["-y", "mcp-scan", "serve"]
+    }
+  }
+}
+```
+
+Tools:
+
+- `scan_configs`: scan every detected AI tool config, or one file with `config_path`. `severity` filters the output (default `low`).
+- `list_scanners`: the scanners and what each one checks.
+- `list_detected_clients`: which AI tool configs exist on this machine, and where.
+
+All three are read-only and offline. Nothing makes a network call, nothing writes to disk (the audit log is skipped), and secret values are never returned, only the names of the keys they sit under. A Dockerfile is included for hosts that run MCP servers in a container.
+
 ## CI/CD Integration
 
 Add mcp-scan to any CI pipeline via `npx`. Emits SARIF 2.1.0 which GitHub, GitLab, and most security tools pick up:
