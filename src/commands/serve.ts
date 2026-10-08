@@ -101,7 +101,7 @@ export function createServer(version: string): McpServer {
       let target: string | undefined;
       let content: string | undefined;
       if (config_path) {
-        const expanded = config_path.startsWith('~') ? path.join(os.homedir(), config_path.slice(1)) : config_path;
+        const expanded = (config_path === '~' || config_path.startsWith('~/')) ? path.join(os.homedir(), config_path.slice(1)) : config_path;
         let fd: number | undefined;
         try {
           target = fs.realpathSync(path.resolve(expanded));

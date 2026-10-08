@@ -53,8 +53,22 @@ function redactRun(run: string): string {
 const DENY_REGEXES = SECRET_PATTERNS.map(p =>
   new RegExp(p.regex.source, p.regex.flags.includes('g') ? p.regex.flags : p.regex.flags + 'g'));
 
+// Untrusted configs can carry multi-MB args; the regex passes below are not
+// linear on dash-chained input, so bound what they ever see.
+const MAX_REDACT_CHARS = 2048;
+
+// Paths and names are identifiers the caller feeds back in, so the run pass
+// (which mangles "Application Support/Claude/...") does not apply. URLs and
+// the deny-list still do.
+export function redactIdentifier(input: string): string {
+  let s = input.length > MAX_REDACT_CHARS ? `${input.slice(0, MAX_REDACT_CHARS)}...` : input;
+  s = s.replace(URL_RE, u => sanitizeUrl(u));
+  for (const re of DENY_REGEXES) s = s.replace(re, REDACTED);
+  return s;
+}
+
 export function redactText(input: string): string {
-  let s = input;
+  let s = input.length > MAX_REDACT_CHARS ? `${input.slice(0, MAX_REDACT_CHARS)}...` : input;
 
   s = s.replace(URL_RE, u => sanitizeUrl(u));
 
@@ -62,7 +76,7 @@ export function redactText(input: string): string {
   s = s.replace(/\b(Proxy-Authorization|Authorization)\b\s*[:=]\s*(?:(?:Bearer|Basic|Token|Digest)\s+)?[^\s"',;]+/gi, `$1: ${REDACTED}`);
   s = s.replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}/g, `$1 ${REDACTED}`);
   // Header-shaped pairs such as "X-Api-Key: value".
-  s = s.replace(new RegExp(`\\b([A-Za-z][\\w-]*${SENSITIVE_WORD}[\\w-]*)\\s*:\\s*(?!\\[REDACTED\\])[^\\s"',;]+`, 'gi'), `$1: ${REDACTED}`);
+  s = s.replace(new RegExp(`(?<![\\w-])([A-Za-z][\\w-]*${SENSITIVE_WORD}[\\w-]*)\\s*:\\s*(?!\\[REDACTED\\])[^\\s"',;]+`, 'gi'), `$1: ${REDACTED}`);
   // JSON pairs whose key names a credential.
   s = s.replace(new RegExp(`"([^"\\n]*${SENSITIVE_WORD}[^"\\n]*)"\\s*:\\s*"[^"]*"`, 'gi'), `"$1":"${REDACTED}"`);
   // key=value and --flag=value, quoted or bare.
@@ -77,12 +91,16 @@ export function redactText(input: string): string {
 }
 
 // Applies redactText to every string in a JSON-like value, keys excluded.
-export function redactDeep<T>(value: T): T {
-  if (typeof value === 'string') return redactText(value) as unknown as T;
-  if (Array.isArray(value)) return value.map(redactDeep) as unknown as T;
+const IDENTIFIER_KEYS = new Set(['configPath', 'server', 'client', 'name', 'path', 'file']);
+
+export function redactDeep<T>(value: T, key?: string): T {
+  if (typeof value === 'string') {
+    return (key && IDENTIFIER_KEYS.has(key) ? redactIdentifier(value) : redactText(value)) as unknown as T;
+  }
+  if (Array.isArray(value)) return value.map(v => redactDeep(v, key)) as unknown as T;
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = redactDeep(v);
+    for (const [k, v] of Object.entries(value)) out[k] = redactDeep(v, k);
     return out as T;
   }
   return value;

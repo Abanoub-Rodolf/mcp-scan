@@ -91,7 +91,7 @@
     "smol-toml": "^1.6.1",
     "uuid": "^13.0.0",
     "yaml": "^2.8.3",
-    "zod": "^3.23.8"
+    "zod": "^3.25.0"
   },
   "optionalDependencies": {
     "blessed": "^0.1.81",

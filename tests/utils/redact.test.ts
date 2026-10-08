@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { redactText, sanitizeUrl } from '../../src/utils/redact.js';
+import { redactDeep, redactText, sanitizeUrl } from '../../src/utils/redact.js';
 
 describe('redactText', () => {
   it('strips userinfo, query and fragment from URLs', () => {
@@ -30,5 +30,21 @@ describe('redactText', () => {
   it('redacts bearer values and key=value flags', () => {
     expect(redactText('--header=Authorization: Bearer opaque123456')).not.toContain('opaque123456');
     expect(redactText('--api-key=hunter2hunter2')).not.toContain('hunter2');
+  });
+
+  it('keeps path and name fields intact but still scrubs secrets in them', () => {
+    const p = '/Users/rodolf/Library/Application Support/Claude/claude_desktop_config.json';
+    const out = redactDeep({ configPath: p, server: 'Filesystem-Server-Production-Instance', note: p });
+    expect(out.configPath).toBe(p);
+    expect(out.server).toBe('Filesystem-Server-Production-Instance');
+    expect(out.note).not.toBe(p);
+    expect(redactDeep({ configPath: 'https://u:p@host.io/x?token=abc' }).configPath).toBe('https://host.io/x?[REDACTED]');
+  });
+
+  it('stays fast on 100KB of dash-chained input', () => {
+    const t = Date.now();
+    redactText('a-'.repeat(50_000));
+    redactText('a.'.repeat(50_000));
+    expect(Date.now() - t).toBeLessThan(500);
   });
 });
