@@ -84,6 +84,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   };
 
   const seenServers = new Set<string>();
+  let suppressed = 0;
   
   const minSeverityLevel = (options.severity || policy?.maxSeverity || 'low').toUpperCase() as Severity;
   if (!(minSeverityLevel in SEVERITY_ORDER)) {
@@ -144,7 +145,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
       const scannerRuns: Array<[string, () => Finding[] | Promise<Finding[]>]> = [
         ['secret', () => scanSecrets(server)],
-        ['env-leak', () => scanEnvLeak(server, tool.configPath)],
+        ['env-leak', () => scanEnvLeak(server, tool.configPath, { ownDirOnly: !!options.readOnly })],
         ['prompt-injection', () => scanPromptInjection(server)],
         ['tool-poisoning', () => scanToolPoisoning(server)],
         ['permissions', () => scanPermissions(server)],
@@ -218,12 +219,16 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
       // Apply policy: Suppress Rules
       if (policy && policy.suppressRules) {
+        const before = allFindings.length;
         allFindings = allFindings.filter(f => !policy.suppressRules?.includes(f.id));
+        suppressed += before - allFindings.length;
       }
 
       // Apply policy: Allowed Packages (skip all severity < critical)
       if (policy && policy.allowedPackages && (policy.allowedPackages.includes(packageName) || policy.allowedPackages.includes(server.name))) {
+        const before = allFindings.length;
         allFindings = allFindings.filter(f => f.severity === 'CRITICAL');
+        suppressed += before - allFindings.length;
       }
 
       // Apply ignore list
@@ -233,6 +238,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
                           ignoreList.some(i => tool.configPath.endsWith(i));
         
         if (isIgnored) {
+          suppressed++;
           return {
             ...f,
             severity: 'INFO' as Severity,
@@ -275,7 +281,9 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   }
 
   // 17. Server Fingerprinting (Mutation Check)
-  const mutations = checkFingerprints(report.results);
+  // The fingerprint store lives in ~/.mcp-scan; read-only mode ignores it so
+  // output depends only on the scanned config.
+  const mutations = options.readOnly ? {} : checkFingerprints(report.results);
   for (const result of report.results) {
     const serverKey = `${result.toolName}:${result.serverName}`;
     if (mutations[serverKey]) {
@@ -286,7 +294,9 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   // 18. Apply YAML Policy
   const yamlPolicy = loadYamlPolicy(options.policy);
   if (yamlPolicy) {
+    const beforeYaml = report.results.reduce((n, r) => n + r.findings.length, 0);
     applyPolicy(report.results, yamlPolicy);
+    suppressed += Math.max(0, beforeYaml - report.results.reduce((n, r) => n + r.findings.length, 0));
     if (!options.silent) {
       logger.detail(`Applied security policy from ${options.policy || '.mcp-scan-policy.yml'}`);
     }
@@ -296,6 +306,16 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   recalcSeverityCounts(report);
 
   report.totalDurationMs = Date.now() - startTime;
+
+  // Policy and ignore files silently drop or downgrade findings, so read-only
+  // callers get told which sources were active and how many findings they hid.
+  if (options.readOnly) {
+    const sources: string[] = [];
+    if (policy) sources.push('.mcp-scan.json');
+    if (ignoreList.length) sources.push('.mcp-scan-ignore');
+    if (yamlPolicy) sources.push(options.policy ? path.basename(options.policy) : '.mcp-scan-policy.yml');
+    report.suppression = { suppressed, sources };
+  }
   
   if (spinner) {
     spinner.succeed(`Scan complete in ${report.totalDurationMs}ms`);
@@ -311,7 +331,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       // may call it with ci:true directly, so guard it here too), and
       // --sarif is excluded here explicitly since it can run alongside
       // this branch in a TTY.
-      if (!options.sarif && !options.ci) {
+      if (!options.sarif && !options.ci && !options.readOnly) {
         repoHint(countTotalFindings(report) > 0);
         reportHint(findReportablePackage(report));
       }
@@ -320,7 +340,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
   if (!options.readOnly) logScan(report);
 
-  if (options.sarif) {
+  if (options.sarif && !options.readOnly) {
     writeSarifReport(report, options.sarif);
     if (!options.silent) {
       logger.info(`SARIF report written to ${options.sarif}`);

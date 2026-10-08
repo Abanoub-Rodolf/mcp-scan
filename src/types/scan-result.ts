@@ -130,6 +130,8 @@ export interface ServerScanResult {
 }
 
 export interface ScanReport {
+  /** Set only in read-only (MCP server) mode. */
+  suppression?: { suppressed: number; sources: string[] };
   results: ServerScanResult[];
   totalScanned: number;
   criticalCount: number;

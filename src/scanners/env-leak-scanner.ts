@@ -13,7 +13,9 @@ const SECRET_KEY_REGEX = /.*(KEY|SECRET|TOKEN|PASSWORD|API_|AUTH_|CREDENTIAL|BEA
 // Additional .env file variants to check
 const ENV_FILE_NAMES = ['.env', '.env.local', '.env.production', '.env.development', '.env.staging'];
 
-export function scanEnvLeak(server: ResolvedServer, serverFilePath: string): Finding[] {
+// ownDirOnly keeps the MCP server from reading .env files above the scanned
+// config; the CLI still walks up to the project root.
+export function scanEnvLeak(server: ResolvedServer, serverFilePath: string, opts: { ownDirOnly?: boolean } = {}): Finding[] {
   const findings: Finding[] = [];
   const serverDir = path.dirname(path.resolve(serverFilePath));
 
@@ -62,7 +64,7 @@ export function scanEnvLeak(server: ResolvedServer, serverFilePath: string): Fin
       }
     }
     // stop climbing once any env file in this directory has been processed
-    if (foundEnvInDir) break;
+    if (foundEnvInDir || opts.ownDirOnly) break;
     currentDir = path.dirname(currentDir);
   }
 
