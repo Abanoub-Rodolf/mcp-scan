@@ -7,7 +7,7 @@ import os from 'os';
 import path from 'path';
 
 // Runs against the built artifact like ci.test.ts does: `npm run build` first.
-const CLI_PATH = path.resolve('./dist/index.js');
+const CLI_PATH = path.resolve(process.env.MCP_SCAN_CLI || './dist/index.js');
 const TRAP_PATH = path.resolve('./tests/fixtures/net-trap.mjs');
 const FAKE_KEY = 'ghp_Zq8LmN2xV7bK4rT9wY3cH6dF1gJ5pS0aXeUi';
 const FAKE_ARG_KEY = 'sk_live_Qm7Lx2Vn9Rb4Tc8Wd3Hf6Jg1Ps5';
