@@ -95,7 +95,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   for (const tool of tools) {
     if (!tool.exists) continue;
 
-    const config = parseConfig(tool.configPath);
+    const config = parseConfig(tool.configPath, options.config ? options.configContent : undefined);
     if (!config) continue;
 
     const servers = extractServers(tool.name, tool.configPath, config);

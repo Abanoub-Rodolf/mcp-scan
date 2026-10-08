@@ -20,4 +20,6 @@ export interface ScanOptions {
   // Skip the ~/.mcp-scan audit log and fingerprint writes. Used by the
   // MCP server, whose tools are advertised as read-only.
   readOnly?: boolean;
+  // Contents of `config`, when the caller already read them safely.
+  configContent?: string;
 }

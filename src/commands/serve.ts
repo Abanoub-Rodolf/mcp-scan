@@ -64,6 +64,18 @@ function ok<T extends Record<string, unknown>>(raw: T) {
   };
 }
 
+// Last-resort net: any throw out of a handler is returned as a redacted tool
+// error instead of whatever message the runtime produced.
+function guarded<A, R>(fn: (args: A) => Promise<R>) {
+  return async (args: A) => {
+    try {
+      return await fn(args);
+    } catch (err) {
+      return fail(`Tool failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+}
+
 function fail(text: string) {
   return { isError: true, content: [{ type: 'text' as const, text: redactText(text) }] };
 }
@@ -85,25 +97,33 @@ export function createServer(version: string): McpServer {
       // so repeat calls are not guaranteed identical.
       annotations: { ...ANNOTATIONS, idempotentHint: false },
     },
-    async ({ config_path, severity }) => {
+    guarded(async ({ config_path, severity }: { config_path?: string; severity: string }) => {
       let target: string | undefined;
+      let content: string | undefined;
       if (config_path) {
         const expanded = config_path.startsWith('~') ? path.join(os.homedir(), config_path.slice(1)) : config_path;
+        let fd: number | undefined;
         try {
-          // realpath first so the size and type checks apply to the file that
-          // is actually read, not to a symlink pointing at it.
           target = fs.realpathSync(path.resolve(expanded));
-          const st = fs.statSync(target);
+          // Type and size are checked on the open fd and the bytes come from
+          // that same fd, so a swap after the check cannot change what is
+          // read. O_NONBLOCK stops a FIFO from hanging the open.
+          fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+          const st = fs.fstatSync(fd);
           if (!st.isFile()) return fail(`config_path is not a regular file: ${config_path}`);
           if (st.size > MAX_CONFIG_BYTES) return fail(`config_path is larger than ${MAX_CONFIG_BYTES / (1024 * 1024)} MB: ${config_path}`);
+          content = fs.readFileSync(fd, 'utf8');
         } catch {
           return fail(`Config file not found or unreadable: ${config_path}`);
+        } finally {
+          if (fd !== undefined) fs.closeSync(fd);
         }
-        if (!parseConfig(target)) return fail(`config_path is empty or not valid JSON, JSONC or TOML: ${config_path}`);
+        if (!parseConfig(target, content)) return fail(`config_path is empty or not valid JSON, JSONC or TOML: ${config_path}`);
       }
       try {
         const report = await runScan({
           config: target,
+          configContent: content,
           severity,
           offline: true,
           silent: true,
@@ -154,7 +174,7 @@ export function createServer(version: string): McpServer {
       } catch (err) {
         return fail(`Scan failed: ${err instanceof Error ? err.message : String(err)}`);
       }
-    }
+    })
   );
 
   server.registerTool(
@@ -166,7 +186,7 @@ export function createServer(version: string): McpServer {
       outputSchema: { scanners: z.array(z.object({ name: z.string(), description: z.string() })) },
       annotations: ANNOTATIONS,
     },
-    async () => ok({ scanners: SCANNERS.map(s => ({ name: s.name, description: s.description })) })
+    guarded(async () => ok({ scanners: SCANNERS.map(s => ({ name: s.name, description: s.description })) }))
   );
 
   server.registerTool(
@@ -178,10 +198,10 @@ export function createServer(version: string): McpServer {
       outputSchema: { clients: z.array(z.object({ name: z.string(), configPath: z.string(), exists: z.boolean() })) },
       annotations: ANNOTATIONS,
     },
-    async () => {
+    guarded(async () => {
       const tools = await detectTools({ fs, os, process });
       return ok({ clients: tools.map(t => ({ name: t.name, configPath: t.configPath, exists: t.exists })) });
-    }
+    })
   );
 
   return server;

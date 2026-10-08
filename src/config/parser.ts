@@ -94,9 +94,11 @@ function parseJsonC(content: string) {
   return JSON.parse(json);
 }
 
-export function parseConfig(configPath: string): McpConfig | null {
+// preRead lets a caller that already holds the bytes (the MCP server reads via
+// an fd it validated) skip re-opening the path by name.
+export function parseConfig(configPath: string, preRead?: string): McpConfig | null {
   try {
-    const content = fs.readFileSync(configPath, 'utf8');
+    const content = preRead ?? fs.readFileSync(configPath, 'utf8');
     if (!content.trim()) return null;
     
     if (path.extname(configPath) === '.toml') {
