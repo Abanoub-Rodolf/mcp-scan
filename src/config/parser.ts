@@ -120,6 +120,8 @@ export function extractServers(toolName: string, configPath: string, config: Mcp
 
   const servers: ResolvedServer[] = [];
   for (const [name, entry] of Object.entries(config.mcpServers)) {
+    // A null or scalar entry ({"x": null}) has nothing to scan.
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     // Normalize shapes that appear in real-world configs: args as objects
     // or with non-string values, env values that are numbers/booleans.
     // Downstream scanners assume string arrays / string values; one odd
