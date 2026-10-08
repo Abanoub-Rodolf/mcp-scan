@@ -11,6 +11,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   offline tools: `scan_configs`, `list_scanners`, `list_detected_clients`.
 - Dockerfile and `glama.json` for listing on Glama.
 
+### Fixed
+- Network egress, exfiltration and shell-injection findings no longer echo URL
+  query strings or raw arguments. Query values and tokens in arguments are
+  redacted in finding text.
+- A `null` server entry in a config no longer aborts the whole scan.
+
 ## [2.0.13] - 2026-09-07
 
 ### Changed

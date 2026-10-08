@@ -152,7 +152,7 @@ Tools:
 - `list_scanners`: the scanners and what each one checks.
 - `list_detected_clients`: which AI tool configs exist on this machine, and where.
 
-All three are read-only and offline. Nothing makes a network call, nothing writes to disk (the audit log is skipped), and secret values are never returned, only the names of the keys they sit under. A Dockerfile is included for hosts that run MCP servers in a container.
+All three are read-only and offline: no network calls, and the audit log and fingerprint store are not touched. Findings go through redaction before they leave the server. URL query strings, fragments and credentials, `key=value` and `--flag=value` values, Authorization and Bearer values, and long opaque tokens are replaced with `[REDACTED]`, and the report's raw command, args and URL fields are left out. Redaction is best-effort, so treat tool output as sensitive anyway. It also contains local file paths and server names. `config_path` must be a regular file under 8 MB. Policy and ignore files in the working directory still apply, and `scan_configs` reports how many findings they hid and which files did it. Output is capped at 200 servers and 500 findings, with the dropped counts reported. A Dockerfile is included for hosts that run MCP servers in a container.
 
 ## CI/CD Integration
 
