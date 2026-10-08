@@ -7,7 +7,8 @@ import { z } from 'zod';
 import { runScan } from './scan.js';
 import { SCANNERS } from './scanners.js';
 import { detectTools } from '../config/detector.js';
-import { SECRET_PATTERNS } from '../data/secret-patterns.js';
+import { parseConfig } from '../config/parser.js';
+import { redactDeep, redactText } from '../utils/redact.js';
 import { logger } from '../utils/logger.js';
 
 // Every tool only reads local config files and never touches the network.
@@ -18,16 +19,9 @@ const ANNOTATIONS = {
   openWorldHint: false,
 } as const;
 
-// Findings carry key names, not values, so this should never match. It is a
-// second line of defence in case a scanner ever interpolates a raw value.
-const SECRET_REGEXES = SECRET_PATTERNS.map(p =>
-  new RegExp(p.regex.source, p.regex.flags.includes('g') ? p.regex.flags : p.regex.flags + 'g'));
-
-function scrub(text: string): string {
-  let out = text;
-  for (const re of SECRET_REGEXES) out = out.replace(re, '[REDACTED]');
-  return out;
-}
+const MAX_CONFIG_BYTES = 8 * 1024 * 1024;
+const MAX_RESULTS = 200;
+const MAX_FINDINGS = 500;
 
 const findingSchema = z.object({
   id: z.string(),
@@ -49,6 +43,8 @@ const scanOutput = {
     info: z.number(),
     durationMs: z.number(),
   }),
+  suppression: z.object({ suppressed: z.number(), sources: z.array(z.string()) }),
+  truncated: z.object({ results: z.number(), findings: z.number() }),
   results: z.array(z.object({
     server: z.string(),
     client: z.string(),
@@ -58,7 +54,10 @@ const scanOutput = {
   })),
 };
 
-function ok<T extends Record<string, unknown>>(structured: T) {
+// Every string leaving the server goes through redactDeep, whatever the
+// scanner put in it. The scanners' own echo sites are only a first layer.
+function ok<T extends Record<string, unknown>>(raw: T) {
+  const structured = redactDeep(raw);
   return {
     structuredContent: structured,
     content: [{ type: 'text' as const, text: JSON.stringify(structured, null, 2) }],
@@ -66,7 +65,7 @@ function ok<T extends Record<string, unknown>>(structured: T) {
 }
 
 function fail(text: string) {
-  return { isError: true, content: [{ type: 'text' as const, text }] };
+  return { isError: true, content: [{ type: 'text' as const, text: redactText(text) }] };
 }
 
 export function createServer(version: string): McpServer {
@@ -78,28 +77,60 @@ export function createServer(version: string): McpServer {
       title: 'Scan MCP configs',
       description: 'Audit MCP server configs for exposed secrets, risky permissions, prompt injection, typosquatting and other issues. Offline: no network calls, nothing is modified. Scans every detected AI tool config, or one file via config_path.',
       inputSchema: {
-        config_path: z.string().optional().describe('Path to a single MCP config file. Omit to scan all detected clients.'),
+        config_path: z.string().max(4096).optional().describe('Path to a single MCP config file. Omit to scan all detected clients.'),
         severity: z.enum(['low', 'medium', 'high', 'critical']).default('low').describe('Minimum severity to report.'),
       },
       outputSchema: scanOutput,
-      annotations: ANNOTATIONS,
+      // Output also depends on ~/.mcp-scan/rules and ~/.mcp-scan-policy.yml,
+      // so repeat calls are not guaranteed identical.
+      annotations: { ...ANNOTATIONS, idempotentHint: false },
     },
     async ({ config_path, severity }) => {
+      let target: string | undefined;
       if (config_path) {
         const expanded = config_path.startsWith('~') ? path.join(os.homedir(), config_path.slice(1)) : config_path;
-        if (!fs.existsSync(path.resolve(expanded))) return fail(`Config file not found: ${config_path}`);
+        try {
+          // realpath first so the size and type checks apply to the file that
+          // is actually read, not to a symlink pointing at it.
+          target = fs.realpathSync(path.resolve(expanded));
+          const st = fs.statSync(target);
+          if (!st.isFile()) return fail(`config_path is not a regular file: ${config_path}`);
+          if (st.size > MAX_CONFIG_BYTES) return fail(`config_path is larger than ${MAX_CONFIG_BYTES / (1024 * 1024)} MB: ${config_path}`);
+        } catch {
+          return fail(`Config file not found or unreadable: ${config_path}`);
+        }
+        if (!parseConfig(target)) return fail(`config_path is empty or not valid JSON, JSONC or TOML: ${config_path}`);
       }
       try {
         const report = await runScan({
-          config: config_path,
+          config: target,
           severity,
           offline: true,
           silent: true,
           readOnly: true,
           version,
         });
-        // connection.args and url can hold raw credentials, so the report's
-        // connection block is left out entirely rather than filtered.
+        // The report's connection block (command, args, url) is left out:
+        // it is raw config text. Finding text is redacted in ok().
+        const findingsLeft = { n: MAX_FINDINGS };
+        let droppedFindings = report.results.slice(MAX_RESULTS).reduce((n, r) => n + r.findings.length, 0);
+        const rows = report.results.slice(0, MAX_RESULTS).map(r => {
+          const kept = r.findings.slice(0, Math.max(0, findingsLeft.n));
+          findingsLeft.n -= kept.length;
+          droppedFindings += r.findings.length - kept.length;
+          return {
+            server: r.serverName,
+            client: r.toolName,
+            configPath: r.configPath,
+            ...(r.trustScore !== undefined ? { trustScore: r.trustScore } : {}),
+            findings: kept.map(f => ({
+              id: f.id,
+              severity: f.severity,
+              description: f.description,
+              ...(f.fixRecommendation ? { fixRecommendation: f.fixRecommendation } : {}),
+            })),
+          };
+        });
         return ok({
           summary: {
             version,
@@ -113,18 +144,12 @@ export function createServer(version: string): McpServer {
             info: report.infoCount,
             durationMs: report.totalDurationMs,
           },
-          results: report.results.map(r => ({
-            server: r.serverName,
-            client: r.toolName,
-            configPath: r.configPath,
-            ...(r.trustScore !== undefined ? { trustScore: r.trustScore } : {}),
-            findings: r.findings.map(f => ({
-              id: f.id,
-              severity: f.severity,
-              description: scrub(f.description),
-              ...(f.fixRecommendation ? { fixRecommendation: scrub(f.fixRecommendation) } : {}),
-            })),
-          })),
+          suppression: report.suppression ?? { suppressed: 0, sources: [] },
+          truncated: {
+            results: Math.max(0, report.results.length - MAX_RESULTS),
+            findings: droppedFindings,
+          },
+          results: rows,
         });
       } catch (err) {
         return fail(`Scan failed: ${err instanceof Error ? err.message : String(err)}`);

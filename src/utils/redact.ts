@@ -7,7 +7,7 @@ import { SECRET_PATTERNS } from '../data/secret-patterns.js';
 
 const REDACTED = '[REDACTED]';
 
-const URL_RE = /[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s"'<>`)\]]+/g;
+const URL_RE = /[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s"'<>`)]+/g;
 const SENSITIVE_WORD = '(?:key|token|secret|auth|passw(?:or)?d|credential|cookie|signature|sig)';
 const RUN_RE = /[A-Za-z0-9_\-+/=.]{20,}/g;
 
