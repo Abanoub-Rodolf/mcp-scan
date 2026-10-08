@@ -34,14 +34,20 @@ function segmentSafe(seg: string): boolean {
   return seg.split(/[-_.]/).every(partSafe);
 }
 
+// A token chunked by dashes into 12-char pieces passes segmentSafe, so a long
+// digit-heavy piece is treated as a token, not a name.
+const tokenLike = (s: string): boolean => s.length >= 24 && (s.match(/[0-9]/g) || []).length >= 6;
+
 function redactRun(run: string): string {
   // Windows paths (C:\Users\...) split on the backslash and read like paths.
   const pathLike = /^(?:\/|\.\.?\/)/.test(run) || run.includes('\\');
   const parts = run.split(/([\\/])/);
   if (pathLike) {
-    return parts.map(p => (p.length >= 20 && !segmentSafe(p) ? REDACTED : p)).join('');
+    return parts.map(p => (p.length >= 20 && (!segmentSafe(p) || tokenLike(p)) ? REDACTED : p)).join('');
   }
-  return parts.filter((_, i) => i % 2 === 0).every(segmentSafe) ? run : REDACTED;
+  const segs = parts.filter((_, i) => i % 2 === 0);
+  if (segs.some(tokenLike) || tokenLike(run)) return REDACTED;
+  return segs.every(segmentSafe) ? run : REDACTED;
 }
 
 const DENY_REGEXES = SECRET_PATTERNS.map(p =>
