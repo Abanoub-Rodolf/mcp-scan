@@ -50,48 +50,62 @@ function redactRun(run: string): string {
   return segs.every(segmentSafe) ? run : REDACTED;
 }
 
-const DENY_REGEXES = SECRET_PATTERNS.map(p =>
-  new RegExp(p.regex.source, p.regex.flags.includes('g') ? p.regex.flags : p.regex.flags + 'g'));
+const toGlobal = (re: RegExp) => new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+const DENY_REGEXES = SECRET_PATTERNS.map(p => toGlobal(p.regex));
+// Context-gated patterns (bare 40-char or UUID shapes) hit ordinary path
+// segments, so identifier fields only get the prefix-anchored ones.
+const DENY_REGEXES_STRICT = SECRET_PATTERNS.filter(p => !p.keyContext).map(p => toGlobal(p.regex));
 
-// Untrusted configs can carry multi-MB args; the regex passes below are not
-// linear on dash-chained input, so bound what they ever see.
+// Untrusted configs can carry multi-MB args; the regex passes below bound
+// what they see so a hostile config cannot stall the stdio server.
 const MAX_REDACT_CHARS = 2048;
 
-// Paths and names are identifiers the caller feeds back in, so the run pass
-// (which mangles "Application Support/Claude/...") does not apply. URLs and
-// the deny-list still do.
-export function redactIdentifier(input: string): string {
-  let s = input.length > MAX_REDACT_CHARS ? `${input.slice(0, MAX_REDACT_CHARS)}...` : input;
-  s = s.replace(URL_RE, u => sanitizeUrl(u));
-  for (const re of DENY_REGEXES) s = s.replace(re, REDACTED);
-  return s;
+// Cut, then drop the trailing partial token: half a credential would dodge
+// every pattern and survive into the output.
+function bound(input: string): string {
+  if (input.length <= MAX_REDACT_CHARS) return input;
+  return `${input.slice(0, MAX_REDACT_CHARS).replace(/\S*$/, '')}...`;
 }
 
-export function redactText(input: string): string {
-  let s = input.length > MAX_REDACT_CHARS ? `${input.slice(0, MAX_REDACT_CHARS)}...` : input;
-
-  s = s.replace(URL_RE, u => sanitizeUrl(u));
+// Quantifiers are capped so a long token-token-token chain cannot go
+// quadratic if MAX_REDACT_CHARS is ever raised.
+function structural(input: string): string {
+  let s = input.replace(URL_RE, u => sanitizeUrl(u));
 
   // Authorization-style headers and bare Bearer/Basic credentials.
   s = s.replace(/\b(Proxy-Authorization|Authorization)\b\s*[:=]\s*(?:(?:Bearer|Basic|Token|Digest)\s+)?[^\s"',;]+/gi, `$1: ${REDACTED}`);
   s = s.replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}/g, `$1 ${REDACTED}`);
+  // Scheme-less userinfo (user:pass@host.io).
+  s = s.replace(/(?<![\w.-])[\w.-]{1,64}:[^\s@/:]{1,128}@(?=[\w-]+\.[a-z]{2,})/gi, `${REDACTED}@`);
   // Header-shaped pairs such as "X-Api-Key: value".
-  s = s.replace(new RegExp(`(?<![\\w-])([A-Za-z][\\w-]*${SENSITIVE_WORD}[\\w-]*)\\s*:\\s*(?!\\[REDACTED\\])[^\\s"',;]+`, 'gi'), `$1: ${REDACTED}`);
+  s = s.replace(new RegExp(`(?<![\\w-])([A-Za-z][\\w-]{0,64}?${SENSITIVE_WORD}[\\w-]{0,64})\\s*:\\s*(?!\\[REDACTED\\])[^\\s"',;]+`, 'gi'), `$1: ${REDACTED}`);
   // JSON pairs whose key names a credential.
-  s = s.replace(new RegExp(`"([^"\\n]*${SENSITIVE_WORD}[^"\\n]*)"\\s*:\\s*"[^"]*"`, 'gi'), `"$1":"${REDACTED}"`);
+  s = s.replace(new RegExp(`"([^"\\n]{0,128}${SENSITIVE_WORD}[^"\\n]{0,128})"\\s*:\\s*"[^"]*"`, 'gi'), `"$1":"${REDACTED}"`);
   // key=value and --flag=value, quoted or bare.
-  s = s.replace(/(?<![\w-])(--?[A-Za-z][\w.-]*|[A-Za-z_][\w.-]*)=("[^"]*"|'[^']*'|[^\s,;]+)/g, (full, k: string, v: string) =>
+  s = s.replace(/(?<![\w-])(--?[A-Za-z][\w.-]{0,64}|[A-Za-z_][\w.-]{0,64})=("[^"]*"|'[^']*'|[^\s,;]+)/g, (full, k: string, v: string) =>
     v.includes(REDACTED) ? full : `${k}=${REDACTED}`);
+  return s;
+}
 
+// Paths and names are identifiers the caller feeds back in, so the run and
+// lowercase-token passes (which mangle "Application Support/Claude/...") do
+// not apply. Everything credential-shaped still does.
+export function redactIdentifier(input: string): string {
+  let s = structural(bound(input));
+  for (const re of DENY_REGEXES_STRICT) s = s.replace(re, REDACTED);
+  return s;
+}
+
+export function redactText(input: string): string {
+  let s = structural(bound(input));
   s = s.replace(RUN_RE, redactRun);
   s = s.replace(LOWER_TOKEN_RE, REDACTED);
-
   for (const re of DENY_REGEXES) s = s.replace(re, REDACTED);
   return s;
 }
 
 // Applies redactText to every string in a JSON-like value, keys excluded.
-const IDENTIFIER_KEYS = new Set(['configPath', 'server', 'client', 'name', 'path', 'file']);
+const IDENTIFIER_KEYS = new Set(['configPath', 'server', 'client']);
 
 export function redactDeep<T>(value: T, key?: string): T {
   if (typeof value === 'string') {

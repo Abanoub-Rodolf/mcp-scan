@@ -47,4 +47,23 @@ describe('redactText', () => {
     redactText('a.'.repeat(50_000));
     expect(Date.now() - t).toBeLessThan(500);
   });
+
+  it('still scrubs credential-shaped text inside identifier fields', () => {
+    for (const bad of ['api_key=hunter2hunter2', 'Authorization: Bearer opaque123456', '/srv/a/c.json?token=abcdef123456', 'user:hunter2@host.io/x']) {
+      const out = redactDeep({ server: bad, configPath: bad, client: bad });
+      expect(JSON.stringify(out)).not.toMatch(/hunter2|opaque123456|abcdef123456/);
+    }
+  });
+
+  it('does not leave half a token after truncation', () => {
+    const out = redactText(`${'x '.repeat(1020)}ghp_0123456789abcdefghijklmnopqrstuvwxyz`);
+    expect(out).not.toContain('ghp_0123');
+  });
+
+  it('has no quadratic path on token-chained input, cap aside', () => {
+    const t = Date.now();
+    redactText('token-'.repeat(20_000));
+    redactText('a.'.repeat(60_000));
+    expect(Date.now() - t).toBeLessThan(500);
+  });
 });

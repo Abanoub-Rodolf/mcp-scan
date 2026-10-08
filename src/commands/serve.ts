@@ -8,7 +8,7 @@ import { runScan } from './scan.js';
 import { SCANNERS } from './scanners.js';
 import { detectTools } from '../config/detector.js';
 import { parseConfig } from '../config/parser.js';
-import { redactDeep, redactText } from '../utils/redact.js';
+import { redactDeep, redactIdentifier, redactText } from '../utils/redact.js';
 import { logger } from '../utils/logger.js';
 
 // Every tool only reads local config files and never touches the network.
@@ -76,8 +76,11 @@ function guarded<A, R>(fn: (args: A) => Promise<R>) {
   };
 }
 
-function fail(text: string) {
-  return { isError: true, content: [{ type: 'text' as const, text: redactText(text) }] };
+// `ident` is a caller-supplied path echoed after the message; it gets the
+// identifier pass so "Application Support" survives.
+function fail(text: string, ident?: string) {
+  const msg = redactText(text) + (ident ? `: ${redactIdentifier(ident)}` : '');
+  return { isError: true, content: [{ type: 'text' as const, text: msg }] };
 }
 
 export function createServer(version: string): McpServer {
@@ -110,15 +113,15 @@ export function createServer(version: string): McpServer {
           // read. O_NONBLOCK stops a FIFO from hanging the open.
           fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
           const st = fs.fstatSync(fd);
-          if (!st.isFile()) return fail(`config_path is not a regular file: ${config_path}`);
-          if (st.size > MAX_CONFIG_BYTES) return fail(`config_path is larger than ${MAX_CONFIG_BYTES / (1024 * 1024)} MB: ${config_path}`);
+          if (!st.isFile()) return fail(`config_path is not a regular file`, config_path);
+          if (st.size > MAX_CONFIG_BYTES) return fail(`config_path is larger than ${MAX_CONFIG_BYTES / (1024 * 1024)} MB`, config_path);
           content = fs.readFileSync(fd, 'utf8');
         } catch {
-          return fail(`Config file not found or unreadable: ${config_path}`);
+          return fail(`Config file not found or unreadable`, config_path);
         } finally {
           if (fd !== undefined) fs.closeSync(fd);
         }
-        if (!parseConfig(target, content)) return fail(`config_path is empty or not valid JSON, JSONC or TOML: ${config_path}`);
+        if (!parseConfig(target, content)) return fail(`config_path is empty or not valid JSON, JSONC or TOML`, config_path);
       }
       try {
         const report = await runScan({
