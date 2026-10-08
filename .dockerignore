@@ -1,0 +1,12 @@
+node_modules
+dist
+action/dist
+coverage
+.git
+.github
+.planning
+.claude
+.env
+*.log
+*.sarif
+tests
