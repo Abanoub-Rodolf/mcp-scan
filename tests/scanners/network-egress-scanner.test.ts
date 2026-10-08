@@ -145,3 +145,18 @@ describe('Network Egress Scanner', () => {
     expect(findings.find(f => f.id === 'network-egress-cdn')?.severity).toBe('INFO');
   });
 });
+
+describe('Network Egress Scanner redaction', () => {
+  it('does not echo the query string of an endpoint into the finding', () => {
+    const server: ResolvedServer = {
+      name: 'qs',
+      toolName: 'test',
+      configPath: '/test',
+      args: ['https://tools.example-svc.io/sse?apiKey=hunterTwoSecretValue99']
+    };
+    const text = JSON.stringify(scanNetworkEgress(server));
+    expect(text).toContain('tools.example-svc.io');
+    expect(text).not.toContain('hunterTwoSecretValue99');
+    expect(text).not.toContain('apiKey=');
+  });
+});

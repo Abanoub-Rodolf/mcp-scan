@@ -74,4 +74,14 @@ describe('AST Scanner', () => {
     });
     expect(findings.some(f => f.id === 'exfiltration-vector' && f.severity === 'HIGH')).toBe(true);
   });
+
+  it('redacts the query value of an external endpoint argument in the finding text', () => {
+    const findings = scanAst({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', 'server', '--url=https://api.example-svc.io/mcp?token=hunterTwoSecretValue99']
+    });
+    const text = JSON.stringify(findings);
+    expect(text).toContain('exfiltration-vector');
+    expect(text).not.toContain('hunterTwoSecretValue99');
+  });
 });
