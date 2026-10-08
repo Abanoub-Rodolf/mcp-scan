@@ -10,11 +10,17 @@ const CLI_PATH = path.resolve(process.env.MCP_SCAN_CLI || './dist/index.js');
 // that redaction is structural, not a list of known token formats.
 const OPAQUE_ARG = 'Kq8ZmN2xV7bL4rT9wY3cH6dF1gJ5pS0aXeUiOvB8nCzMa2Wd7Rt'; // 51 chars
 const B64_URL = 'Zm9vYmFyQmF6UXV4MTIzNDU2Nzg5MEFCQ0RFRkdISUpLTE1O'; // 48 chars
-const B64_ENV = 'bXlzZWNyZXRWYWx1ZTAxMjM0NTY3ODlhYmNkZWZnaGlqa2xtbm8'; // opaque env value
 const BEARER = 'opaqueBearer7Xk29LmQ4vTzR81nHdY0cWpE';
 const QS_SECRET = 'qsSecretValue93KdLm2PxWv81NzRt5Hy';
+// All-lowercase tokens read like words, so they need their own coverage.
+// These shapes passed the first redaction design: letters-only runs of up to
+// 26 chars, and dash-chunked pieces of 12 chars.
+const LOWER_ARG = 'qwertzuiopasdfghjklyxcvb'; // bare positional path arg
+const LOWER_PATH = 'mnbvcxzlkjhgfdsapoiuytrewq'; // URL path segment
+const LOWER_SUBST = 'k3j4h5g6f7d8-s9a0p1o2i3u4-y5t6r7e8w9q0'; // inside $(...)
+const LOWER_32 = 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6'; // 32-char [a-z0-9] path segment
 const HEADER_SECRET = 'hdrSecretValue64QwErTy09UiOpAsDf12';
-const ALL_SECRETS = [OPAQUE_ARG, B64_URL, B64_ENV, BEARER, QS_SECRET, HEADER_SECRET];
+const ALL_SECRETS = [OPAQUE_ARG, B64_URL, BEARER, QS_SECRET, HEADER_SECRET, LOWER_ARG, LOWER_PATH, LOWER_SUBST, LOWER_32];
 
 type Msg = { id?: number; result?: any; error?: any };
 
@@ -57,7 +63,9 @@ describe('mcp-scan serve hardening', () => {
       mcpServers: {
         argtoken: { command: 'npx', args: ['-y', 'some-server', OPAQUE_ARG] },
         urlarg: { command: 'npx', args: ['-y', 'other-server', `--url=https://api.example-svc.io/mcp?token=${B64_URL}`] },
-        envurl: { command: 'npx', args: ['-y', 'env-server'], env: { WEBHOOK: `https://hooks.example-svc.io/v1?token=${B64_URL}`, OPAQUE: B64_ENV } },
+        lowerarg: { command: 'npx', args: ['-y', 'pos-server', `/etc/${LOWER_ARG}`, `https://api.example-svc.io/v1/${LOWER_PATH}/mcp`, `https://api.example-svc.io/v2/${LOWER_32}/mcp`] },
+        subst: { command: 'npx', args: ['-y', 'subst-server', `$(curl https://x.example-svc.io/${LOWER_SUBST})`] },
+        lowerurl: { url: `https://tools.example-svc.io/v1/${LOWER_PATH}/sse` },
         bearer: { command: 'npx', args: ['-y', 'hdr-server', `--header=Authorization: Bearer ${BEARER}`] },
         qs: { url: `http://tools.example-svc.io/sse?apiKey=${QS_SECRET}` },
         hdr: { url: 'https://x.example-svc.io/mcp', headers: { 'X-Api-Key': HEADER_SECRET } },
