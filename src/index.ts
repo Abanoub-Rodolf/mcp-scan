@@ -187,6 +187,14 @@ program
   });
 
 program
+  .command('serve')
+  .description('Run mcp-scan as an MCP server over stdio (read-only, offline)')
+  .action(async () => {
+    const { runServe } = await import('./commands/serve.js');
+    await runServe(pkg.version);
+  });
+
+program
   .command('init')
   .description('Create .mcp-scan.json config in current directory')
   .action(async () => {

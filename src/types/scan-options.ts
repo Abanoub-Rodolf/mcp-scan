@@ -17,4 +17,7 @@ export interface ScanOptions {
   policy?: string;
   offline?: boolean;
   submit?: boolean;
+  // Skip the ~/.mcp-scan audit log and fingerprint writes. Used by the
+  // MCP server, whose tools are advertised as read-only.
+  readOnly?: boolean;
 }

@@ -1,7 +1,7 @@
 import Table from 'cli-table3';
 import { logger } from '../utils/logger.js';
 
-const SCANNERS = [
+export const SCANNERS = [
   { name: 'secret-scanner', description: 'Detects exposed API keys and secrets (52+ formats, including entropy-based detection).' },
   { name: 'typosquat-scanner', description: 'Detects typosquatting via Levenshtein distance and homoglyph detection.' },
   { name: 'registry-scanner', description: 'Checks packages against known malicious MCP package lists.' },

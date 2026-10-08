@@ -318,7 +318,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
     }
   }
 
-  logScan(report);
+  if (!options.readOnly) logScan(report);
 
   if (options.sarif) {
     writeSarifReport(report, options.sarif);
