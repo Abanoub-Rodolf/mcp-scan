@@ -6,7 +6,12 @@ coverage
 .github
 .planning
 .claude
-.env
+.env*
+**/.env*
+.npmrc
+*.pem
+*.key
+.mcp-scan.json
 *.log
 *.sarif
 tests
