@@ -9,7 +9,11 @@ const REDACTED = '[REDACTED]';
 
 const URL_RE = /[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s"'<>`)]+/g;
 const SENSITIVE_WORD = '(?:key|token|secret|auth|passw(?:or)?d|credential|cookie|signature|sig)';
-const RUN_RE = /[A-Za-z0-9_\-+/=.]{20,}/g;
+const RUN_RE = /[A-Za-z0-9_\-+/\\=.]{20,}/g;
+// Opaque lowercase tokens look like words to segmentSafe, so any long
+// lowercase-alphanumeric run is redacted outright. Over-redaction is fine;
+// normal package names are far shorter.
+const LOWER_TOKEN_RE = /\b[a-z0-9]{24,}\b/g;
 
 // Drops userinfo, query string and fragment. The path is kept for context;
 // long opaque path segments are caught by the run pass.
@@ -31,12 +35,13 @@ function segmentSafe(seg: string): boolean {
 }
 
 function redactRun(run: string): string {
-  const pathLike = /^(?:\/|\.\.?\/)/.test(run);
-  const segs = run.split('/');
+  // Windows paths (C:\Users\...) split on the backslash and read like paths.
+  const pathLike = /^(?:\/|\.\.?\/)/.test(run) || run.includes('\\');
+  const parts = run.split(/([\\/])/);
   if (pathLike) {
-    return segs.map(s => (s.length >= 20 && !segmentSafe(s) ? REDACTED : s)).join('/');
+    return parts.map(p => (p.length >= 20 && !segmentSafe(p) ? REDACTED : p)).join('');
   }
-  return segs.every(segmentSafe) ? run : REDACTED;
+  return parts.filter((_, i) => i % 2 === 0).every(segmentSafe) ? run : REDACTED;
 }
 
 const DENY_REGEXES = SECRET_PATTERNS.map(p =>
@@ -59,6 +64,7 @@ export function redactText(input: string): string {
     v.includes(REDACTED) ? full : `${k}=${REDACTED}`);
 
   s = s.replace(RUN_RE, redactRun);
+  s = s.replace(LOWER_TOKEN_RE, REDACTED);
 
   for (const re of DENY_REGEXES) s = s.replace(re, REDACTED);
   return s;
