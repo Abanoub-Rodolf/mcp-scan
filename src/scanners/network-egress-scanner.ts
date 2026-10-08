@@ -1,6 +1,7 @@
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { KNOWN_ENDPOINTS } from '../data/known-endpoints.js';
+import { sanitizeUrl } from '../utils/redact.js';
 
 // Long opaque base64-ish query values suggest data smuggled in URLs.
 const DATA_IN_URL_PATTERN = /[?&][a-zA-Z0-9_-]+=[a-zA-Z0-9+/]{32,}[=]{0,2}/;
@@ -37,7 +38,7 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
   const checkString = (str: string) => {
       if (str.length > 10_000) str = str.slice(0, 10_000);
       const urls = str.match(urlRegex);
-      if (urls) urls.forEach(u => endpoints.add(u));
+      if (urls) urls.forEach(u => endpoints.add(sanitizeUrl(u)));
       
       const ipv6s = str.match(ipv6Regex);
       if (ipv6s) {
@@ -64,7 +65,7 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
           findings.push({
              id: 'network-egress-data-in-url',
              severity: 'HIGH',
-             description: `Potential data exfiltration via URL query parameter: ${dataInUrlMatch[0]}`,
+             description: `Potential data exfiltration via URL query parameter '${dataInUrlMatch[0].slice(1).split('=')[0]}'.`,
              fixRecommendation: 'Avoid transmitting large amounts of data in URL query parameters. Use POST request bodies with encryption.'
           });
       }
@@ -94,7 +95,7 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
   const wssRegex = /wss?:\/\/[^\s"']+/g;
   const wssMatches = serverStr.match(wssRegex);
   if (wssMatches) {
-      wssMatches.forEach(w => endpoints.add(w));
+      wssMatches.forEach(w => endpoints.add(sanitizeUrl(w)));
   }
 
   if (/(https?|wss?):\/\/[a-zA-Z0-9.-]+:[0-9]{4,5}/.test(JSON.stringify(server))) {

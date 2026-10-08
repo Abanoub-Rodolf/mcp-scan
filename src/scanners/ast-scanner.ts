@@ -1,3 +1,4 @@
+import { redactText } from '../utils/redact.js';
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 
@@ -76,7 +77,7 @@ export function scanAst(server: ResolvedServer, allowedDomains: string[] = []): 
       findings.push({
         id: 'exfiltration-vector',
         severity: 'MEDIUM',
-        description: `Tool argument contains a potential external network endpoint: '${arg}'.`,
+        description: `Tool argument contains a potential external network endpoint: '${redactText(arg)}'.`,
         fixRecommendation: 'Review if this tool should be making outbound network calls to this endpoint.'
       });
     }

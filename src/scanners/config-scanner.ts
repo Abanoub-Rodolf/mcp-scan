@@ -1,3 +1,4 @@
+import { redactText } from '../utils/redact.js';
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 
@@ -21,14 +22,14 @@ export function scanConfig(server: ResolvedServer): Finding[] {
         findings.push({
           id: 'shell-injection-risk',
           severity: 'CRITICAL',
-          description: `Argument contains shell command substitution (\$(...) or backticks): '${arg}'`,
+          description: `Argument contains shell command substitution (\$(...) or backticks): '${redactText(arg)}'`,
           fixRecommendation: 'Remove command substitution from arguments. Arguments are passed directly, never through a shell.'
         });
       } else if (hasComplexExpression) {
         findings.push({
           id: 'shell-injection-risk',
           severity: 'MEDIUM',
-          description: `Argument contains a complex \${...} expression: '${arg}'`,
+          description: `Argument contains a complex \${...} expression: '${redactText(arg)}'`,
           fixRecommendation: 'Use a simple environment variable reference (e.g. ${VAR}) or resolve the value before passing it.'
         });
       }
