@@ -217,6 +217,18 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   const clientInterceptor = new JsonRpcInterceptor('CLIENT -> SERVER', logStream, privacyOpts, dashboardCallback, line => process.stdout.write(line));
   const serverInterceptor = new JsonRpcInterceptor('SERVER -> CLIENT', logStream, privacyOpts, dashboardCallback, line => child.stdin.write(line));
 
+  // The server can close its stdin or die while the client is still talking.
+  // An unhandled 'error' on either writable would crash the proxy with a
+  // stack trace, so note it once and drop further writes.
+  let warned = false;
+  const writeFailed = (what: string) => (err: NodeJS.ErrnoException) => {
+    if (warned) return;
+    warned = true;
+    warnStderr(`${what} is no longer writable (${err.code || err.message}); dropping further messages`);
+  };
+  child.stdin.on('error', writeFailed('server stdin'));
+  process.stdout.on('error', writeFailed('proxy stdout'));
+
   process.stdin.pipe(clientInterceptor).pipe(child.stdin);
   child.stdout.pipe(serverInterceptor).pipe(process.stdout);
 
