@@ -106,14 +106,22 @@ function readKey(): Key {
   }
 }
 
-function loadOrCreateKey(): Buffer {
+function loadOrCreateKey(): { key: Buffer; created: boolean } {
   const existing = readKey();
-  if (existing.status === 'ok') return existing.key;
-  const key = crypto.randomBytes(32);
+  if (existing.status === 'ok') return { key: existing.key, created: false };
+  if (existing.status === 'bad') fs.rmSync(keyFile(), { force: true });
   fs.mkdirSync(auditDir(), { recursive: true });
-  fs.rmSync(keyFile(), { force: true });
-  fs.writeFileSync(keyFile(), key.toString('hex') + '\n', { mode: 0o600, flag: 'wx' });
-  return key;
+  const key = crypto.randomBytes(32);
+  try {
+    // 'wx' so two first runs at once cannot replace each other's key: the
+    // one that lands second adopts the key already on disk.
+    fs.writeFileSync(keyFile(), key.toString('hex') + '\n', { mode: 0o600, flag: 'wx' });
+    return { key, created: true };
+  } catch (e) {
+    const winner = readKey();
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST' && winner.status === 'ok') return { key: winner.key, created: false };
+    throw e;
+  }
 }
 
 // Sorted so the same entries always sign the same, whatever order the file
@@ -286,6 +294,7 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
 }
 
 function updateFingerprints(results: ServerScanResult[]): boolean {
+  let newKey = false;
   try {
     const store = readStore();
     if (store.status === 'bad') quarantineStore();
@@ -294,7 +303,9 @@ function updateFingerprints(results: ServerScanResult[]): boolean {
     const fingerprints = store.status === 'ok' || store.status === 'unsigned' ? { ...store.data } : {};
     delete fingerprints[SIG_KEY];
     fingerprints[SCHEMA_KEY] = SCHEMA;
-    const hmacKey = loadOrCreateKey();
+    const loaded = loadOrCreateKey();
+    const hmacKey = loaded.key;
+    newKey = loaded.created;
 
     for (const result of results) {
       const key = `${result.toolName}:${result.serverName}`;
@@ -308,6 +319,8 @@ function updateFingerprints(results: ServerScanResult[]): boolean {
     atomicWriteConfig(fingerprintFile(), JSON.stringify(fingerprints, null, 2));
     return true;
   } catch (_error) {
+    // A key with no store behind it would read as a deleted baseline.
+    if (newKey) try { fs.rmSync(keyFile(), { force: true }); } catch (_e) {}
     return false;
   }
 }

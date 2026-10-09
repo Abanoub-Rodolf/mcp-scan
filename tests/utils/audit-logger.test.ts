@@ -375,4 +375,36 @@ describe('signed baseline', () => {
     }
     expect(fs.readFileSync(path.join(home, 'audit.log'), 'utf8')).toContain('"baselineSigned":false');
   });
+
+  it('leaves no key behind when the first store write fails, so the next run is still a first run', () => {
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => { throw new Error('disk full'); });
+    try {
+      logScan(report(results()));
+    } finally {
+      rename.mockRestore();
+    }
+    expect(fs.existsSync(keyFile())).toBe(false);
+    fs.rmSync(path.join(home, 'audit.log'));
+    expect(checkFingerprints(results())).toEqual({});
+  });
+
+  it('adopts the key another first run wrote at the same moment, and still signs with it', () => {
+    const realWrite = fs.writeFileSync;
+    const other = 'c'.repeat(64) + '\n';
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(((p: fs.PathOrFileDescriptor, ...rest: unknown[]) => {
+      if (String(p) === keyFile() && !fs.existsSync(keyFile())) {
+        realWrite(p, other);
+        throw Object.assign(new Error('exists'), { code: 'EEXIST' });
+      }
+      return (realWrite as (...a: unknown[]) => void)(p, ...rest);
+    }) as typeof fs.writeFileSync);
+    try {
+      logScan(report(results()));
+    } finally {
+      write.mockRestore();
+    }
+    expect(fs.readFileSync(keyFile(), 'utf8')).toBe(other);
+    expect(checkFingerprints(results())).toEqual({});
+    expect(quarantined()).toHaveLength(0);
+  });
 });
