@@ -170,6 +170,16 @@ function quarantineStore() {
   } catch (_e) {}
 }
 
+// Used when the baseline cannot vouch for any server: every one gets the
+// same finding, worded for that server.
+function flagAll(results: ServerScanResult[], severity: Finding['severity'], text: (name: string) => Pick<Finding, 'description' | 'fixRecommendation'>) {
+  const out: Record<string, Finding[]> = {};
+  for (const result of results) {
+    out[`${result.toolName}:${result.serverName}`] = [{ id: 'server-mutation', severity, ...text(result.serverName) }];
+  }
+  return out;
+}
+
 export function checkFingerprints(results: ServerScanResult[]): Record<string, Finding[]> {
   const mutationFindings: Record<string, Finding[]> = {};
   const store = readStore();
@@ -179,29 +189,19 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
   // verified, so every server is reported rather than silently passed.
   if (store.status === 'bad') {
     quarantineStore();
-    for (const result of results) {
-      mutationFindings[`${result.toolName}:${result.serverName}`] = [{
-        id: 'server-mutation',
-        severity: 'MEDIUM',
-        description: `Server '${result.serverName}' could not be checked for tampering: the fingerprint store (${fingerprintFile()}) ${store.tampered ? 'failed its integrity check' : 'was unreadable or corrupt'} (${store.reason}). Treat it as possibly modified.`,
-        fixRecommendation: 'The bad file was moved aside and a fresh baseline is built on this scan. Review the server configs by hand this once, and check why the store was damaged.'
-      }];
-    }
-    return mutationFindings;
+    return flagAll(results, 'MEDIUM', name => ({
+      description: `Server '${name}' could not be checked for tampering: the fingerprint store (${fingerprintFile()}) ${store.tampered ? 'failed its integrity check' : 'was unreadable or corrupt'} (${store.reason}). Treat it as possibly modified.`,
+      fixRecommendation: 'The bad file was moved aside and a fresh baseline is built on this scan. Review the server configs by hand this once, and check why the store was damaged.'
+    }));
   }
 
   // An old-format store cannot be compared against the new recipe, so the
   // baseline resets. Say so, once, instead of resetting silently.
   if (store.status === 'legacy') {
-    for (const result of results) {
-      mutationFindings[`${result.toolName}:${result.serverName}`] = [{
-        id: 'server-mutation',
-        severity: 'INFO',
-        description: `Server '${result.serverName}' baseline was reset: the fingerprint store used an older format, so this scan could not check it for changes.`,
-        fixRecommendation: 'No action needed. Changes are tracked from this scan on.'
-      }];
-    }
-    return mutationFindings;
+    return flagAll(results, 'INFO', name => ({
+      description: `Server '${name}' baseline was reset: the fingerprint store used an older format, so this scan could not check it for changes.`,
+      fixRecommendation: 'No action needed. Changes are tracked from this scan on.'
+    }));
   }
 
   for (const result of results) {
