@@ -1,15 +1,15 @@
 default:
   before_script:
     - npm ci
-  # Runner-side failures only (image pull DNS timeouts, runner lost, stuck).
+  # Runner-side failures only (image pull DNS timeouts, runner lost).
   # script_failure is deliberately absent so a real red test is never retried
-  # into green.
+  # into green. stuck_or_timeout_failure is absent too: a job that hit its
+  # timeout would just burn the timeout again on each retry.
   retry:
     max: 2
     when:
       - runner_system_failure
       - runner_external_dependency_failure
-      - stuck_or_timeout_failure
       - api_failure
 
 stages:
@@ -141,6 +141,8 @@ ecosystem-scan:
       - node_modules/
     policy: pull
   timeout: 60m
+  # Own retry block: the 60m job must never be retried into hours.
+  retry: 0
   interruptible: true
   allow_failure: true
   rules:
