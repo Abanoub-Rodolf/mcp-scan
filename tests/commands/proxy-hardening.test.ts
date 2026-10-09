@@ -163,6 +163,15 @@ describe('proxy hardening', () => {
     expect(stdout.startsWith('{"jsonrpc":"2.0","id":5,"result":{"n":{"n":')).toBe(true);
   }, 60000);
 
+  it.each([['masking on', true], ['masking off', false]])('drops a server line cut off mid-message at exit, with a warning (%s)', async (_n, on) => {
+    if (on) maskOn();
+    const server = serverFile(`process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 0, result: {} }) + '\\n' + '{"jsonrpc":"2.0","id":1,"result":{"a":"hel');`);
+    const { stdout, stderr } = await run(server);
+    expect(stdout.trim().split('\n')).toHaveLength(1);
+    expect(JSON.parse(stdout.trim()).id).toBe(0);
+    expect(stderr).toMatch(/dropped an unfinished last line/);
+  }, 30000);
+
   // The pad shifts where the 64 KB pipe boundary lands inside a 3-byte
   // character; across the three pads at least one splits mid-character.
   it.each(['', 'a', 'aa'])('keeps multibyte characters intact when a 120 KB server line is split across chunks (pad %j)', async (pad) => {

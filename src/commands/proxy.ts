@@ -15,6 +15,8 @@ function warnStderr(msg: string) {
   if (!logger.isSilent) process.stderr.write(`mcp-scan proxy: ${msg}\n`);
 }
 
+const isJson = (text: string) => { try { JSON.parse(text); return true; } catch (_e) { return false; } };
+
 export class JsonRpcInterceptor extends Transform {
   private buffer: string = '';
   // A multibyte character can straddle two chunks; decoding each chunk on
@@ -68,7 +70,7 @@ export class JsonRpcInterceptor extends Transform {
     const tail = this.buffer.trim();
     if (queued === 0) {
       if (!tail) return { queued: 0, fragment: false };
-      try { JSON.parse(tail); return { queued: 0, fragment: false }; } catch (_e) { /* cut short */ }
+      if (isJson(tail)) return { queued: 0, fragment: false };
     }
     if (queued > 0) this.discarding = true;
     this.buffer = '';
@@ -176,6 +178,15 @@ export class JsonRpcInterceptor extends Transform {
     this.buffer += this.decoder.end();
     const tail = this.buffer;
     this.buffer = '';
+    // A last line that is not valid JSON is the front of a message cut off
+    // by the stream ending: forwarding it would hand the other side a
+    // fragment as if it were a message.
+    if (tail.trim() && !isJson(tail)) {
+      const note = `dropped an unfinished last line (${this.direction}): the stream ended without a newline in the middle of a message`;
+      warnStderr(note);
+      if (this.dashboardCallback) this.dashboardCallback('PROXY', note, false);
+      return callback();
+    }
     this.handleLine(tail);
     callback();
   }
@@ -204,6 +215,16 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     return;
   }
 
+  const policy = loadPolicy();
+  // loadPolicy returns null for a file it could not parse. Running without
+  // masking because the policy was unreadable would defeat the point of it.
+  const policyFile = path.join(process.cwd(), '.mcp-scan.json');
+  if (!policy && fs.existsSync(policyFile)) {
+    logger.error(`Not starting: ${policyFile} exists but could not be parsed, so privacy settings cannot be trusted. Fix or remove it.`);
+    process.exitCode = 1;
+    return;
+  }
+
   let dashboardCallback: undefined | ((dir: string, msg: string, pii: boolean) => void);
   const args = options.args ? splitArgs(options.args) : [];
   if (options.ui) {
@@ -223,7 +244,6 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
       logger.info(`Proxying: ${options.command} ${args.join(' ')}`);
   }
 
-  const policy = loadPolicy();
   let privacyOpts: PrivacyOptions | undefined;
   
   if (policy?.privacy?.maskPii) {
@@ -319,7 +339,12 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   let lastActivity = Date.now();
   child.stdout.on('data', () => { lastActivity = Date.now(); });
   process.stdout.on('drain', () => { lastActivity = Date.now(); });
-  const backlog = () => child.stdout.readableLength + serverInterceptor.readableLength + serverInterceptor.writableLength + process.stdout.writableLength;
+  // Bytes still on their way to the client. writableLength only drops when a
+  // whole queued write finishes, so one huge line read slowly looks frozen;
+  // the libuv write queue shrinks as the reader takes bytes, so count it too.
+  const stdoutQueue = () => (process.stdout as any)._handle?.writeQueueSize ?? 0;
+  const stdoutPending = () => process.stdout.writableLength + stdoutQueue();
+  const backlog = () => child.stdout.readableLength + serverInterceptor.readableLength + serverInterceptor.writableLength + stdoutPending();
   // How long a client with output queued may stay silent before we give up
   // on it. One deadline: the exit poll and the post-settle net share it.
   const stallMs = Number(process.env.MCP_SCAN_STALL_MS) || 60000;
@@ -366,7 +391,7 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     if (!process.env.MCP_SCAN_NO_EXIT) {
       // Safety net for a stdout that never drains: counts time with no
       // movement, not total time, so a slow reader still gets it all.
-      let last = process.stdout.writableLength;
+      let last = stdoutPending();
       // Time already spent stalled counts: the whole wait is one deadline,
       // plus a last second to flush what is already queued on stdout.
       const ticks = Math.ceil(stallMs / 500);
@@ -375,12 +400,16 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
       const floor = last > 0 ? Math.max(0, Math.min(ticks, Math.floor(idleMs / 500)) - 2) : 0;
       let still = floor;
       setInterval(() => {
-        const now = process.stdout.writableLength;
+        const now = stdoutPending();
         still = now === last ? still + 1 : floor;
         last = now;
         // Nothing queued and still not done is stuck (5s). A reader that
         // simply stopped reading gets the full stall deadline.
-        if (still >= (now === 0 ? 10 : ticks)) { logStream?.end(); process.exit(code || 0); }
+        if (still >= (now === 0 ? 10 : ticks)) {
+          if (now > 0) note(`client stopped reading: dropped ${now} bytes of queued output`);
+          logStream?.end();
+          process.exit(code || 0);
+        }
       }, 500).unref();
     }
   };
