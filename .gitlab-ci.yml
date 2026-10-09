@@ -1,6 +1,16 @@
 default:
   before_script:
     - npm ci
+  # Runner-side failures only (image pull DNS timeouts, runner lost, stuck).
+  # script_failure is deliberately absent so a real red test is never retried
+  # into green.
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - runner_external_dependency_failure
+      - stuck_or_timeout_failure
+      - api_failure
 
 stages:
   - quality
