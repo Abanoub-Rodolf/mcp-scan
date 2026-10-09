@@ -123,6 +123,7 @@ export function splitArgs(input: string): string[] {
 }
 
 export async function runProxy(options: { command?: string, args?: string, ui?: boolean }) {
+  logger.toStderr = true;
   if (!options.command) {
     console.error('No command specified for proxy. Use --command <cmd>.');
     process.exitCode = 1;

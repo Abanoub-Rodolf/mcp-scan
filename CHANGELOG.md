@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The fingerprint covers the config you wrote plus the package name; the resolved version is tracked separately.
 - Upgrading from 2.0.x signs an existing valid baseline once and reports a single INFO line.
 - The stale CVE snapshot warning prints once per run.
+- `mcp-scan proxy` sends all its own log lines (banner, info, warnings) to stderr, so stdout carries only the MCP protocol. Scan output is unchanged.
 
 ### Build
 - Publishing to npm now requires build, tests, lint and a dependency audit gate to pass.
