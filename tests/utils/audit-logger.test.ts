@@ -187,6 +187,30 @@ describe('fingerprint scope', () => {
   });
 
   it.each([
+    ['a hash in a name', 'Cursor:my#srv'],
+    ['an underscore-led name', 'Cursor:_srv'],
+    ['an underscore-led tool', '_Cursor:srv'],
+  ])('upgrades a 2.0.13 store with %s with INFO, not a quarantine', (_n, key) => {
+    fs.writeFileSync(storeFile(), JSON.stringify({ [key]: sha }));
+    const [tool, name] = [key.split(':')[0], key.split(':').slice(1).join(':')];
+    const s = { ...server(['-y', 'pkg'], '1.0.0'), toolName: tool, serverName: name };
+    const f = checkFingerprints([s])[key];
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'INFO' });
+    expect(f?.[0].description).toMatch(/baseline was reset/);
+    expect(quarantined()).toHaveLength(0);
+  });
+
+  it.each([
+    ['a #resolved key', { 'Cursor:files': sha, 'Cursor:files#resolved': sha }],
+    ['a per-source #resolved key', { 'Cursor:files': sha, 'Cursor:files#resolved:registry': sha }],
+  ])('does not take %s for the old format, even with a hash value', (_n, content) => {
+    fs.writeFileSync(storeFile(), JSON.stringify(content));
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0')])['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    expect(quarantined()).toHaveLength(1);
+  });
+
+  it.each([
     ['a wrong schema value', { __schema: '1', 'Cursor:files': sha }],
     ['a future schema value', { __schema: '3', 'Cursor:files': sha }],
     ['a missing schema with non-hash values', { 'Cursor:files': 'not-a-hash' }],

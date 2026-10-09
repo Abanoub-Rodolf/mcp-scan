@@ -91,10 +91,14 @@ const tampered = (reason: string): Store => ({ status: 'bad', reason, tampered: 
 // What mcp-scan <= 2.0.13 wrote: "tool:server" -> sha256 hex, nothing else.
 // Only a file that matches this exactly is treated as a store to upgrade;
 // a store missing its schema marker for any other reason is suspect.
+// Server names are free text ('my#srv' is legal), so the key test is loose and
+// the names the new format reserves are rejected by name instead.
+const RESOLVED_SUFFIX = /#resolved(:[a-z]+)?$/;
 function isLegacyShape(data: Record<string, string>): boolean {
   const entries = Object.entries(data);
   return entries.length > 0
-    && entries.every(([k, v]) => /^[^:#_][^:#]*:[^#]+$/.test(k) && /^[0-9a-f]{64}$/.test(v));
+    && entries.every(([k, v]) => /^[^:]+:.+$/.test(k) && k !== SCHEMA_KEY && k !== SIG_KEY
+      && !RESOLVED_SUFFIX.test(k) && /^[0-9a-f]{64}$/.test(v));
 }
 
 function fingerprintFile(): string {
