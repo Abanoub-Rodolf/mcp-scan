@@ -53,7 +53,7 @@ const ENVELOPE_KEYS = new Set(['jsonrpc', 'id', 'method', 'params', 'result', 'e
  * Recursively masks PII in an object, array, or string.
  * Pass deepClone=true to avoid mutating the original (useful in scan pipelines).
  * Throws if the data nests deeper than MAX_MASK_DEPTH; it never returns data it did not mask.
- * A top-level `id` (each element's, for a batch) is a JSON-RPC correlation
+ * The `id` of a top-level JSON-RPC message (each element's, for a batch) is a correlation
  * token and is passed through as is: masking it would stop replies matching.
  */
 export function maskPii(data: any, options?: PrivacyOptions, deepClone = false, depth = 0): any {
@@ -85,7 +85,9 @@ function walk(data: any, options: PrivacyOptions | undefined, depth: number, env
     const keys = Object.keys(data);
     const renamed = keys.map(k => (ENVELOPE_KEYS.has(k) ? k : maskString(k, options)));
     // The id VALUE stays as the sender wrote it (strings and numbers only).
-    const keepId = (k: string) => envelope && k === 'id' && (typeof data[k] === 'string' || typeof data[k] === 'number');
+    // Only a real JSON-RPC message qualifies: a bare {"id": ...} is data.
+    const isMessage = envelope && 'jsonrpc' in data && ('method' in data || 'result' in data || 'error' in data);
+    const keepId = (k: string) => isMessage && k === 'id' && (typeof data[k] === 'string' || typeof data[k] === 'number');
     const value = (k: string) => (keepId(k) ? data[k] : walk(data[k], options, depth + 1, false));
     if (renamed.every((k, i) => k === keys[i])) {
       for (const key of keys) data[key] = value(key);

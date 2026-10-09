@@ -125,7 +125,7 @@ describe('Privacy Engine', () => {
       const out = maskPii({ jsonrpc: '2.0', id: 'req-1234567890', result: { id: 'req-1234567890' } });
       expect(out.id).toBe('req-1234567890');
       expect(out.result.id).toBe('req-[NPI_MASKED]');
-      const batch = maskPii([{ id: '12345', result: 1 }, { id: 'u@corp.example', params: { id: 'u@corp.example' } }]);
+      const batch = maskPii([{ jsonrpc: '2.0', id: '12345', result: 1 }, { jsonrpc: '2.0', id: 'u@corp.example', method: 'm', params: { id: 'u@corp.example' } }]);
       expect(batch[0].id).toBe('12345');
       expect(batch[1].id).toBe('u@corp.example');
       expect(batch[1].params.id).toBe('[EMAIL_MASKED]');
@@ -134,7 +134,13 @@ describe('Privacy Engine', () => {
     it('exempts only the top-level object and direct batch elements, not ids inside nested arrays', () => {
       expect(maskPii([[{ id: 'user@corp.example' }]])[0][0].id).toBe('[EMAIL_MASKED]');
       expect(maskPii({ result: [{ id: 'user@corp.example' }] }).result[0].id).toBe('[EMAIL_MASKED]');
-      expect(maskPii([{ id: 'user@corp.example' }])[0].id).toBe('user@corp.example');
+      expect(maskPii([{ jsonrpc: '2.0', id: 'user@corp.example', result: 1 }])[0].id).toBe('user@corp.example');
+    });
+
+    it('only exempts the id of an object that is a JSON-RPC message', () => {
+      expect(maskPii({ id: 'user@corp.example' }).id).toBe('[EMAIL_MASKED]');
+      expect(maskPii({ jsonrpc: '2.0', id: 'user@corp.example' }).id).toBe('[EMAIL_MASKED]');
+      expect(maskPii({ jsonrpc: '2.0', id: 'user@corp.example', error: { code: 1 } }).id).toBe('user@corp.example');
     });
   });
 });
