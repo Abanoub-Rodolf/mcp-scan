@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-09
+
+### Security
+- The known-servers baseline is signed (HMAC-SHA256, per-install key in `baseline.key`, mode 0600). A hand-edited store, a stripped signature, or a missing or damaged key is reported as tampering (MEDIUM) and the store is set aside and rebuilt.
+- A deleted baseline on an install that had one is reported as a missing baseline (MEDIUM), not treated as a quiet first run.
+- An unreadable, corrupt or unknown-schema baseline now fails closed with a MEDIUM `server-mutation` finding instead of being silently trusted.
+- Any change in a server's resolved package version, patch releases included, is reported at MEDIUM.
+- Proxy logs are created 0600 in a 0700 directory, and lines that fail to parse or mask are no longer written to the log.
+- smol-toml 1.9.1 and lodash 4.18.1 clear known advisories.
+
+### Changed
+- The fingerprint covers the config you wrote plus the package name; the resolved version is tracked separately.
+- Upgrading from 2.0.x signs an existing valid baseline once and reports a single INFO line.
+- The stale CVE snapshot warning prints once per run.
+
+### Build
+- Publishing to npm now requires build, tests, lint and a dependency audit gate to pass.
+- `npm test` builds first, so a fresh clone goes green.
+- Internal planning and campaign notes are no longer tracked in the repo.
+
 ## [2.0.13] - 2026-09-07
 
 ### Changed
