@@ -31,30 +31,43 @@ class JsonRpcInterceptor extends Transform {
 
     for (const line of lines) {
       if (line.trim()) {
+        let json: unknown;
         try {
-          let json = JSON.parse(line);
+          json = JSON.parse(line);
+        } catch (_e) {
+          // Not JSON: forward untouched, but never put the raw line in the
+          // log or dashboard. It can't be masked, so it may hold secrets.
+          const note = `<unparsed line, ${line.length} chars, not logged>`;
+          if (this.logStream) this.logStream.write(`[${this.direction} RAW] ${note}\n`);
+          if (this.dashboardCallback) this.dashboardCallback(this.direction + ' RAW', note, false);
+          this.push(line + '\n');
+          continue;
+        }
 
-          // Mask BEFORE anything is written to disk: with the privacy engine
-          // enabled, the raw JSON-RPC payload (which can contain secrets and
-          // PII) must never be logged or forwarded.
-          let piiMasked = false;
-          if (this.privacyOptions) {
+        // Mask BEFORE anything is written to disk: with the privacy engine
+        // enabled, the raw JSON-RPC payload (which can contain secrets and
+        // PII) must never be logged or forwarded.
+        let piiMasked = false;
+        if (this.privacyOptions) {
+          try {
             const originalStr = JSON.stringify(json);
             json = maskPii(json, this.privacyOptions);
             piiMasked = originalStr !== JSON.stringify(json);
+          } catch (_e) {
+            // Fail closed: a message we could not mask is neither logged
+            // nor forwarded.
+            const note = '<message dropped, masking failed>';
+            if (this.logStream) this.logStream.write(`[${this.direction}] ${note}\n`);
+            if (this.dashboardCallback) this.dashboardCallback(this.direction, note, false);
+            continue;
           }
-
-          const finalMsg = JSON.stringify(json);
-          if (this.logStream) this.logStream.write(`[${this.direction}] ${finalMsg}\n`);
-          if (this.dashboardCallback) this.dashboardCallback(this.direction, finalMsg, piiMasked);
-          
-          this.push(finalMsg + '\n');
-        } catch (_e) {
-          // If not valid JSON, just pass through and log as raw
-          if (this.logStream) this.logStream.write(`[${this.direction} RAW] ${line}\n`);
-          if (this.dashboardCallback) this.dashboardCallback(this.direction + ' RAW', line, false);
-          this.push(line + '\n');
         }
+
+        const finalMsg = JSON.stringify(json);
+        if (this.logStream) this.logStream.write(`[${this.direction}] ${finalMsg}\n`);
+        if (this.dashboardCallback) this.dashboardCallback(this.direction, finalMsg, piiMasked);
+
+        this.push(finalMsg + '\n');
       }
     }
     callback();
@@ -126,9 +139,11 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   const logDir = process.env.MCP_SCAN_LOG_DIR || path.join(os.homedir(), '.mcp-scan', 'logs');
   let logStream: fs.WriteStream | null = null;
   try {
-    fs.mkdirSync(logDir, { recursive: true });
+    // Logs hold raw tool traffic: owner-only, so other accounts on a shared
+    // machine can't read them.
+    fs.mkdirSync(logDir, { recursive: true, mode: 0o700 });
     const logFile = path.join(logDir, `proxy-${Date.now()}.log`);
-    logStream = fs.createWriteStream(logFile, { flags: 'a' });
+    logStream = fs.createWriteStream(logFile, { flags: 'a', mode: 0o600 });
     logStream.on('error', (err) => logger.warn(`Proxy log write failed: ${err.message}`));
     logger.detail(`Audit log: ${logFile}`);
   } catch (err) {
