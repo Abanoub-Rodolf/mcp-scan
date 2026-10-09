@@ -120,5 +120,15 @@ describe('Privacy Engine', () => {
       expect(Object.keys(out)).toEqual(['__proto__', '[EMAIL_MASKED]']);
       expect(JSON.stringify(out)).not.toContain('corp.example');
     });
+
+    it('leaves the top-level envelope id (and each batch element\'s) alone, but still masks ids deeper down', () => {
+      const out = maskPii({ jsonrpc: '2.0', id: 'req-1234567890', result: { id: 'req-1234567890' } });
+      expect(out.id).toBe('req-1234567890');
+      expect(out.result.id).toBe('req-[NPI_MASKED]');
+      const batch = maskPii([{ id: '12345', result: 1 }, { id: 'u@corp.example', params: { id: 'u@corp.example' } }]);
+      expect(batch[0].id).toBe('12345');
+      expect(batch[1].id).toBe('u@corp.example');
+      expect(batch[1].params.id).toBe('[EMAIL_MASKED]');
+    });
   });
 });

@@ -5,6 +5,32 @@ export interface PrivacyOptions {
   disabledPatterns?: string[]; // Names of patterns to explicitly disable.
 }
 
+// Patterns are stored without the /g flag so detectors never hit the
+// stateful lastIndex trap; masking needs a global replace, so compile that
+// once per pattern. String.replace resets lastIndex, so reuse is safe.
+const COMPILED = PII_PATTERNS.map(p => ({
+  name: p.name,
+  mask: p.mask,
+  regex: new RegExp(p.regex.source, p.regex.flags.replace('g', '') + 'g'),
+}));
+
+// The option filter is the same for every string in a message, so resolve
+// it once per distinct option set.
+const ACTIVE = new Map<string, typeof COMPILED>();
+function activePatterns(options?: PrivacyOptions): typeof COMPILED {
+  if (!options) return COMPILED;
+  const key = JSON.stringify([options.enabledPatterns ?? null, options.disabledPatterns ?? null]);
+  let list = ACTIVE.get(key);
+  if (!list) {
+    const { enabledPatterns, disabledPatterns } = options;
+    list = COMPILED.filter(p =>
+      !(enabledPatterns && enabledPatterns.length > 0 && !enabledPatterns.includes(p.name)) &&
+      !(disabledPatterns && disabledPatterns.includes(p.name)));
+    ACTIVE.set(key, list);
+  }
+  return list;
+}
+
 /**
  * Masks PII in a given string.
  */
@@ -12,18 +38,8 @@ export function maskString(str: string, options?: PrivacyOptions): string {
   if (typeof str !== 'string') return str;
 
   let maskedStr = str;
-  for (const pattern of PII_PATTERNS) {
-    if (options?.enabledPatterns && options.enabledPatterns.length > 0) {
-      if (!options.enabledPatterns.includes(pattern.name)) continue;
-    }
-    if (options?.disabledPatterns && options.disabledPatterns.includes(pattern.name)) {
-      continue;
-    }
-
-    // Patterns are stored without the /g flag so detectors never hit the
-    // stateful lastIndex trap; masking needs global replace, so clone.
-    const globalRegex = new RegExp(pattern.regex.source, pattern.regex.flags.replace('g', '') + 'g');
-    maskedStr = maskedStr.replace(globalRegex, pattern.mask);
+  for (const pattern of activePatterns(options)) {
+    maskedStr = maskedStr.replace(pattern.regex, pattern.mask);
   }
   return maskedStr;
 }
@@ -37,14 +53,20 @@ const ENVELOPE_KEYS = new Set(['jsonrpc', 'id', 'method', 'params', 'result', 'e
  * Recursively masks PII in an object, array, or string.
  * Pass deepClone=true to avoid mutating the original (useful in scan pipelines).
  * Throws if the data nests deeper than MAX_MASK_DEPTH; it never returns data it did not mask.
+ * A top-level `id` (each element's, for a batch) is a JSON-RPC correlation
+ * token and is passed through as is: masking it would stop replies matching.
  */
 export function maskPii(data: any, options?: PrivacyOptions, deepClone = false, depth = 0): any {
-  // Fail closed: past the limit we can't vouch for what is below, so the
-  // caller must drop the message rather than forward it unmasked.
-  if (depth > MAX_MASK_DEPTH) throw new Error(`privacy masking depth limit (${MAX_MASK_DEPTH}) exceeded`);
   if (deepClone && data != null && typeof data === 'object') {
     data = JSON.parse(JSON.stringify(data));
   }
+  return walk(data, options, depth, depth === 0);
+}
+
+function walk(data: any, options: PrivacyOptions | undefined, depth: number, envelope: boolean): any {
+  // Fail closed: past the limit we can't vouch for what is below, so the
+  // caller must drop the message rather than forward it unmasked.
+  if (depth > MAX_MASK_DEPTH) throw new Error(`privacy masking depth limit (${MAX_MASK_DEPTH}) exceeded`);
   if (data == null) return data;
 
   if (typeof data === 'string') {
@@ -53,7 +75,7 @@ export function maskPii(data: any, options?: PrivacyOptions, deepClone = false, 
 
   if (Array.isArray(data)) {
     for (let i = 0; i < data.length; i++) {
-      data[i] = maskPii(data[i], options, false, depth + 1);
+      data[i] = walk(data[i], options, depth + 1, envelope);
     }
     return data;
   }
@@ -61,8 +83,11 @@ export function maskPii(data: any, options?: PrivacyOptions, deepClone = false, 
   if (typeof data === 'object') {
     const keys = Object.keys(data);
     const renamed = keys.map(k => (ENVELOPE_KEYS.has(k) ? k : maskString(k, options)));
+    // The id VALUE stays as the sender wrote it (strings and numbers only).
+    const keepId = (k: string) => envelope && k === 'id' && (typeof data[k] === 'string' || typeof data[k] === 'number');
+    const value = (k: string) => (keepId(k) ? data[k] : walk(data[k], options, depth + 1, false));
     if (renamed.every((k, i) => k === keys[i])) {
-      for (const key of keys) data[key] = maskPii(data[key], options, false, depth + 1);
+      for (const key of keys) data[key] = value(key);
       return data;
     }
     // PII used as a key is masked like a value. Two keys can mask to the
@@ -80,7 +105,7 @@ export function maskPii(data: any, options?: PrivacyOptions, deepClone = false, 
         taken.add(name);
       }
       // defineProperty so a key named __proto__ stays a plain entry.
-      Object.defineProperty(out, name, { value: maskPii(data[key], options, false, depth + 1), enumerable: true, writable: true, configurable: true });
+      Object.defineProperty(out, name, { value: value(key), enumerable: true, writable: true, configurable: true });
     });
     return out;
   }
