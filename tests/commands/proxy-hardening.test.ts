@@ -36,6 +36,26 @@ describe('proxy hardening', () => {
     return v;
   };
 
+  it('masks and logs a final server line that has no trailing newline', async () => {
+    maskOn();
+    const server = serverFile(`process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 3, result: { email: 'tail@corp.example' } }));`);
+    const { stdout } = await run(server);
+    expect(stdout).not.toContain('tail@corp.example');
+    expect(JSON.parse(stdout.trim()).result.email).toBe('[EMAIL_MASKED]');
+    expect(logs()).not.toContain('tail@corp.example');
+    expect(logs()).toContain('[EMAIL_MASKED]');
+  }, 30000);
+
+  it('masks a final client line that has no trailing newline', async () => {
+    maskOn();
+    const out = path.join(dir, 'got.txt');
+    const server = serverFile(`let b=[];process.stdin.on('data',d=>b.push(d));process.stdin.on('end',()=>require('fs').writeFileSync(${JSON.stringify(out)},Buffer.concat(b)));`);
+    await run(server, JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'x', params: { email: 'tail@corp.example' } }));
+    const got = fs.readFileSync(out, 'utf8');
+    expect(got).not.toContain('tail@corp.example');
+    expect(got).toContain('[EMAIL_MASKED]');
+  }, 30000);
+
   it('fails closed past the depth limit: server response is replaced by an error for its id, nothing raw leaves', async () => {
     maskOn();
     const deep = JSON.stringify({ jsonrpc: '2.0', id: 42, result: nest(150, 'deep@corp.example') });

@@ -33,53 +33,55 @@ class JsonRpcInterceptor extends Transform {
 
   _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
     this.buffer += chunk.toString();
-    
+
     const lines = this.buffer.split('\n');
     this.buffer = lines.pop() || ''; // Keep the incomplete line in buffer
 
-    for (const line of lines) {
-      if (line.trim()) {
-        let json: unknown;
-        try {
-          json = JSON.parse(line);
-        } catch (_e) {
-          // Not JSON: forward untouched, but never put the raw line in the
-          // log or dashboard. It can't be masked, so it may hold secrets.
-          const note = `<unparsed line, ${line.length} chars, not logged>`;
-          if (this.logStream) this.logStream.write(`[${this.direction} RAW] ${note}\n`);
-          if (this.dashboardCallback) this.dashboardCallback(this.direction + ' RAW', note, false);
-          this.push(line + '\n');
-          continue;
-        }
+    for (const line of lines) this.handleLine(line);
+    callback();
+  }
 
-        // Mask BEFORE anything is written to disk: with the privacy engine
-        // enabled, the raw JSON-RPC payload (which can contain secrets and
-        // PII) must never be logged or forwarded.
-        let piiMasked = false;
-        if (this.privacyOptions) {
-          try {
-            const originalStr = JSON.stringify(json);
-            json = maskPii(json, this.privacyOptions);
-            piiMasked = originalStr !== JSON.stringify(json);
-          } catch (_e) {
-            // Fail closed: a message we could not mask is neither logged
-            // nor forwarded.
-            const note = '<message dropped, masking failed>';
-            if (this.logStream) this.logStream.write(`[${this.direction}] ${note}\n`);
-            if (this.dashboardCallback) this.dashboardCallback(this.direction, note, false);
-            this.answerDropped(json);
-            continue;
-          }
-        }
+  private handleLine(line: string) {
+    if (!line.trim()) return;
 
-        const finalMsg = JSON.stringify(json);
-        if (this.logStream) this.logStream.write(`[${this.direction}] ${finalMsg}\n`);
-        if (this.dashboardCallback) this.dashboardCallback(this.direction, finalMsg, piiMasked);
+    let json: unknown;
+    try {
+      json = JSON.parse(line);
+    } catch (_e) {
+      // Not JSON: forward untouched, but never put the raw line in the
+      // log or dashboard. It can't be masked, so it may hold secrets.
+      const note = `<unparsed line, ${line.length} chars, not logged>`;
+      if (this.logStream) this.logStream.write(`[${this.direction} RAW] ${note}\n`);
+      if (this.dashboardCallback) this.dashboardCallback(this.direction + ' RAW', note, false);
+      this.push(line + '\n');
+      return;
+    }
 
-        this.push(finalMsg + '\n');
+    // Mask BEFORE anything is written to disk: with the privacy engine
+    // enabled, the raw JSON-RPC payload (which can contain secrets and
+    // PII) must never be logged or forwarded.
+    let piiMasked = false;
+    if (this.privacyOptions) {
+      try {
+        const originalStr = JSON.stringify(json);
+        json = maskPii(json, this.privacyOptions);
+        piiMasked = originalStr !== JSON.stringify(json);
+      } catch (_e) {
+        // Fail closed: a message we could not mask is neither logged
+        // nor forwarded.
+        const note = '<message dropped, masking failed>';
+        if (this.logStream) this.logStream.write(`[${this.direction}] ${note}\n`);
+        if (this.dashboardCallback) this.dashboardCallback(this.direction, note, false);
+        this.answerDropped(json);
+        return;
       }
     }
-    callback();
+
+    const finalMsg = JSON.stringify(json);
+    if (this.logStream) this.logStream.write(`[${this.direction}] ${finalMsg}\n`);
+    if (this.dashboardCallback) this.dashboardCallback(this.direction, finalMsg, piiMasked);
+
+    this.push(finalMsg + '\n');
   }
 
   // A dropped message must not leave the other side waiting on its id
@@ -105,9 +107,11 @@ class JsonRpcInterceptor extends Transform {
   }
 
   _flush(callback: TransformCallback) {
-    if (this.buffer.trim()) {
-      this.push(this.buffer);
-    }
+    // An unterminated last line goes through the same mask/drop path as any
+    // other; pushing it raw would skip masking and logging.
+    const tail = this.buffer;
+    this.buffer = '';
+    this.handleLine(tail);
     callback();
   }
 }
