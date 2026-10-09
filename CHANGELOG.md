@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A deleted baseline on an install that had one is reported as a missing baseline (MEDIUM), not treated as a quiet first run.
 - An unreadable, corrupt or unknown-schema baseline now fails closed with a MEDIUM `server-mutation` finding instead of being silently trusted.
 - A change in the registry's latest version for an unpinned server, patch releases included, is reported at MEDIUM. It is only compared against the same source (registry or bundled snapshot), so going offline is not a change. A pinned `pkg@x.y.z` is covered by the config fingerprint.
-- Proxy logs are created 0600 in a 0700 directory, and lines that fail to parse or mask are no longer written to the log.
+- Proxy logs are created 0600 in a 0700 directory, and lines that fail to parse or mask are no longer written to the log. A client request the privacy engine could not mask gets a JSON-RPC internal error (-32603) back instead of hanging; other dropped messages warn on stderr.
 - smol-toml 1.9.1 and lodash 4.18.1 clear known advisories.
 
 ### Changed

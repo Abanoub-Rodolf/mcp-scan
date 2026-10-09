@@ -29,6 +29,7 @@ describe('proxy log hardening', () => {
   let root: string;
   let logDir: string;
   let childStdin: PassThrough;
+  let childStdout: PassThrough;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -38,9 +39,10 @@ describe('proxy log hardening', () => {
     process.env.MCP_SCAN_LOG_DIR = logDir;
     process.env.MCP_SCAN_NO_EXIT = '1';
     childStdin = new PassThrough();
+    childStdout = new PassThrough();
     vi.mocked(spawn).mockReturnValue({
       stdin: childStdin,
-      stdout: new PassThrough(),
+      stdout: childStdout,
       stderr: new PassThrough(),
       on: vi.fn(),
       kill: vi.fn(),
@@ -95,6 +97,75 @@ describe('proxy log hardening', () => {
 
     expect(readLog().text).not.toContain('secret@corp.example');
     expect(forwarded).not.toContain('secret@corp.example');
+  });
+
+  describe('when masking throws', () => {
+    const secret = 'secret@corp.example';
+    let out: string[];
+    let errOut: string[];
+    let outSpy: ReturnType<typeof vi.spyOn>;
+    let errSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      out = [];
+      errOut = [];
+      outSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((c: unknown) => { out.push(String(c)); return true; }) as any);
+      errSpy = vi.spyOn(process.stderr, 'write').mockImplementation(((c: unknown) => { errOut.push(String(c)); return true; }) as any);
+      vi.mocked(loadPolicy).mockReturnValue({ privacy: { maskPii: true } });
+      vi.mocked(maskPii).mockImplementation(() => { throw new Error(`mask boom ${secret}`); });
+    });
+    afterEach(() => {
+      outSpy.mockRestore();
+      errSpy.mockRestore();
+    });
+    const replies = () => out.filter(l => l.includes('"jsonrpc"')).map(l => JSON.parse(l));
+    const noLeak = () => {
+      expect([...out, ...errOut].join('')).not.toContain(secret);
+      expect(readLog().text).not.toContain(secret);
+    };
+
+    it('answers a client request with a JSON-RPC internal error instead of leaving it hanging', async () => {
+      let forwarded = '';
+      childStdin.on('data', c => { forwarded += c.toString(); });
+      await runProxy({ command: 'node', args: '-v' });
+      await send(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { email: secret } }));
+
+      expect(replies()).toEqual([{ jsonrpc: '2.0', id: 7, error: { code: -32603, message: expect.any(String) } }]);
+      expect(forwarded).toBe('');
+      noLeak();
+    });
+
+    it('answers every request in a dropped batch', async () => {
+      await runProxy({ command: 'node', args: '-v' });
+      await send(JSON.stringify([
+        { jsonrpc: '2.0', id: 'a', method: 'tools/call', params: { email: secret } },
+        { jsonrpc: '2.0', method: 'notifications/x' },
+        { jsonrpc: '2.0', id: 2, method: 'ping' },
+      ]));
+
+      const [batch] = replies();
+      expect(batch.map((r: any) => r.id)).toEqual(['a', 2]);
+      noLeak();
+    });
+
+    it('warns on stderr for a client notification, with no reply', async () => {
+      await runProxy({ command: 'node', args: '-v' });
+      await send(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/x', params: { email: secret } }));
+
+      expect(replies()).toEqual([]);
+      expect(errOut.join('')).toMatch(/dropped a CLIENT -> SERVER message/);
+      noLeak();
+    });
+
+    it('warns on stderr, without replying to the client, when a server message cannot be masked', async () => {
+      await runProxy({ command: 'node', args: '-v' });
+      childStdout.write(JSON.stringify({ jsonrpc: '2.0', id: 3, result: { email: secret } }) + '\n');
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(replies()).toEqual([]);
+      expect(errOut.join('')).toMatch(/dropped a SERVER -> CLIENT message/);
+      noLeak();
+    });
   });
 
   it('tightens an existing default log dir left at 0755 by older versions', async () => {

@@ -20,13 +20,15 @@ class JsonRpcInterceptor extends Transform {
   private logStream: fs.WriteStream | null;
   private privacyOptions?: PrivacyOptions;
   private dashboardCallback?: (dir: string, msg: string, pii: boolean) => void;
+  private replyToClient?: (line: string) => void;
 
-  constructor(direction: string, logStream: fs.WriteStream | null, privacyOptions?: PrivacyOptions, dashboardCallback?: (dir: string, msg: string, pii: boolean) => void) {
+  constructor(direction: string, logStream: fs.WriteStream | null, privacyOptions?: PrivacyOptions, dashboardCallback?: (dir: string, msg: string, pii: boolean) => void, replyToClient?: (line: string) => void) {
     super();
     this.direction = direction;
     this.logStream = logStream;
     this.privacyOptions = privacyOptions;
     this.dashboardCallback = dashboardCallback;
+    this.replyToClient = replyToClient;
   }
 
   _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
@@ -65,6 +67,7 @@ class JsonRpcInterceptor extends Transform {
             const note = '<message dropped, masking failed>';
             if (this.logStream) this.logStream.write(`[${this.direction}] ${note}\n`);
             if (this.dashboardCallback) this.dashboardCallback(this.direction, note, false);
+            this.answerDropped(json);
             continue;
           }
         }
@@ -77,6 +80,23 @@ class JsonRpcInterceptor extends Transform {
       }
     }
     callback();
+  }
+
+  // A dropped client request would leave the client waiting on its id
+  // forever, so it gets a generic JSON-RPC error back. Only the id is
+  // echoed, never the content. Everything else is dropped with a warning.
+  private answerDropped(json: unknown) {
+    const batch = Array.isArray(json);
+    const ids = (batch ? json : [json])
+      .filter((m): m is { id: string | number } => !!m && typeof m === 'object' && typeof (m as any).method === 'string'
+        && (typeof (m as any).id === 'string' || typeof (m as any).id === 'number'))
+      .map(m => m.id);
+    if (!this.replyToClient || ids.length === 0) {
+      warnStderr(`dropped a ${this.direction} message: privacy masking failed`);
+      return;
+    }
+    const errors = ids.map(id => ({ jsonrpc: '2.0', id, error: { code: -32603, message: 'Internal error: request not forwarded' } }));
+    this.replyToClient(JSON.stringify(batch ? errors : errors[0]) + '\n');
   }
 
   _flush(callback: TransformCallback) {
@@ -170,7 +190,7 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     stdio: ['pipe', 'pipe', 'inherit']
   });
 
-  const clientInterceptor = new JsonRpcInterceptor('CLIENT -> SERVER', logStream, privacyOpts, dashboardCallback);
+  const clientInterceptor = new JsonRpcInterceptor('CLIENT -> SERVER', logStream, privacyOpts, dashboardCallback, line => process.stdout.write(line));
   const serverInterceptor = new JsonRpcInterceptor('SERVER -> CLIENT', logStream, privacyOpts, dashboardCallback);
 
   process.stdin.pipe(clientInterceptor).pipe(child.stdin);
