@@ -20,7 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - If the client goes away (the proxy's stdout closes), the proxy terminates the server and exits instead of leaving both running.
 - The proxy exits about 2 seconds after the server does even if a process the server started still holds its stdout open, and closes the proxy log only after the last unterminated line of either side has been masked and written.
 - The top-level JSON-RPC `id` of a message (each element's, in a batch) is passed through unmasked and unrenamed, by design: it is a correlation token, and masking `req-1234567890` or a UUID would stop replies matching their requests. A dropped message is answered with that same raw id. The same text inside params or a result is still masked. An id that itself looks like PII therefore appears in the proxy log as sent.
-- With masking off, the proxy forwards each line exactly as received (it used to re-serialize it) and no longer throws on extremely deep nesting.
+- With masking off, the proxy forwards each JSON line as received (it used to re-serialize it) and no longer throws on extremely deep nesting.
 - Masking compiles its detectors once instead of per string: a 1.9 MB, 20,000-object response masks in about 46 ms instead of about 160 ms.
 - The proxy decodes UTF-8 across chunk boundaries, so multibyte text in long lines no longer turns into U+FFFD, and it waits for the server's last output to drain before exiting.
 - `npx pkg@latest` (and `@scope/pkg@latest`) is now looked up in the registry by its bare name, so the latest-version change check actually runs for it.
