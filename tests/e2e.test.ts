@@ -23,9 +23,11 @@ describe('E2E Scan', () => {
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
+  // offline: the assertions below only need local checks. Live registry/OSV
+  // calls made this test time out on a slow runner (2026-09-06 main).
   it('should run a full scan on a vulnerable fixture and find issues', async () => {
     const fixturePath = path.join(__dirname, 'fixtures/vulnerable-config.json');
-    const report = await runScan({ config: fixturePath, silent: true });
+    const report = await runScan({ config: fixturePath, silent: true, offline: true });
 
     expect(report.totalScanned).toBeGreaterThan(0);
     // vulnerable-config.json has a ghp_ token and a dangerous path '/'
@@ -43,7 +45,7 @@ describe('E2E Scan', () => {
 
   it('should run a full scan on a malicious fixture', async () => {
     const fixturePath = path.join(__dirname, 'fixtures/malicious-config.json');
-    const report = await runScan({ config: fixturePath, silent: true });
+    const report = await runScan({ config: fixturePath, silent: true, offline: true });
 
     expect(report.totalScanned).toBeGreaterThan(0);
     // malicious-config.json has known malicious packages
