@@ -161,3 +161,91 @@ describe('fingerprint scope', () => {
     expect(quarantined()).toHaveLength(1);
   });
 });
+
+describe('signed baseline', () => {
+  let home: string;
+  const storeFile = () => path.join(home, 'known-servers.json');
+  const keyFile = () => path.join(home, 'baseline.key');
+  const quarantined = () => fs.readdirSync(home).filter(f => f.startsWith('known-servers.json.corrupt-'));
+  const results = () => [server(['-y', 'pkg'], '1.0.0')];
+  const evil = () => [server(['-y', 'pkg', '--evil'], '1.0.0')];
+
+  // The attack: bless the evil config by writing its fingerprint straight
+  // into the store, so a plain fingerprint compare sees no change.
+  function forgeBaselineFor(evilResults: ServerScanResult[]) {
+    const honest = fs.readFileSync(storeFile(), 'utf8');
+    logScan(report(evilResults));
+    const blessed = JSON.parse(fs.readFileSync(storeFile(), 'utf8'))['Cursor:files'];
+    const forged = JSON.parse(honest);
+    forged['Cursor:files'] = blessed;
+    fs.writeFileSync(storeFile(), JSON.stringify(forged));
+  }
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-audit-sig-'));
+    process.env.MCP_SCAN_HOME = home;
+  });
+
+  afterEach(() => {
+    delete process.env.MCP_SCAN_HOME;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('signs the store with a 32-byte key kept outside it', () => {
+    logScan(report(results()));
+    expect(fs.readFileSync(keyFile(), 'utf8').trim()).toMatch(/^[0-9a-f]{64}$/);
+    const store = JSON.parse(fs.readFileSync(storeFile(), 'utf8'));
+    expect(store.__sig).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(store)).not.toContain(fs.readFileSync(keyFile(), 'utf8').trim());
+  });
+
+  it.skipIf(process.platform === 'win32')('creates the key readable by the owner only', () => {
+    logScan(report(results()));
+    expect(fs.statSync(keyFile()).mode & 0o777).toBe(0o600);
+  });
+
+  it('keeps the same key and stays quiet across healthy runs', () => {
+    logScan(report(results()));
+    const key = fs.readFileSync(keyFile(), 'utf8');
+    logScan(report(results()));
+    expect(fs.readFileSync(keyFile(), 'utf8')).toBe(key);
+    expect(checkFingerprints(results())).toEqual({});
+    expect(quarantined()).toHaveLength(0);
+  });
+
+  it('flags a hand-edited store even though it is still valid JSON of the right shape', () => {
+    logScan(report(results()));
+    forgeBaselineFor(evil());
+    const f = checkFingerprints(evil())['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
+    expect(f?.[0].description).toMatch(/integrity check \(signature does not match\)/);
+    expect(quarantined()).toHaveLength(1);
+  });
+
+  it('flags a store whose signature was stripped', () => {
+    logScan(report(results()));
+    const store = JSON.parse(fs.readFileSync(storeFile(), 'utf8'));
+    delete store.__sig;
+    fs.writeFileSync(storeFile(), JSON.stringify(store));
+    const f = checkFingerprints(results())['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    expect(f?.[0].description).toMatch(/signature missing/);
+    expect(quarantined()).toHaveLength(1);
+  });
+
+  it('does not let an old-format file stand in once the install has a key', () => {
+    logScan(report(results()));
+    fs.writeFileSync(storeFile(), JSON.stringify({ 'Cursor:files': 'a'.repeat(64) }));
+    const f = checkFingerprints(results())['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    expect(quarantined()).toHaveLength(1);
+  });
+
+  it('rebuilds a signed baseline after a tamper, so the next run is clean', () => {
+    logScan(report(results()));
+    forgeBaselineFor(evil());
+    expect(checkFingerprints(evil())['Cursor:files']).toBeDefined();
+    logScan(report(evil()));
+    expect(checkFingerprints(evil())).toEqual({});
+  });
+});

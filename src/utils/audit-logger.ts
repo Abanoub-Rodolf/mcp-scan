@@ -61,7 +61,16 @@ const SCHEMA_KEY = '__schema';
 const SCHEMA = '2';
 const resolvedKey = (key: string) => `${key}#resolved`;
 
-type Store = { status: 'missing' } | { status: 'ok' | 'legacy'; data: Record<string, string> } | { status: 'bad'; reason: string };
+// The HMAC lives inside the store as one more string entry, so the file
+// stays a flat map and the signature is replaced in the same atomic write.
+const SIG_KEY = '__sig';
+
+type Store =
+  | { status: 'missing' }
+  | { status: 'ok' | 'unsigned' | 'legacy'; data: Record<string, string> }
+  | { status: 'bad'; reason: string; tampered?: boolean };
+
+const tampered = (reason: string): Store => ({ status: 'bad', reason, tampered: true });
 
 // What mcp-scan <= 2.0.13 wrote: "tool:server" -> sha256 hex, nothing else.
 // Only a file that matches this exactly is treated as a store to upgrade;
@@ -74,6 +83,45 @@ function isLegacyShape(data: Record<string, string>): boolean {
 
 function fingerprintFile(): string {
   return path.join(auditDir(), 'known-servers.json');
+}
+
+// Per-install secret, kept next to but outside the store so that editing
+// the store alone cannot produce a valid signature.
+function keyFile(): string {
+  return path.join(auditDir(), 'baseline.key');
+}
+
+type Key = { status: 'missing' } | { status: 'ok'; key: Buffer };
+
+function readKey(): Key {
+  try {
+    const hex = fs.readFileSync(keyFile(), 'utf8').trim();
+    if (/^[0-9a-f]{64}$/.test(hex)) return { status: 'ok', key: Buffer.from(hex, 'hex') };
+  } catch (_e) {}
+  return { status: 'missing' };
+}
+
+function loadOrCreateKey(): Buffer {
+  const existing = readKey();
+  if (existing.status === 'ok') return existing.key;
+  const key = crypto.randomBytes(32);
+  fs.mkdirSync(auditDir(), { recursive: true });
+  fs.rmSync(keyFile(), { force: true });
+  fs.writeFileSync(keyFile(), key.toString('hex') + '\n', { mode: 0o600, flag: 'wx' });
+  return key;
+}
+
+// Sorted so the same entries always sign the same, whatever order the file
+// or the scan happened to build them in.
+function sign(data: Record<string, string>, key: Buffer): string {
+  const entries = Object.keys(data).filter(k => k !== SIG_KEY).sort().map(k => [k, data[k]]);
+  return crypto.createHmac('sha256', key).update(JSON.stringify(entries)).digest('hex');
+}
+
+function signatureMatches(data: Record<string, string>, key: Buffer): boolean {
+  const have = data[SIG_KEY];
+  if (typeof have !== 'string' || !/^[0-9a-f]{64}$/.test(have)) return false;
+  return crypto.timingSafeEqual(Buffer.from(have, 'hex'), Buffer.from(sign(data, key), 'hex'));
 }
 
 function readStore(): Store {
@@ -90,7 +138,15 @@ function readStore(): Store {
     const valid = data !== null && typeof data === 'object' && !Array.isArray(data)
       && Object.values(data).every(v => typeof v === 'string');
     if (!valid) return { status: 'bad', reason: 'not a map of fingerprints' };
-    if (data[SCHEMA_KEY] === SCHEMA) return { status: 'ok', data };
+    // Once this install has a key, every store it reads must carry a valid
+    // signature, including one that looks like an older format. Otherwise
+    // writing an old-format file would be a way around the check.
+    const key = readKey();
+    if (key.status === 'ok') {
+      if (!(SIG_KEY in data)) return tampered('signature missing');
+      if (!signatureMatches(data, key.key)) return tampered('signature does not match');
+    }
+    if (data[SCHEMA_KEY] === SCHEMA) return { status: key.status === 'ok' ? 'ok' : 'unsigned', data };
     if (SCHEMA_KEY in data) return { status: 'bad', reason: `unknown schema '${data[SCHEMA_KEY]}'` };
     return isLegacyShape(data) ? { status: 'legacy', data } : { status: 'bad', reason: 'no schema marker and not the old store format' };
   } catch (e) {
@@ -120,7 +176,7 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
       mutationFindings[`${result.toolName}:${result.serverName}`] = [{
         id: 'server-mutation',
         severity: 'MEDIUM',
-        description: `Server '${result.serverName}' could not be checked for tampering: the fingerprint store (${fingerprintFile()}) was unreadable or corrupt (${store.reason}). Treat it as possibly modified.`,
+        description: `Server '${result.serverName}' could not be checked for tampering: the fingerprint store (${fingerprintFile()}) ${store.tampered ? 'failed its integrity check' : 'was unreadable or corrupt'} (${store.reason}). Treat it as possibly modified.`,
         fixRecommendation: 'The bad file was moved aside and a fresh baseline is built on this scan. Review the server configs by hand this once, and check why the store was damaged.'
       }];
     }
@@ -178,8 +234,11 @@ function updateFingerprints(results: ServerScanResult[]) {
     const store = readStore();
     if (store.status === 'bad') quarantineStore();
     // A store from an older recipe is rebuilt from scratch, not merged.
-    const fingerprints = store.status === 'ok' ? store.data : {};
+    // An unsigned current-format store keeps its entries and gets signed.
+    const fingerprints = store.status === 'ok' || store.status === 'unsigned' ? { ...store.data } : {};
+    delete fingerprints[SIG_KEY];
     fingerprints[SCHEMA_KEY] = SCHEMA;
+    const key = loadOrCreateKey();
 
     for (const result of results) {
       const key = `${result.toolName}:${result.serverName}`;
@@ -189,6 +248,7 @@ function updateFingerprints(results: ServerScanResult[]) {
       if (resolved) fingerprints[resolvedKey(key)] = resolved;
     }
 
+    fingerprints[SIG_KEY] = sign(fingerprints, key);
     atomicWriteConfig(fingerprintFile(), JSON.stringify(fingerprints, null, 2));
   } catch (_error) {}
 }
