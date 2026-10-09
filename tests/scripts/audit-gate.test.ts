@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { spawnSync } from 'child_process';
+import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { parse } from 'yaml';
@@ -35,6 +37,41 @@ describe('audit gate', () => {
       const acc = [{ id: 'GHSA-aaaa', owner: 'rodolf', reviewBy }];
       expect(evaluate(audit(advisory('GHSA-aaaa', 'high')), acc, now)).toHaveLength(1);
     }
+  });
+
+  it.each([
+    ['no vulnerabilities key', {}],
+    ['a null map', { vulnerabilities: null }],
+    ['an array map', { vulnerabilities: [] }],
+    ['a string map', { vulnerabilities: 'none' }],
+    ['a non-object report', null],
+  ])('throws on an unexpected shape (%s) instead of passing', (_n, shape) => {
+    expect(() => evaluate(shape as any, [], now)).toThrow(/no vulnerabilities map/);
+  });
+
+  it('passes a clean v2 report with an empty map', () => {
+    expect(evaluate({ auditReportVersion: 2, vulnerabilities: {} }, [], now)).toEqual([]);
+  });
+
+  it.skipIf(process.platform === 'win32')('exits 2 when npm prints JSON of the wrong shape', () => {
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-gate-npm-'));
+    try {
+      fs.writeFileSync(path.join(bin, 'npm'), '#!/bin/sh\necho \'{"message":"surprise"}\'\n', { mode: 0o755 });
+      const run = spawnSync(process.execPath, [path.join(root, 'scripts/audit-gate.mjs')], {
+        encoding: 'utf8', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+      });
+      expect(run.status).toBe(2);
+      expect(run.stderr).toMatch(/no vulnerabilities map/);
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it('the CI step name says it audits runtime dependencies only', () => {
+    const ci = parse(fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8'));
+    const step = Object.values<any>(ci.jobs).flatMap(j => j.steps ?? []).find((s: any) => String(s.run ?? '').includes('audit-gate'));
+    expect(step.name).toMatch(/runtime dependencies only/i);
+    expect(step.name).toContain('--omit=dev');
   });
 
   it('every accepted entry names an owner and a review date', () => {

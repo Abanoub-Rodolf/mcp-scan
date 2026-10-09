@@ -11,8 +11,14 @@ import { fileURLToPath } from 'node:url';
 const BLOCKING = new Set(['high', 'critical']);
 
 export function evaluate(audit, accepted, now = new Date()) {
+  // An unexpected shape (npm changed its JSON, or an error object) must not
+  // read as "no advisories". A clean report still has `vulnerabilities: {}`.
+  const map = audit?.vulnerabilities;
+  if (map === null || typeof map !== 'object' || Array.isArray(map)) {
+    throw new Error('npm audit JSON has no vulnerabilities map (auditReportVersion ' + audit?.auditReportVersion + ')');
+  }
   const advisories = new Map();
-  for (const vuln of Object.values(audit.vulnerabilities ?? {})) {
+  for (const vuln of Object.values(map)) {
     for (const via of vuln.via ?? []) {
       // String entries only point at another package in the chain.
       if (typeof via !== 'object' || !BLOCKING.has(via.severity)) continue;
@@ -45,7 +51,13 @@ function main() {
     console.error('audit-gate: npm audit failed:', audit.error.summary ?? audit.error);
     process.exit(2);
   }
-  const failures = evaluate(audit, accepted);
+  let failures;
+  try {
+    failures = evaluate(audit, accepted);
+  } catch (e) {
+    console.error('audit-gate:', e.message);
+    process.exit(2);
+  }
   for (const f of failures) console.error(`${f.severity} ${f.package} ${f.id}: ${f.title} (${f.why})`);
   if (failures.length) process.exit(1);
   console.log('audit-gate: no unaccepted high or critical runtime advisories');
