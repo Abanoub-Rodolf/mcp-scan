@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 - The fingerprint covers the config you wrote plus the package name; the resolved version is tracked separately.
-- Upgrading from 2.0.x signs an existing valid baseline once and reports a single INFO line.
+- Upgrading from 2.0.x resets the baseline once: that scan reports one INFO per scanned server ("baseline was reset") and makes no change check, then writes a signed baseline. A current-format store that is only unsigned is compared as usual and signed with a single INFO line. The empty `{}` store that 2.0.13 writes after a scan with no servers is read as an empty baseline, not as corruption.
 - The stale CVE snapshot warning prints once per run.
 - `mcp-scan proxy` sends all its own log lines (banner, info, warnings) to stderr, so stdout carries only the MCP protocol. Scan output is unchanged.
 

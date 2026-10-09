@@ -395,6 +395,45 @@ describe('signed baseline', () => {
     expect(checkFingerprints(two)).toEqual({});
   });
 
+  // What mcp-scan <= 2.0.13 wrote: "tool:server" -> sha256 hex, no schema marker.
+  const sha = (x: string) => crypto.createHash('sha256').update(x).digest('hex');
+
+  it('upgrading a real 2.0.x store: one INFO per scanned server, no change check, then a signed baseline', () => {
+    const two = [server(['-y', 'pkg'], '1.0.0'), { ...server(['-y', 'pkg'], '1.0.0'), serverName: 'other' }];
+    fs.writeFileSync(storeFile(), JSON.stringify({ 'Cursor:files': sha('old files'), 'Cursor:other': sha('old other') }));
+    const found = checkFingerprints(two);
+    // both fingerprints differ from the old recipe's, yet nothing is reported as a change
+    expect(Object.keys(found).sort()).toEqual(['Cursor:files', 'Cursor:other']);
+    for (const f of Object.values(found)) {
+      expect(f).toHaveLength(1);
+      expect(f[0]).toMatchObject({ id: 'server-mutation', severity: 'INFO' });
+      expect(f[0].description).toMatch(/baseline was reset.*older format/);
+    }
+    expect(quarantined()).toHaveLength(0);
+
+    logScan(report(two));
+    const written = JSON.parse(fs.readFileSync(storeFile(), 'utf8'));
+    expect(written.__schema).toBe('2');
+    expect(written.__sig).toMatch(/^[0-9a-f]{64}$/);
+    expect(checkFingerprints(two)).toEqual({});
+  });
+
+  it('treats the empty store 2.0.13 wrote for a zero-server scan as an empty baseline, not corruption', () => {
+    fs.writeFileSync(storeFile(), '{}');
+    expect(checkFingerprints(results())).toEqual({});
+    expect(quarantined()).toHaveLength(0);
+    logScan(report(results()));
+    expect(JSON.parse(fs.readFileSync(storeFile(), 'utf8')).__sig).toMatch(/^[0-9a-f]{64}$/);
+    expect(checkFingerprints(results())).toEqual({});
+  });
+
+  it('still calls an empty unsigned store tampered on an install that signed before', () => {
+    logScan(report(results()));
+    fs.rmSync(keyFile());
+    fs.writeFileSync(storeFile(), '{}');
+    expect(checkFingerprints(results())['Cursor:files']?.[0]).toMatchObject({ severity: 'MEDIUM' });
+  });
+
   it('still compares an unsigned store while upgrading it', () => {
     writeUnsignedStore(results());
     const f = checkFingerprints(evil())['Cursor:files'];
