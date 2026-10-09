@@ -93,4 +93,27 @@ describe('proxy hardening', () => {
     expect(JSON.parse(stdout.trim())).toMatchObject({ jsonrpc: '2.0', id: 7, error: { code: -32603 } });
     expect(logs()).not.toContain('deep@corp.example');
   }, 30000);
+
+  // The pad shifts where the 64 KB pipe boundary lands inside a 3-byte
+  // character; across the three pads at least one splits mid-character.
+  it.each(['', 'a', 'aa'])('keeps multibyte characters intact when a 120 KB server line is split across chunks (pad %j)', async (pad) => {
+    const text = pad + '日本語'.repeat(14000);
+    const line = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { text } });
+    expect(Buffer.byteLength(line)).toBeGreaterThan(120000);
+    const server = serverFile(`process.stdout.write(${JSON.stringify(line)} + '\\n');`);
+    const { stdout } = await run(server);
+    expect(stdout).not.toContain('\uFFFD');
+    expect(JSON.parse(stdout.trim()).result.text).toBe(text);
+  }, 30000);
+
+  it.each(['', 'a', 'aa'])('keeps multibyte characters intact when a 120 KB client line is split across chunks (pad %j)', async (pad) => {
+    const text = pad + '日本語'.repeat(14000);
+    const line = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'x', params: { text } }) + '\n';
+    const out = path.join(dir, 'got.txt');
+    const server = serverFile(`let b=[];process.stdin.on('data',d=>b.push(d));process.stdin.on('end',()=>require('fs').writeFileSync(${JSON.stringify(out)},Buffer.concat(b)));`);
+    await run(server, line);
+    const got = fs.readFileSync(out, 'utf8');
+    expect(got).not.toContain('\uFFFD');
+    expect(JSON.parse(got).params.text).toBe(text);
+  }, 30000);
 });

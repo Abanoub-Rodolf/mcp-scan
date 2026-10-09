@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { Transform, TransformCallback } from 'stream';
+import { StringDecoder } from 'string_decoder';
 import { loadPolicy } from '../config/parser.js';
 import { maskPii, PrivacyOptions } from '../utils/privacy-engine.js';
 import { reportBlessedImportError } from '../utils/dashboard-deps-hint.js';
@@ -16,6 +17,9 @@ function warnStderr(msg: string) {
 
 class JsonRpcInterceptor extends Transform {
   private buffer: string = '';
+  // A multibyte character can straddle two chunks; decoding each chunk on
+  // its own would turn the halves into U+FFFD.
+  private decoder = new StringDecoder('utf8');
   private direction: string;
   private logStream: fs.WriteStream | null;
   private privacyOptions?: PrivacyOptions;
@@ -32,7 +36,7 @@ class JsonRpcInterceptor extends Transform {
   }
 
   _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
-    this.buffer += chunk.toString();
+    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
 
     const lines = this.buffer.split('\n');
     this.buffer = lines.pop() || ''; // Keep the incomplete line in buffer
@@ -109,6 +113,7 @@ class JsonRpcInterceptor extends Transform {
   _flush(callback: TransformCallback) {
     // An unterminated last line goes through the same mask/drop path as any
     // other; pushing it raw would skip masking and logging.
+    this.buffer += this.decoder.end();
     const tail = this.buffer;
     this.buffer = '';
     this.handleLine(tail);
