@@ -94,6 +94,23 @@ describe('proxy hardening', () => {
     expect(logs()).not.toContain('deep@corp.example');
   }, 30000);
 
+  it('echoes the sender\'s id exactly, even when it looks like PII and masking dies after it', async () => {
+    maskOn();
+    const deep = JSON.stringify({ jsonrpc: '2.0', id: 'user@corp.example', result: nest(150, 'deep@corp.example') });
+    const server = serverFile(`process.stdout.write(${JSON.stringify(deep)} + '\\n');`);
+    const { stdout } = await run(server);
+    expect(JSON.parse(stdout.trim())).toMatchObject({ id: 'user@corp.example', error: { code: -32603 } });
+  }, 30000);
+
+  it('drops a million-level payload too, whatever throws first', async () => {
+    maskOn();
+    const n = 1000000;
+    const server = serverFile(`const n=${n};process.stdout.write('{"jsonrpc":"2.0","id":5,"result":' + '{"n":'.repeat(n) + '"deep@corp.example"' + '}'.repeat(n) + '}\\n');`);
+    const { stdout } = await run(server);
+    expect(stdout).not.toContain('deep@corp.example');
+    expect(JSON.parse(stdout.trim())).toMatchObject({ id: 5, error: { code: -32603 } });
+  }, 60000);
+
   // The pad shifts where the 64 KB pipe boundary lands inside a 3-byte
   // character; across the three pads at least one splits mid-character.
   it.each(['', 'a', 'aa'])('keeps multibyte characters intact when a 120 KB server line is split across chunks (pad %j)', async (pad) => {

@@ -66,6 +66,9 @@ class JsonRpcInterceptor extends Transform {
     // PII) must never be logged or forwarded.
     let piiMasked = false;
     if (this.privacyOptions) {
+      // maskPii edits in place and can throw halfway, so take the ids first:
+      // the error reply must carry the id exactly as the sender wrote it.
+      const dropped = this.snapshotIds(json);
       try {
         const originalStr = JSON.stringify(json);
         json = maskPii(json, this.privacyOptions);
@@ -76,7 +79,7 @@ class JsonRpcInterceptor extends Transform {
         const note = '<message dropped, masking failed>';
         if (this.logStream) this.logStream.write(`[${this.direction}] ${note}\n`);
         if (this.dashboardCallback) this.dashboardCallback(this.direction, note, false);
-        this.answerDropped(json);
+        this.answerDropped(dropped);
         return;
       }
     }
@@ -88,21 +91,27 @@ class JsonRpcInterceptor extends Transform {
     this.push(finalMsg + '\n');
   }
 
+  private snapshotIds(json: unknown) {
+    const batch = Array.isArray(json);
+    const msgs: any[] = batch ? json : [json];
+    const withId = msgs.filter(m => !!m && typeof m === 'object' && (typeof m.id === 'string' || typeof m.id === 'number'));
+    return {
+      batch,
+      requests: withId.filter(m => typeof m.method === 'string').map(m => ({ id: m.id })),
+      responses: withId.filter(m => typeof m.method !== 'string').map(m => ({ id: m.id })),
+    };
+  }
+
   // A dropped message must not leave the other side waiting on its id
   // forever. A dropped request is answered to its sender with a generic
   // JSON-RPC error; a dropped response is replaced downstream by an error
   // for the same id, so the request it answered settles. Only ids are
   // echoed, never content. Anything else is dropped with a warning.
-  private answerDropped(json: unknown) {
-    const batch = Array.isArray(json);
-    const msgs: any[] = batch ? json : [json];
-    const withId = msgs.filter(m => !!m && typeof m === 'object' && (typeof m.id === 'string' || typeof m.id === 'number'));
+  private answerDropped({ batch, requests, responses }: ReturnType<JsonRpcInterceptor['snapshotIds']>) {
     const errors = (list: any[]) => {
       const out = list.map(m => ({ jsonrpc: '2.0', id: m.id, error: { code: -32603, message: 'Internal error: message not forwarded' } }));
       return JSON.stringify(batch ? out : out[0]) + '\n';
     };
-    const requests = withId.filter(m => typeof m.method === 'string');
-    const responses = withId.filter(m => typeof m.method !== 'string');
     if (requests.length > 0 && this.replyToSender) this.replyToSender(errors(requests));
     if (responses.length > 0) this.push(errors(responses));
     if ((requests.length === 0 || !this.replyToSender) && responses.length === 0) {
