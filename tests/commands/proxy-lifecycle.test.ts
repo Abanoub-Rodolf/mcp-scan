@@ -116,4 +116,20 @@ describe('proxy lifecycle', () => {
     });
     expect(res.stdout.trim().split('\n').map(l => JSON.parse(l).id)).toEqual([1, 2]);
   }, 30000);
+
+  it('with a descendant holding the pipe, a slow client still gets all of a large backlog', async () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 40; i++) lines.push(JSON.stringify({ jsonrpc: '2.0', id: i, result: { pad: 'x'.repeat(9000) } }));
+    const file = path.join(dir, 'responses.txt');
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+    const bytes = fs.statSync(file).size;
+    const server = serverFile(`
+      require('child_process').spawn('sleep', ['14'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();
+      require('child_process').spawnSync('cat', [${JSON.stringify(file)}], { stdio: ['ignore', 'inherit', 'ignore'] });
+      process.exit(0);`);
+    const res = await execa('sh', ['-c', `node "${CLI}" proxy --command node --args "${server}" </dev/null | (sleep 4; wc -lc)`], {
+      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir },
+    });
+    expect(res.stdout.trim().split(/\s+/).map(Number)).toEqual([40, bytes]);
+  }, 40000);
 });

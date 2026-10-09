@@ -321,7 +321,7 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
       if (dashboardCallback) dashboardCallback('PROXY', note, false);
     }
     // We cut the client off here too; its half-read line has nowhere to go.
-    clientInterceptor.abandonTail();
+    if (clientInterceptor.abandonTail()) warnStderr('dropped an unfinished last line from the client');
     // Stop reading both sides and run each interceptor's flush, so an
     // unterminated last line is masked, logged and answered like any other.
     // The log is closed only after both are done, or it would lose that tail.
@@ -351,15 +351,20 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
         last = now;
         // Nothing queued and still not done is stuck (5s). A reader that
         // simply stopped reading gets much longer (60s) before we cut it off.
-        if (still >= (now === 0 ? 10 : 120)) process.exit(code || 0);
+        if (still >= (now === 0 ? 10 : 120)) { logStream?.end(); process.exit(code || 0); }
       }, 500).unref();
     }
   };
   child.on('exit', (code) => {
     lastActivity = Date.now();
+    let lastBacklog = backlog();
     exitPoll = setInterval(() => {
-      if (backlog() > 0) lastActivity = Date.now();
-      else if (Date.now() - lastActivity >= 2000) settle(code, true);
+      const now = backlog();
+      if (now !== lastBacklog) { lastBacklog = now; lastActivity = Date.now(); }
+      // Nothing queued: 2s of quiet is enough. Something queued for a client
+      // that has stopped reading: that client gets 60s, then we cut it off,
+      // or a descendant plus a dead reader would keep us up forever.
+      if (Date.now() - lastActivity >= (now > 0 ? 60000 : 2000)) settle(code, true);
     }, 200);
   });
   child.on('close', (code) => settle(code));
