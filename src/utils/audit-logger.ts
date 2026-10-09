@@ -60,21 +60,22 @@ export function logScan(report: ScanReport) {
 // quietly instead of flagging every server once.
 const SCHEMA_KEY = '__schema';
 const SCHEMA = '2';
-// One entry per source, so an offline scan cannot overwrite what the last
-// online scan saw (and the other way round).
-const resolvedKey = (key: string, source: string) => `${key}#resolved:${source}`;
+// Only registry values are stored. Entries other versions wrote under other
+// sources (e.g. #resolved:snapshot) are left in place and never read.
+const resolvedKey = (key: string) => `${key}#resolved:registry`;
 
-// The registry's (or snapshot's) latest for an unpinned server. A pinned
-// spec (pkg@1.2.3) is not tracked here: the spec is part of the fingerprint,
-// so changing the pin is already a config change. metadata.version is only
-// the registry's latest, never what the config resolves to.
+// The registry's latest for an unpinned server. Not tracked: a pinned spec
+// (pkg@1.2.3), because the spec is part of the fingerprint and changing the
+// pin is already a config change; and the bundled offline snapshot, whose
+// version moves whenever mcp-scan itself is upgraded and says nothing about
+// the user's servers. metadata.version is never what the config resolves to.
 const EXACT_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
-function trackedLatest(result: ServerScanResult): { source: string; version: string } | undefined {
+function trackedLatest(result: ServerScanResult): string | undefined {
   const { packageName, version, versionSource } = result.metadata ?? {};
-  if (!version || !versionSource) return undefined;
+  if (!version || versionSource !== 'registry') return undefined;
   const at = packageName?.lastIndexOf('@') ?? -1;
   if (at > 0 && EXACT_VERSION.test(packageName!.slice(at + 1))) return undefined;
-  return { source: versionSource, version };
+  return version;
 }
 
 // The HMAC lives inside the store as one more string entry, so the file
@@ -285,15 +286,15 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
     }
 
     const latest = trackedLatest(result);
-    const before = latest && store.data[resolvedKey(key, latest.source)];
-    if (store.data[key] && latest && before && before !== latest.version) {
+    const before = latest && store.data[resolvedKey(key)];
+    if (store.data[key] && latest && before && before !== latest) {
       // A new latest is how a rug-pull looks, so it is MEDIUM whatever the
-      // bump size: a compromised publish ships as a patch. Only compared
-      // against the same source, so going offline is not a change.
+      // bump size: a compromised publish ships as a patch. Offline scans
+      // have no latest, so going offline is not a change.
       mutationFindings[key] = [{
         id: 'server-mutation',
         severity: 'MEDIUM',
-        description: `Server '${result.serverName}': registry latest changed for an unpinned server (${latest.source} ${before} -> ${latest.version}). The config itself is unchanged. This may indicate a package swap.`,
+        description: `Server '${result.serverName}': registry latest changed for an unpinned server (${before} -> ${latest}). The config itself is unchanged. This may indicate a package swap.`,
         fixRecommendation: 'Pin the version in the config (pkg@x.y.z) and confirm the new release is the one you expect.'
       }];
     }
@@ -331,7 +332,7 @@ function updateFingerprints(results: ServerScanResult[]): boolean {
       const key = `${result.toolName}:${result.serverName}`;
       fingerprints[key] = generateFingerprint(result);
       const latest = trackedLatest(result);
-      if (latest) fingerprints[resolvedKey(key, latest.source)] = latest.version;
+      if (latest) fingerprints[resolvedKey(key)] = latest;
     }
 
     fingerprints[SIG_KEY] = sign(fingerprints, hmacKey);

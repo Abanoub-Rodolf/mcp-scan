@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import crypto from 'crypto';
 import { checkFingerprints, logScan } from '../../src/utils/audit-logger.js';
 import { ScanReport, ServerScanResult } from '../../src/types/scan-result.js';
 
@@ -110,6 +111,26 @@ describe('fingerprint scope', () => {
     expect(checkFingerprints([server(['-y', 'pkg'], '1.0.0', 'pkg', 'snapshot')])).toEqual({});
     logScan(report([server(['-y', 'pkg'], '1.0.0', 'pkg', 'snapshot')]));
     expect(checkFingerprints([server(['-y', 'pkg'], '1.0.1', 'pkg', 'registry')])).toEqual({});
+  });
+
+  it('does not flag an offline scan after the bundled snapshot version changed (mcp-scan upgrade)', () => {
+    logScan(report([server(['-y', 'pkg'], '1.0.0', 'pkg', 'snapshot')]));
+    expect(checkFingerprints([server(['-y', 'pkg'], '1.1.0', 'pkg', 'snapshot')])).toEqual({});
+    logScan(report([server(['-y', 'pkg'], '1.1.0', 'pkg', 'snapshot')]));
+    expect(checkFingerprints([server(['-y', 'pkg'], '2.0.0', 'pkg', 'snapshot')])).toEqual({});
+  });
+
+  it('ignores #resolved:snapshot entries an earlier build left in a signed store', () => {
+    logScan(report([server(['-y', 'pkg'], '1.0.0', 'pkg', 'snapshot')]));
+    const file = path.join(home, 'known-servers.json');
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    data['Cursor:files#resolved:snapshot'] = '0.1.0';
+    delete data.__sig;
+    const key = Buffer.from(fs.readFileSync(path.join(home, 'baseline.key'), 'utf8').trim(), 'hex');
+    const entries = Object.keys(data).sort().map(k => [k, data[k]]);
+    data.__sig = crypto.createHmac('sha256', key).update(JSON.stringify(entries)).digest('hex');
+    fs.writeFileSync(file, JSON.stringify(data));
+    expect(checkFingerprints([server(['-y', 'pkg'], '9.9.9', 'pkg', 'snapshot')])).toEqual({});
   });
 
   it('still catches a registry change across an offline scan in between', () => {
