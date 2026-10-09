@@ -142,6 +142,9 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     // Logs hold raw tool traffic: owner-only, so other accounts on a shared
     // machine can't read them.
     fs.mkdirSync(logDir, { recursive: true, mode: 0o700 });
+    // The default dir may predate this fix at 0755, with old 0644 logs in
+    // it. Tighten that one; never chmod a dir the user pointed us at.
+    if (!process.env.MCP_SCAN_LOG_DIR) fs.chmodSync(logDir, 0o700);
     const logFile = path.join(logDir, `proxy-${Date.now()}.log`);
     logStream = fs.createWriteStream(logFile, { flags: 'a', mode: 0o600 });
     logStream.on('error', (err) => logger.warn(`Proxy log write failed: ${err.message}`));

@@ -95,4 +95,28 @@ describe('proxy log hardening', () => {
     expect(readLog().text).not.toContain('secret@corp.example');
     expect(forwarded).not.toContain('secret@corp.example');
   });
+
+  it('tightens an existing default log dir left at 0755 by older versions', async () => {
+    vi.mocked(loadPolicy).mockReturnValue({});
+    delete process.env.MCP_SCAN_LOG_DIR;
+    const savedHome = process.env.HOME;
+    process.env.HOME = root;
+    try {
+      const old = path.join(root, '.mcp-scan', 'logs');
+      fs.mkdirSync(old, { recursive: true });
+      fs.chmodSync(old, 0o755);
+      await runProxy({ command: 'node', args: '-v' });
+      expect(fs.statSync(old).mode & 0o777).toBe(0o700);
+    } finally {
+      process.env.HOME = savedHome;
+    }
+  });
+
+  it('leaves a user-chosen log dir alone', async () => {
+    vi.mocked(loadPolicy).mockReturnValue({});
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.chmodSync(logDir, 0o755);
+    await runProxy({ command: 'node', args: '-v' });
+    expect(fs.statSync(logDir).mode & 0o777).toBe(0o755);
+  });
 });
