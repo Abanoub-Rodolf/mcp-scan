@@ -30,6 +30,13 @@ describe('audit gate', () => {
     expect(late[0].why).toMatch(/expired/);
   });
 
+  it('treats a missing or malformed review date as expired', () => {
+    for (const reviewBy of [undefined, 'soon', '']) {
+      const acc = [{ id: 'GHSA-aaaa', owner: 'rodolf', reviewBy }];
+      expect(evaluate(audit(advisory('GHSA-aaaa', 'high')), acc, now)).toHaveLength(1);
+    }
+  });
+
   it('every accepted entry names an owner and a review date', () => {
     const accepted = JSON.parse(fs.readFileSync(path.join(root, 'scripts/audit-accepted.json'), 'utf8'));
     for (const a of accepted) {

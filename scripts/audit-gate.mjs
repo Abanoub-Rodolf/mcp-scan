@@ -24,7 +24,8 @@ export function evaluate(audit, accepted, now = new Date()) {
   for (const adv of advisories.values()) {
     const ok = accepted.find((a) => a.id === adv.id);
     if (!ok) failures.push({ ...adv, why: 'not accepted' });
-    else if (new Date(ok.reviewBy) < now) failures.push({ ...adv, why: `acceptance expired ${ok.reviewBy} (owner ${ok.owner})` });
+    // A missing or unparseable date must not read as "never expires".
+    else if (!(Date.parse(ok.reviewBy) >= now.getTime())) failures.push({ ...adv, why: `acceptance expired or has no valid reviewBy (${ok.reviewBy}, owner ${ok.owner})` });
   }
   return failures;
 }
