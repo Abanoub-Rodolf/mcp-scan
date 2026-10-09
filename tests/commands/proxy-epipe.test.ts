@@ -43,6 +43,9 @@ describe('proxy writes after the server is gone', () => {
 
   afterEach(() => {
     process.stdin.unpipe();
+    // each runProxy adds its own handlers; keep tests independent
+    process.stdout.removeAllListeners('error');
+    process.stderr.removeAllListeners('error');
     stderrSpy.mockRestore();
     delete process.env.MCP_SCAN_LOG_DIR;
     delete process.env.MCP_SCAN_NO_EXIT;
@@ -55,6 +58,13 @@ describe('proxy writes after the server is gone', () => {
     const epipe = () => Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
     expect(() => { childStdin.emit('error', epipe()); childStdin.emit('error', epipe()); }).not.toThrow();
     expect(warnings().filter(l => l.includes('EPIPE'))).toHaveLength(1);
+  });
+
+  it('survives a write error on the proxy stdout and says so once, separately from the server stdin', async () => {
+    const epipe = () => Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+    expect(() => { childStdin.emit('error', epipe()); process.stdout.emit('error', epipe()); process.stdout.emit('error', epipe()); }).not.toThrow();
+    expect(warnings().filter(l => l.includes('server stdin'))).toHaveLength(1);
+    expect(warnings().filter(l => l.includes('proxy stdout'))).toHaveLength(1);
   });
 
   it('survives a reply written to a server stdin that was already ended', async () => {

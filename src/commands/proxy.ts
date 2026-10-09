@@ -220,15 +220,22 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
 
   // The server can close its stdin or die while the client is still talking.
   // An unhandled 'error' on either writable would crash the proxy with a
-  // stack trace, so note it once and drop further writes.
-  let warned = false;
-  const writeFailed = (what: string) => (err: NodeJS.ErrnoException) => {
-    if (warned) return;
-    warned = true;
-    warnStderr(`${what} is no longer writable (${err.code || err.message}); dropping further messages`);
+  // stack trace, so note it once per stream and drop further writes. Under
+  // --ui stderr is silent, so the dashboard gets the note instead.
+  const writeFailed = (what: string) => {
+    let warned = false;
+    return (err: NodeJS.ErrnoException) => {
+      if (warned) return;
+      warned = true;
+      const note = `${what} is no longer writable (${err.code || err.message}); dropping further messages`;
+      warnStderr(note);
+      if (dashboardCallback) dashboardCallback('PROXY', note, false);
+    };
   };
   child.stdin.on('error', writeFailed('server stdin'));
   process.stdout.on('error', writeFailed('proxy stdout'));
+  // A closed stderr must not turn the warning itself into a crash.
+  process.stderr.on('error', () => {});
 
   process.stdin.pipe(clientInterceptor).pipe(child.stdin);
   child.stdout.pipe(serverInterceptor).pipe(process.stdout);
