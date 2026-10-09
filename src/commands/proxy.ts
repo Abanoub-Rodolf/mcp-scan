@@ -25,6 +25,7 @@ class JsonRpcInterceptor extends Transform {
   private privacyOptions?: PrivacyOptions;
   private dashboardCallback?: (dir: string, msg: string, pii: boolean) => void;
   private replyToSender?: (line: string) => void;
+  private refusing = false;
 
   constructor(direction: string, logStream: fs.WriteStream | null, privacyOptions?: PrivacyOptions, dashboardCallback?: (dir: string, msg: string, pii: boolean) => void, replyToSender?: (line: string) => void) {
     super();
@@ -45,6 +46,14 @@ class JsonRpcInterceptor extends Transform {
     callback();
   }
 
+  // The destination is gone: stop forwarding, and give each later request
+  // an error for its id so its sender doesn't wait forever. Notifications and
+  // responses have nobody to answer and are dropped.
+  refuseFurther() {
+    this.refusing = true;
+    this.resume(); // nothing is pushed any more, but keep the buffers moving
+  }
+
   private handleLine(line: string) {
     if (!line.trim()) return;
 
@@ -59,6 +68,22 @@ class JsonRpcInterceptor extends Transform {
       if (this.dashboardCallback) this.dashboardCallback(this.direction + ' RAW', note, false);
       // With masking on, an unparsed line gets the string detectors too.
       this.push((this.privacyOptions ? maskString(line, this.privacyOptions) : line) + '\n');
+      return;
+    }
+
+    if (this.refusing) {
+      const { batch, requests } = this.snapshotIds(json);
+      if (requests.length > 0 && this.replyToSender) this.replyToSender(this.errorLines(requests, batch, 'Internal error: server is no longer reachable'));
+      return;
+    }
+
+    // Masking off: the line goes through byte for byte. Re-serializing it
+    // could change numbers or throw on extreme nesting, and there is nothing
+    // to mask.
+    if (!this.privacyOptions) {
+      if (this.logStream) this.logStream.write(`[${this.direction}] ${line}\n`);
+      if (this.dashboardCallback) this.dashboardCallback(this.direction, line, false);
+      this.push(line + '\n');
       return;
     }
 
@@ -103,16 +128,18 @@ class JsonRpcInterceptor extends Transform {
     };
   }
 
+  private errorLines(list: { id: string | number }[], batch: boolean, message: string) {
+    const out = list.map(m => ({ jsonrpc: '2.0', id: m.id, error: { code: -32603, message } }));
+    return JSON.stringify(batch ? out : out[0]) + '\n';
+  }
+
   // A dropped message must not leave the other side waiting on its id
   // forever. A dropped request is answered to its sender with a generic
   // JSON-RPC error; a dropped response is replaced downstream by an error
   // for the same id, so the request it answered settles. Only ids are
   // echoed, never content. Anything else is dropped with a warning.
   private answerDropped({ batch, requests, responses }: ReturnType<JsonRpcInterceptor['snapshotIds']>) {
-    const errors = (list: any[]) => {
-      const out = list.map(m => ({ jsonrpc: '2.0', id: m.id, error: { code: -32603, message: 'Internal error: message not forwarded' } }));
-      return JSON.stringify(batch ? out : out[0]) + '\n';
-    };
+    const errors = (list: { id: string | number }[]) => this.errorLines(list, batch, 'Internal error: message not forwarded');
     if (requests.length > 0 && this.replyToSender) this.replyToSender(errors(requests));
     if (responses.length > 0) this.push(errors(responses));
     if ((requests.length === 0 || !this.replyToSender) && responses.length === 0) {
@@ -232,27 +259,67 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
       if (dashboardCallback) dashboardCallback('PROXY', note, false);
     };
   };
-  child.stdin.on('error', writeFailed('server stdin'));
-  process.stdout.on('error', writeFailed('proxy stdout'));
+  const serverStdinFailed = writeFailed('server stdin');
+  child.stdin.on('error', (err: NodeJS.ErrnoException) => {
+    serverStdinFailed(err);
+    clientInterceptor.refuseFurther();
+  });
+
+  // Nobody is reading our stdout any more (the client went away, e.g. a
+  // closed pipe): same as being told to terminate, or the server would be
+  // orphaned for as long as it cares to run.
+  const clientGone = writeFailed('proxy stdout');
+  let stopping = false;
+  process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+    clientGone(err);
+    serverInterceptor.resume(); // discard what can no longer be delivered
+    if (stopping) return;
+    stopping = true;
+    child.kill('SIGTERM');
+    if (!process.env.MCP_SCAN_NO_EXIT) {
+      setTimeout(() => { child.kill('SIGKILL'); process.exit(process.exitCode || 0); }, 3000).unref();
+    }
+  });
   // A closed stderr must not turn the warning itself into a crash.
   process.stderr.on('error', () => {});
 
   process.stdin.pipe(clientInterceptor).pipe(child.stdin);
   child.stdout.pipe(serverInterceptor).pipe(process.stdout);
 
-  // 'close', not 'exit': exit can fire while the server's last output is
-  // still in the pipe. Then wait for the interceptor to flush its tail and
-  // for stdout to drain, or process.exit() drops whatever is still queued.
-  child.on('close', (code) => {
+  // The server's last output can still be in the pipe when 'exit' fires, so
+  // normally wait for 'close'. But a descendant that inherited the server's
+  // stdout keeps that pipe open long after the server is gone, so 'exit'
+  // starts a short grace period after which we stop waiting.
+  let settled = false;
+  let grace: NodeJS.Timeout | undefined;
+  const settle = (code: number | null) => {
+    if (settled) return;
+    settled = true;
+    if (grace) clearTimeout(grace);
     logger.info(`Server exited with code ${code}`);
-    logStream?.end();
     process.exitCode = code || 0;
-    if (process.env.MCP_SCAN_NO_EXIT) return;
-    const quit = () => process.stdout.write('', () => process.exit(code || 0));
-    setTimeout(() => process.exit(code || 0), 5000).unref();
-    if (serverInterceptor.readableEnded) quit();
-    else serverInterceptor.once('end', quit);
-  });
+    // Stop reading both sides and run each interceptor's flush, so an
+    // unterminated last line is masked, logged and answered like any other.
+    // The log is closed only after both are done, or it would lose that tail.
+    process.stdin.unpipe(clientInterceptor);
+    child.stdout.unpipe(serverInterceptor);
+    if (!clientInterceptor.writableEnded) clientInterceptor.end();
+    if (!serverInterceptor.writableEnded) serverInterceptor.end();
+    let pending = 2;
+    const part = () => {
+      if (--pending > 0) return;
+      // Queued output must drain before exit or process.exit() drops it.
+      process.stdout.write('', () => {
+        logStream?.end();
+        if (!process.env.MCP_SCAN_NO_EXIT) process.exit(code || 0);
+      });
+    };
+    if (clientInterceptor.writableFinished) part(); else clientInterceptor.once('finish', part);
+    if (serverInterceptor.readableEnded) part(); else serverInterceptor.once('end', part);
+    if (!process.env.MCP_SCAN_NO_EXIT) setTimeout(() => process.exit(code || 0), 5000).unref();
+  };
+  child.on('exit', (code) => { grace = setTimeout(() => settle(code), 2000); });
+  child.on('close', (code) => settle(code));
 
   child.on('error', (err) => {
     logger.error(`Failed to start server: ${err.message}`);

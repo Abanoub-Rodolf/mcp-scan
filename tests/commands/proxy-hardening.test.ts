@@ -60,6 +60,8 @@ describe('proxy hardening', () => {
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0]).result.t.length).toBe(3000000);
     expect(JSON.parse(lines[1]).result.email).toBe('[EMAIL_MASKED]');
+    // the log must end with the tail too, not stop at the server's close
+    expect(logs()).toContain('"id":2,"result":{"email":"[EMAIL_MASKED]"}');
   }, 30000);
 
   it('masks a final client line that has no trailing newline', async () => {
@@ -136,6 +138,30 @@ describe('proxy hardening', () => {
     const { stdout } = await run(server);
     expect(stdout.trim()).toBe('debug: mailing tail@corp.example now');
   }, 30000);
+
+  it.each([
+    ['uuid', '3f2b8c1e-9a4d-4e7b-8c55-1234567890ab'],
+    ['req-number', 'req-1234567890'],
+    ['zip-like', '12345'],
+    ['pii-looking', 'user@corp.example'],
+  ])('passes the envelope id through unmasked so the reply still matches (%s)', async (_n, id) => {
+    maskOn();
+    const server = serverFile(`process.stdout.write(${JSON.stringify(JSON.stringify({ jsonrpc: '2.0', id, result: { email: 'a@corp.example', id: 'req-1234567890' } }))} + '\\n');`);
+    const { stdout } = await run(server);
+    const msg = JSON.parse(stdout.trim());
+    expect(msg.id).toBe(id);
+    // only the envelope id is exempt; the same text inside the payload is still masked
+    expect(msg.result).toEqual({ email: '[EMAIL_MASKED]', id: 'req-[NPI_MASKED]' });
+  }, 30000);
+
+  it('forwards a million-level message untouched, and survives it, when masking is off', async () => {
+    const n = 1000000;
+    const server = serverFile(`const n=${n};process.stdout.write('{"jsonrpc":"2.0","id":5,"result":' + '{"n":'.repeat(n) + '1' + '}'.repeat(n) + '}\\n');`);
+    const { stdout, exitCode } = await run(server);
+    expect(exitCode).toBe(0);
+    expect(stdout.trim().length).toBe(('{"jsonrpc":"2.0","id":5,"result":' + '{"n":'.repeat(n) + '1' + '}'.repeat(n) + '}').length);
+    expect(stdout.startsWith('{"jsonrpc":"2.0","id":5,"result":{"n":{"n":')).toBe(true);
+  }, 60000);
 
   // The pad shifts where the 64 KB pipe boundary lands inside a 3-byte
   // character; across the three pads at least one splits mid-character.
