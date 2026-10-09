@@ -206,11 +206,18 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   process.stdin.pipe(clientInterceptor).pipe(child.stdin);
   child.stdout.pipe(serverInterceptor).pipe(process.stdout);
 
-  child.on('exit', (code) => {
+  // 'close', not 'exit': exit can fire while the server's last output is
+  // still in the pipe. Then wait for the interceptor to flush its tail and
+  // for stdout to drain, or process.exit() drops whatever is still queued.
+  child.on('close', (code) => {
     logger.info(`Server exited with code ${code}`);
     logStream?.end();
     process.exitCode = code || 0;
-    if (!process.env.MCP_SCAN_NO_EXIT) process.exit(code || 0);
+    if (process.env.MCP_SCAN_NO_EXIT) return;
+    const quit = () => process.stdout.write('', () => process.exit(code || 0));
+    setTimeout(() => process.exit(code || 0), 5000).unref();
+    if (serverInterceptor.readableEnded) quit();
+    else serverInterceptor.once('end', quit);
   });
 
   child.on('error', (err) => {

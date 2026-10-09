@@ -46,6 +46,22 @@ describe('proxy hardening', () => {
     expect(logs()).toContain('[EMAIL_MASKED]');
   }, 30000);
 
+  it('delivers everything the server wrote before it exited, tail included, even with a slow reader', async () => {
+    maskOn();
+    const big = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { t: 'x'.repeat(3000000) } });
+    const tail = JSON.stringify({ jsonrpc: '2.0', id: 2, result: { email: 'tail@corp.example' } });
+    const server = serverFile(`process.stdout.write(${JSON.stringify(big)} + '\\n' + ${JSON.stringify(tail)});`);
+    // Reading through a shell pipe that stalls first makes the proxy's stdout back up.
+    const proc = execa('sh', ['-c', `node "${CLI}" proxy --command node --args "${server}" </dev/null | (sleep 0.5; cat)`], {
+      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir }, maxBuffer: 1e8,
+    });
+    const res = await proc;
+    const lines = res.stdout.split('\n').filter(Boolean);
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0]).result.t.length).toBe(3000000);
+    expect(JSON.parse(lines[1]).result.email).toBe('[EMAIL_MASKED]');
+  }, 30000);
+
   it('masks a final client line that has no trailing newline', async () => {
     maskOn();
     const out = path.join(dir, 'got.txt');
