@@ -66,6 +66,17 @@ lint:
   script:
     - npm run lint
 
+typecheck:
+  stage: quality
+  image: node:20
+  rules: *mr-and-branch
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-20"
+    paths:
+      - node_modules/
+  script:
+    - npm run typecheck
+
 build:
   stage: build
   image: node:${NODE_VERSION}
