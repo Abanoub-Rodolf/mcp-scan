@@ -78,5 +78,19 @@ describe('Privacy Engine', () => {
       expect(output.text).toContain('[EMAIL_MASKED]');
       expect(output.text).not.toContain('admin@example.com');
     });
+
+    it('throws past the depth limit instead of returning unmasked data', () => {
+      const nest = (n: number, leaf: string) => { let v: any = leaf; for (let i = 0; i < n; i++) v = { n: v }; return v; };
+      expect(() => maskPii(nest(150, 'deep@corp.example'))).toThrow(/depth/i);
+      expect(() => maskPii(nest(150, 'deep@corp.example'), undefined, true)).toThrow(/depth/i);
+      expect(() => maskPii([[[[nest(150, 'x')]]]])).toThrow(/depth/i);
+    });
+
+    it('still masks right up to the depth limit', () => {
+      const nest = (n: number, leaf: string) => { let v: any = leaf; for (let i = 0; i < n; i++) v = { n: v }; return v; };
+      let out = maskPii(nest(99, 'ok@corp.example'));
+      for (let i = 0; i < 99; i++) out = out.n;
+      expect(out).toBe('[EMAIL_MASKED]');
+    });
   });
 });

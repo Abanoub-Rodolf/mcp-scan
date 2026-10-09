@@ -33,9 +33,12 @@ const MAX_MASK_DEPTH = 100;
 /**
  * Recursively masks PII in an object, array, or string.
  * Pass deepClone=true to avoid mutating the original (useful in scan pipelines).
+ * Throws if the data nests deeper than MAX_MASK_DEPTH; it never returns data it did not mask.
  */
 export function maskPii(data: any, options?: PrivacyOptions, deepClone = false, depth = 0): any {
-  if (depth > MAX_MASK_DEPTH) return data;
+  // Fail closed: past the limit we can't vouch for what is below, so the
+  // caller must drop the message rather than forward it unmasked.
+  if (depth > MAX_MASK_DEPTH) throw new Error(`privacy masking depth limit (${MAX_MASK_DEPTH}) exceeded`);
   if (deepClone && data != null && typeof data === 'object') {
     data = JSON.parse(JSON.stringify(data));
   }
