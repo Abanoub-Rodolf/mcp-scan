@@ -145,10 +145,12 @@ describe('proxy lifecycle', () => {
     const stamp = path.join(dir, 'stamp');
     const started = Date.now();
     // the reader holds the pipe open without reading for 9s
-    await execa('sh', ['-c', `(node "${CLI}" proxy --command node --args "${server}" </dev/null; node -e "require('fs').writeFileSync('${stamp}', String(Date.now()))") | sleep 9`], {
+    const res = await execa('sh', ['-c', `(node "${CLI}" proxy --command node --args "${server}" </dev/null; node -e "require('fs').writeFileSync('${stamp}', String(Date.now()))") | sleep 9`], {
       cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir, MCP_SCAN_STALL_MS: '3000' },
     });
     // 3s stall + at most ~1s to flush; the old two-stage wait would be about 6s
     expect(Number(fs.readFileSync(stamp, 'utf8')) - started).toBeLessThan(5500);
+    // and it says what it dropped
+    expect(res.stderr).toMatch(/gave up on a client that stopped reading: dropped \d+ bytes/);
   }, 40000);
 });

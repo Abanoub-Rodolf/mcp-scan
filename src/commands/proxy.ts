@@ -318,13 +318,15 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   let exitPoll: NodeJS.Timeout | undefined;
   let lastActivity = Date.now();
   child.stdout.on('data', () => { lastActivity = Date.now(); });
+  process.stdout.on('drain', () => { lastActivity = Date.now(); });
   const backlog = () => child.stdout.readableLength + serverInterceptor.readableLength + serverInterceptor.writableLength + process.stdout.writableLength;
   // How long a client with output queued may stay silent before we give up
   // on it. One deadline: the exit poll and the post-settle net share it.
   const stallMs = Number(process.env.MCP_SCAN_STALL_MS) || 60000;
-  const settle = (code: number | null, forced = false, idleMs = 0) => {
+  const settle = (code: number | null, forced = false) => {
     if (settled) return;
     settled = true;
+    const idleMs = Date.now() - lastActivity;
     if (exitPoll) clearInterval(exitPoll);
     logger.info(`Server exited with code ${code}`);
     process.exitCode = code || 0;
@@ -368,10 +370,13 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
       // Time already spent stalled counts: the whole wait is one deadline,
       // plus a last second to flush what is already queued on stdout.
       const ticks = Math.ceil(stallMs / 500);
-      let still = forced && last > 0 ? Math.max(0, Math.min(ticks, Math.floor(idleMs / 500)) - 2) : 0;
+      // The preload is a floor: a client that reads a little and stalls
+      // again does not get a fresh deadline.
+      const floor = last > 0 ? Math.max(0, Math.min(ticks, Math.floor(idleMs / 500)) - 2) : 0;
+      let still = floor;
       setInterval(() => {
         const now = process.stdout.writableLength;
-        still = now === last ? still + 1 : 0;
+        still = now === last ? still + 1 : floor;
         last = now;
         // Nothing queued and still not done is stuck (5s). A reader that
         // simply stopped reading gets the full stall deadline.
@@ -388,8 +393,7 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
       // Nothing queued: 2s of quiet is enough. Something queued for a client
       // that has stopped reading: that client gets stallMs (60s), then we cut it off,
       // or a descendant plus a dead reader would keep us up forever.
-      const idle = Date.now() - lastActivity;
-      if (idle >= (now > 0 ? stallMs : 2000)) settle(code, true, idle);
+      if (Date.now() - lastActivity >= (now > 0 ? stallMs : 2000)) settle(code, true);
     }, 200);
   });
   child.on('close', (code) => settle(code));
