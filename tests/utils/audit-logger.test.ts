@@ -133,10 +133,31 @@ describe('fingerprint scope', () => {
     expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
   });
 
-  it('rebuilds a store written by the older recipe without flagging anything', () => {
-    fs.writeFileSync(path.join(home, 'known-servers.json'), JSON.stringify({ 'Cursor:files': 'old-hash' }));
-    expect(checkFingerprints([server(['-y', 'pkg'], '1.0.0')])).toEqual({});
+  const sha = 'a'.repeat(64);
+  const storeFile = () => path.join(home, 'known-servers.json');
+  const quarantined = () => fs.readdirSync(home).filter(f => f.startsWith('known-servers.json.corrupt-'));
+
+  it('upgrades a verified old-format store with an INFO line, not silence', () => {
+    fs.writeFileSync(storeFile(), JSON.stringify({ 'Cursor:files': sha, 'Cursor:other': sha }));
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0')])['Cursor:files'];
+    expect(f).toHaveLength(1);
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'INFO' });
+    expect(f?.[0].description).toMatch(/baseline was reset/);
+    expect(quarantined()).toHaveLength(0);
     logScan(report([server(['-y', 'pkg'], '1.0.0')]));
-    expect(checkFingerprints([server(['-y', 'pkg', '--evil'], '1.0.0')])['Cursor:files']).toBeDefined();
+    expect(checkFingerprints([server(['-y', 'pkg', '--evil'], '1.0.0')])['Cursor:files']?.[0].severity).toBe('MEDIUM');
+  });
+
+  it.each([
+    ['a wrong schema value', { __schema: '1', 'Cursor:files': sha }],
+    ['a future schema value', { __schema: '3', 'Cursor:files': sha }],
+    ['a missing schema with non-hash values', { 'Cursor:files': 'not-a-hash' }],
+    ['a missing schema but current-format extras', { 'Cursor:files': sha, 'Cursor:files#resolved': '1.0.0' }],
+    ['an emptied store', {}],
+  ])('treats %s as a bad store: MEDIUM finding and quarantine', (_n, content) => {
+    fs.writeFileSync(storeFile(), JSON.stringify(content));
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0')])['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
+    expect(quarantined()).toHaveLength(1);
   });
 });

@@ -61,7 +61,16 @@ const SCHEMA_KEY = '__schema';
 const SCHEMA = '2';
 const resolvedKey = (key: string) => `${key}#resolved`;
 
-type Store = { status: 'missing' } | { status: 'ok'; data: Record<string, string> } | { status: 'bad'; reason: string };
+type Store = { status: 'missing' } | { status: 'ok' | 'legacy'; data: Record<string, string> } | { status: 'bad'; reason: string };
+
+// What mcp-scan <= 2.0.13 wrote: "tool:server" -> sha256 hex, nothing else.
+// Only a file that matches this exactly is treated as a store to upgrade;
+// a store missing its schema marker for any other reason is suspect.
+function isLegacyShape(data: Record<string, string>): boolean {
+  const entries = Object.entries(data);
+  return entries.length > 0
+    && entries.every(([k, v]) => /^[^:#_][^:#]*:[^#]+$/.test(k) && /^[0-9a-f]{64}$/.test(v));
+}
 
 function fingerprintFile(): string {
   return path.join(auditDir(), 'known-servers.json');
@@ -80,7 +89,10 @@ function readStore(): Store {
     const data = JSON.parse(raw);
     const valid = data !== null && typeof data === 'object' && !Array.isArray(data)
       && Object.values(data).every(v => typeof v === 'string');
-    return valid ? { status: 'ok', data } : { status: 'bad', reason: 'not a map of fingerprints' };
+    if (!valid) return { status: 'bad', reason: 'not a map of fingerprints' };
+    if (data[SCHEMA_KEY] === SCHEMA) return { status: 'ok', data };
+    if (SCHEMA_KEY in data) return { status: 'bad', reason: `unknown schema '${data[SCHEMA_KEY]}'` };
+    return isLegacyShape(data) ? { status: 'legacy', data } : { status: 'bad', reason: 'no schema marker and not the old store format' };
   } catch (e) {
     return { status: 'bad', reason: e instanceof Error ? e.message : String(e) };
   }
@@ -115,7 +127,19 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
     return mutationFindings;
   }
 
-  if (store.data[SCHEMA_KEY] !== SCHEMA) return mutationFindings;
+  // An old-format store cannot be compared against the new recipe, so the
+  // baseline resets. Say so, once, instead of resetting silently.
+  if (store.status === 'legacy') {
+    for (const result of results) {
+      mutationFindings[`${result.toolName}:${result.serverName}`] = [{
+        id: 'server-mutation',
+        severity: 'INFO',
+        description: `Server '${result.serverName}' baseline was reset: the fingerprint store used an older format, so this scan could not check it for changes.`,
+        fixRecommendation: 'No action needed. Changes are tracked from this scan on.'
+      }];
+    }
+    return mutationFindings;
+  }
 
   for (const result of results) {
     const key = `${result.toolName}:${result.serverName}`;
@@ -154,7 +178,7 @@ function updateFingerprints(results: ServerScanResult[]) {
     const store = readStore();
     if (store.status === 'bad') quarantineStore();
     // A store from an older recipe is rebuilt from scratch, not merged.
-    const fingerprints = store.status === 'ok' && store.data[SCHEMA_KEY] === SCHEMA ? store.data : {};
+    const fingerprints = store.status === 'ok' ? store.data : {};
     fingerprints[SCHEMA_KEY] = SCHEMA;
 
     for (const result of results) {
