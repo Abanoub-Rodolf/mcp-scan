@@ -157,9 +157,41 @@ describe('proxy log hardening', () => {
       noLeak();
     });
 
-    it('warns on stderr, without replying to the client, when a server message cannot be masked', async () => {
+    it('replaces an unmaskable server response with an error for the same id, so the client does not hang', async () => {
       await runProxy({ command: 'node', args: '-v' });
       childStdout.write(JSON.stringify({ jsonrpc: '2.0', id: 3, result: { email: secret } }) + '\n');
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(replies()).toEqual([{ jsonrpc: '2.0', id: 3, error: { code: -32603, message: expect.any(String) } }]);
+      noLeak();
+    });
+
+    it('answers an unmaskable server request to the server, not the client', async () => {
+      let toServer = '';
+      childStdin.on('data', c => { toServer += c.toString(); });
+      await runProxy({ command: 'node', args: '-v' });
+      childStdout.write(JSON.stringify({ jsonrpc: '2.0', id: 'srv-1', method: 'sampling/createMessage', params: { email: secret } }) + '\n');
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(replies()).toEqual([]);
+      expect(JSON.parse(toServer)).toMatchObject({ id: 'srv-1', error: { code: -32603 } });
+      noLeak();
+    });
+
+    it('settles a server request whose client response cannot be masked', async () => {
+      let toServer = '';
+      childStdin.on('data', c => { toServer += c.toString(); });
+      await runProxy({ command: 'node', args: '-v' });
+      await send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-2', result: { email: secret } }));
+
+      expect(replies()).toEqual([]);
+      expect(JSON.parse(toServer)).toMatchObject({ id: 'srv-2', error: { code: -32603 } });
+      noLeak();
+    });
+
+    it('warns on stderr for a server notification, with no reply', async () => {
+      await runProxy({ command: 'node', args: '-v' });
+      childStdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/x', params: { email: secret } }) + '\n');
       await new Promise(r => setTimeout(r, 50));
 
       expect(replies()).toEqual([]);
