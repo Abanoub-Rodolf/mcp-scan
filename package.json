@@ -33,6 +33,7 @@
     "build": "tsup && node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('data',{recursive:true});cpSync('src/data/cve-snapshot.json','data/cve-snapshot.json');\"",
     "build:action": "tsup --config tsup.config.ts",
     "dev": "tsup --watch",
+    "pretest": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src --ext .ts",
