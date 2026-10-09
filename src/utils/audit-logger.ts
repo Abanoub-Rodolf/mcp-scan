@@ -54,48 +54,88 @@ export function logScan(report: ScanReport) {
   } catch (_error) {}
 }
 
+type Store = { status: 'missing' } | { status: 'ok'; data: Record<string, string> } | { status: 'bad'; reason: string };
+
+function fingerprintFile(): string {
+  return path.join(auditDir(), 'known-servers.json');
+}
+
+function readStore(): Store {
+  const file = fingerprintFile();
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing' };
+    return { status: 'bad', reason: e instanceof Error ? e.message : String(e) };
+  }
+  try {
+    const data = JSON.parse(raw);
+    const valid = data !== null && typeof data === 'object' && !Array.isArray(data)
+      && Object.values(data).every(v => typeof v === 'string');
+    return valid ? { status: 'ok', data } : { status: 'bad', reason: 'not a map of fingerprints' };
+  } catch (e) {
+    return { status: 'bad', reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// Move a corrupt store aside so the next scan rebuilds a baseline instead
+// of tripping on the same file forever.
+function quarantineStore() {
+  try {
+    const file = fingerprintFile();
+    fs.renameSync(file, `${file}.corrupt-${Date.now()}`);
+  } catch (_e) {}
+}
+
 export function checkFingerprints(results: ServerScanResult[]): Record<string, Finding[]> {
   const mutationFindings: Record<string, Finding[]> = {};
-  try {
-    const fingerprintFile = path.join(auditDir(), 'known-servers.json');
-    if (!fs.existsSync(fingerprintFile)) return mutationFindings;
-    
-    let knownFingerprints: Record<string, string> = {};
-    try {
-      knownFingerprints = JSON.parse(fs.readFileSync(fingerprintFile, 'utf8'));
-    } catch (_e) {}
-    
+  const store = readStore();
+  if (store.status === 'missing') return mutationFindings;
+
+  // Fail closed: if the baseline cannot be trusted, no server can be
+  // verified, so every server is reported rather than silently passed.
+  if (store.status === 'bad') {
+    quarantineStore();
     for (const result of results) {
-      const key = `${result.toolName}:${result.serverName}`;
-      const currentFingerprint = generateFingerprint(result);
-      
-      if (knownFingerprints[key] && knownFingerprints[key] !== currentFingerprint) {
-        mutationFindings[key] = [{
-          id: 'server-mutation',
-          severity: 'MEDIUM',
-          description: `Server '${result.serverName}' configuration has changed since the last scan. This may indicate unauthorized modification.`,
-          fixRecommendation: 'Review the changes. Confirm they are intentional and not introduced by a third party.'
-        }];
-      }
+      mutationFindings[`${result.toolName}:${result.serverName}`] = [{
+        id: 'server-mutation',
+        severity: 'MEDIUM',
+        description: `Server '${result.serverName}' could not be checked for tampering: the fingerprint store (${fingerprintFile()}) was unreadable or corrupt (${store.reason}). Treat it as possibly modified.`,
+        fixRecommendation: 'The bad file was moved aside and a fresh baseline is built on this scan. Review the server configs by hand this once, and check why the store was damaged.'
+      }];
     }
-  } catch (_error) {}
+    return mutationFindings;
+  }
+
+  for (const result of results) {
+    const key = `${result.toolName}:${result.serverName}`;
+    const currentFingerprint = generateFingerprint(result);
+
+    if (store.data[key] && store.data[key] !== currentFingerprint) {
+      mutationFindings[key] = [{
+        id: 'server-mutation',
+        severity: 'MEDIUM',
+        description: `Server '${result.serverName}' configuration has changed since the last scan. This may indicate unauthorized modification.`,
+        fixRecommendation: 'Review the changes. Confirm they are intentional and not introduced by a third party.'
+      }];
+    }
+  }
   return mutationFindings;
 }
 
 function updateFingerprints(results: ServerScanResult[]) {
   try {
-    let fingerprints: Record<string, string> = {};
-    const fingerprintFile = path.join(auditDir(), 'known-servers.json');
-    if (fs.existsSync(fingerprintFile)) {
-      fingerprints = JSON.parse(fs.readFileSync(fingerprintFile, 'utf8'));
-    }
+    const store = readStore();
+    if (store.status === 'bad') quarantineStore();
+    const fingerprints = store.status === 'ok' ? store.data : {};
 
     for (const result of results) {
       const key = `${result.toolName}:${result.serverName}`;
       fingerprints[key] = generateFingerprint(result);
     }
 
-    atomicWriteConfig(fingerprintFile, JSON.stringify(fingerprints, null, 2));
+    atomicWriteConfig(fingerprintFile(), JSON.stringify(fingerprints, null, 2));
   } catch (_error) {}
 }
 
