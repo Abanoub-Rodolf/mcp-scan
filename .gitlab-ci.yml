@@ -40,11 +40,13 @@ variables:
 #
 # workflow:rules below stops a branch with an open MR from also running a
 # push pipeline: the MR pipeline already covers that commit, and both used to
-# run the full 7-job matrix on every push.
+# run the full 7-job matrix on every push. Only push pipelines are dropped:
+# schedules, API and web pipelines on the same branch still run.
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+    # A conflicted MR gets no MR pipeline (GitLab behavior), and the merge is blocked anyway.
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"'
       when: never
     - if: '$CI_COMMIT_BRANCH'
     - if: '$CI_COMMIT_TAG'
