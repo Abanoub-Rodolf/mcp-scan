@@ -209,6 +209,17 @@ mcp-scan runs locally on your machine. Config parsing, regex scanning, and all h
 - Optional npm/OSV.dev/GitHub API lookups for supply-chain and CVE scanning, off with `--offline`
 - Fully open source. Audit the code yourself.
 
+### Tamper detection and its limits
+
+mcp-scan fingerprints every server it scans and compares the next scan against that baseline (`~/.mcp-scan/known-servers.json`, or `$MCP_SCAN_HOME`). The baseline is signed so it cannot be quietly edited or removed:
+
+- The store carries an HMAC-SHA256 over its sorted contents. The key is 32 random bytes in `~/.mcp-scan/baseline.key`, created with mode 0600 on the first scan and never stored in the baseline.
+- A store with a missing or wrong signature, a signed store whose key is gone, or a damaged key is reported as `server-mutation` at MEDIUM for every server. The bad file is renamed to `known-servers.json.corrupt-<time>` and a new baseline and key are built.
+- A deleted store is reported at MEDIUM too when the key or the audit log shows an earlier baseline. A first run with neither stays quiet.
+- A valid unsigned store from an earlier release is signed once, with a single INFO finding.
+
+What this does not stop: anyone running as your user can read `baseline.key`, so they can re-sign a forged store. They can also delete the key, the store and the audit log together and look like a first run, or rewrite the store without a signature and delete the key, which reads as the one-time upgrade and gets only an INFO. It catches casual edits, scripts that rewrite the store, and deletion that leaves other traces. It does not defend against an attacker with full access to your account. For that, keep the baseline somewhere that account cannot write, or compare scan output in CI.
+
 ---
 
 ## Roadmap
