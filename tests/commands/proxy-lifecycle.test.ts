@@ -77,4 +77,32 @@ describe('proxy lifecycle', () => {
     expect(Array.isArray(replies[replies.length - 1])).toBe(true);
     expect(res.stderr).not.toMatch(/Unhandled|node:events/);
   }, 30000);
+
+  it('delivers every line when the server exits while a slow client has not read yet', async () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 40; i++) lines.push(JSON.stringify({ jsonrpc: '2.0', id: i, result: { pad: 'x'.repeat(9000) } }));
+    const file = path.join(dir, 'responses.txt');
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+    const bytes = fs.statSync(file).size;
+    // cat exits at once; the reader sleeps longer than any fixed grace period
+    const res = await execa('sh', ['-c', `node "${CLI}" proxy --command cat --args "${file}" </dev/null | (sleep 4; wc -lc)`], {
+      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir },
+    });
+    expect(res.stdout.trim().split(/\s+/).map(Number)).toEqual([40, bytes]);
+  }, 30000);
+
+  it('still exits within about 3s when only a descendant holds the stdout open', async () => {
+    const server = serverFile(`
+      require('child_process').spawn('sleep', ['9'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ok: true } }) + '\\n' + '{"partial":');
+      process.exit(0);`);
+    const started = Date.now();
+    const res = await execa('node', [CLI, 'proxy', '--command', 'node', '--args', server], {
+      cwd: dir, reject: false, input: '', env: { MCP_SCAN_LOG_DIR: logDir },
+    });
+    expect(Date.now() - started).toBeLessThan(4500);
+    // the unfinished fragment is abandoned with a warning, never forwarded as if it were a message
+    expect(res.stdout.trim().split('\n')).toHaveLength(1);
+    expect(res.stderr).toMatch(/abandon|unfinished/i);
+  }, 30000);
 });

@@ -54,6 +54,16 @@ class JsonRpcInterceptor extends Transform {
     this.resume(); // nothing is pushed any more, but keep the buffers moving
   }
 
+  // Called when we stop waiting on a pipe that never closed: whatever is in
+  // the line buffer may be a fragment cut short, so it must not go out as if
+  // it were a message. Returns whether anything was dropped.
+  abandonTail(): boolean {
+    const had = this.buffer.trim().length > 0;
+    this.buffer = '';
+    this.decoder = new StringDecoder('utf8');
+    return had;
+  }
+
   private handleLine(line: string) {
     if (!line.trim()) return;
 
@@ -288,16 +298,23 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
 
   // The server's last output can still be in the pipe when 'exit' fires, so
   // normally wait for 'close'. But a descendant that inherited the server's
-  // stdout keeps that pipe open long after the server is gone, so 'exit'
-  // starts a short grace period after which we stop waiting.
+  // stdout keeps that pipe open long after the server is gone. So after
+  // 'exit' we give up only when nothing has moved for 2s: no new bytes from
+  // the server and nothing queued on the way to a (possibly slow) client.
   let settled = false;
-  let grace: NodeJS.Timeout | undefined;
-  const settle = (code: number | null) => {
+  let exitPoll: NodeJS.Timeout | undefined;
+  let lastActivity = Date.now();
+  child.stdout.on('data', () => { lastActivity = Date.now(); });
+  const backlog = () => child.stdout.readableLength + serverInterceptor.readableLength + serverInterceptor.writableLength + process.stdout.writableLength;
+  const settle = (code: number | null, forced = false) => {
     if (settled) return;
     settled = true;
-    if (grace) clearTimeout(grace);
+    if (exitPoll) clearInterval(exitPoll);
     logger.info(`Server exited with code ${code}`);
     process.exitCode = code || 0;
+    if (forced && serverInterceptor.abandonTail()) {
+      warnStderr('dropped an unfinished last line from the server: it exited without a newline and its output pipe never closed');
+    }
     // Stop reading both sides and run each interceptor's flush, so an
     // unterminated last line is masked, logged and answered like any other.
     // The log is closed only after both are done, or it would lose that tail.
@@ -316,9 +333,26 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     };
     if (clientInterceptor.writableFinished) part(); else clientInterceptor.once('finish', part);
     if (serverInterceptor.readableEnded) part(); else serverInterceptor.once('end', part);
-    if (!process.env.MCP_SCAN_NO_EXIT) setTimeout(() => process.exit(code || 0), 5000).unref();
+    if (!process.env.MCP_SCAN_NO_EXIT) {
+      // Safety net for a stdout that never drains: give up after 5s of no
+      // movement, not 5s of total time, so a slow reader still gets it all.
+      let last = process.stdout.writableLength;
+      let still = 0;
+      setInterval(() => {
+        const now = process.stdout.writableLength;
+        still = now === last ? still + 1 : 0;
+        last = now;
+        if (still >= 10) process.exit(code || 0);
+      }, 500).unref();
+    }
   };
-  child.on('exit', (code) => { grace = setTimeout(() => settle(code), 2000); });
+  child.on('exit', (code) => {
+    lastActivity = Date.now();
+    exitPoll = setInterval(() => {
+      if (backlog() > 0) lastActivity = Date.now();
+      else if (Date.now() - lastActivity >= 2000) settle(code, true);
+    }, 200);
+  });
   child.on('close', (code) => settle(code));
 
   child.on('error', (err) => {
