@@ -14,13 +14,13 @@ describe('Policy Engine', () => {
       blockedPackages: ['malicious-pkg']
     };
     
-    vi.mocked(fs.existsSync).mockImplementation((p: string) => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
         if (p.toString().endsWith('.mcp-scan.json')) return true;
         if (p.toString().endsWith('config.json')) return true;
         return false;
     });
 
-    vi.mocked(fs.readFileSync).mockImplementation((p: string) => {
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
         if (p.toString().endsWith('.mcp-scan.json')) return JSON.stringify(policy);
         if (p.toString().endsWith('config.json')) return JSON.stringify({
             mcpServers: {
@@ -43,8 +43,8 @@ describe('Policy Engine', () => {
       suppressRules: ['unverified-source']
     };
 
-    vi.mocked(fs.existsSync).mockImplementation((p: string) => p.toString().endsWith('.mcp-scan.json') || p.toString().endsWith('config.json'));
-    vi.mocked(fs.readFileSync).mockImplementation((p: string) => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => p.toString().endsWith('.mcp-scan.json') || p.toString().endsWith('config.json'));
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
         if (p.toString().endsWith('.mcp-scan.json')) return JSON.stringify(policy);
         if (p.toString().endsWith('config.json')) return JSON.stringify({
             mcpServers: {

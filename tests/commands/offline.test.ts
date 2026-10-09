@@ -11,14 +11,14 @@ describe('Offline Mode', () => {
   });
 
   it('should not make network calls when --offline is used', async () => {
-    vi.mocked(fs.existsSync).mockImplementation((p: string) => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
         if (p.toString().endsWith('config.json')) return true;
         if (p.toString().endsWith('cve-snapshot.json')) return true;
         if (p.toString().endsWith('.mcp-scan.json')) return false;
         return false;
     });
 
-    vi.mocked(fs.readFileSync).mockImplementation((p: string) => {
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
         if (p.toString().endsWith('config.json')) return JSON.stringify({
             mcpServers: { "test": { command: "npx", args: ["some-pkg"] } }
         });

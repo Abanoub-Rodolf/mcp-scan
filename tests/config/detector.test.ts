@@ -62,7 +62,7 @@ describe('Detector Paths', () => {
 
   it('should not detect same config path under multiple tool names', async () => {
     const { detectTools } = await import('../../src/config/detector.js');
-    const tools = await detectTools({ fs: fsMock, os: osMock as typeof os, process: processMock as typeof process });
+    const tools = await detectTools({ fs: fsMock as unknown as typeof import("fs"), os: osMock as unknown as typeof os, process: processMock as unknown as typeof process });
     const pathCounts = new Map<string, number>();
     for (const tool of tools) {
       const resolved = path.resolve(tool.configPath);
@@ -75,7 +75,7 @@ describe('Detector Paths', () => {
 
   it('should detect newly added tool configs, including globbed and project-level', async () => {
     const { detectTools } = await import('../../src/config/detector.js');
-    const detected = await detectTools({ fs: fsMock, os: osMock as typeof os, process: processMock as typeof process });
+    const detected = await detectTools({ fs: fsMock as unknown as typeof import("fs"), os: osMock as unknown as typeof os, process: processMock as unknown as typeof process });
     const detectedNames = detected.map(t => t.name);
 
     expect(detectedNames).toContain('Zed');
