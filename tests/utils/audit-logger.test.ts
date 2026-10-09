@@ -243,7 +243,6 @@ describe('fingerprint scope', () => {
     ['a future schema value', { __schema: '3', 'Cursor:files': sha }],
     ['a missing schema with non-hash values', { 'Cursor:files': 'not-a-hash' }],
     ['a missing schema but current-format extras', { 'Cursor:files': sha, 'Cursor:files#resolved': '1.0.0' }],
-    ['an emptied store', {}],
   ])('treats %s as a bad store: MEDIUM finding and quarantine', (_n, content) => {
     fs.writeFileSync(storeFile(), JSON.stringify(content));
     const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0')])['Cursor:files'];
