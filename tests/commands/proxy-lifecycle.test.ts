@@ -105,4 +105,15 @@ describe('proxy lifecycle', () => {
     expect(res.stdout.trim().split('\n')).toHaveLength(1);
     expect(res.stderr).toMatch(/abandon|unfinished/i);
   }, 30000);
+
+  it('delivers a complete last line that lacks a newline even when the output pipe never closes', async () => {
+    const server = serverFile(`
+      require('child_process').spawn('sleep', ['9'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }) + '\\n' + JSON.stringify({ jsonrpc: '2.0', id: 2, result: {} }));
+      process.exit(0);`);
+    const res = await execa('node', [CLI, 'proxy', '--command', 'node', '--args', server], {
+      cwd: dir, reject: false, input: '', env: { MCP_SCAN_LOG_DIR: logDir },
+    });
+    expect(res.stdout.trim().split('\n').map(l => JSON.parse(l).id)).toEqual([1, 2]);
+  }, 30000);
 });

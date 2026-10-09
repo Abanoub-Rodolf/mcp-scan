@@ -54,14 +54,17 @@ class JsonRpcInterceptor extends Transform {
     this.resume(); // nothing is pushed any more, but keep the buffers moving
   }
 
-  // Called when we stop waiting on a pipe that never closed: whatever is in
-  // the line buffer may be a fragment cut short, so it must not go out as if
-  // it were a message. Returns whether anything was dropped.
+  // Called when we stop waiting on a pipe that never closed: a line buffer
+  // that is not valid JSON may be a fragment cut short, so it must not go out
+  // as if it were a message. Returns whether anything was dropped.
   abandonTail(): boolean {
-    const had = this.buffer.trim().length > 0;
+    const tail = this.buffer.trim();
+    if (!tail) return false;
+    // A complete message that merely lacks its newline is kept for the flush.
+    try { JSON.parse(tail); return false; } catch (_e) { /* cut short */ }
     this.buffer = '';
     this.decoder = new StringDecoder('utf8');
-    return had;
+    return true;
   }
 
   private handleLine(line: string) {
@@ -313,8 +316,12 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     logger.info(`Server exited with code ${code}`);
     process.exitCode = code || 0;
     if (forced && serverInterceptor.abandonTail()) {
-      warnStderr('dropped an unfinished last line from the server: it exited without a newline and its output pipe never closed');
+      const note = 'dropped an unfinished last line from the server: it exited without a newline and its output pipe never closed';
+      warnStderr(note);
+      if (dashboardCallback) dashboardCallback('PROXY', note, false);
     }
+    // We cut the client off here too; its half-read line has nowhere to go.
+    clientInterceptor.abandonTail();
     // Stop reading both sides and run each interceptor's flush, so an
     // unterminated last line is masked, logged and answered like any other.
     // The log is closed only after both are done, or it would lose that tail.
@@ -334,15 +341,17 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     if (clientInterceptor.writableFinished) part(); else clientInterceptor.once('finish', part);
     if (serverInterceptor.readableEnded) part(); else serverInterceptor.once('end', part);
     if (!process.env.MCP_SCAN_NO_EXIT) {
-      // Safety net for a stdout that never drains: give up after 5s of no
-      // movement, not 5s of total time, so a slow reader still gets it all.
+      // Safety net for a stdout that never drains: counts time with no
+      // movement, not total time, so a slow reader still gets it all.
       let last = process.stdout.writableLength;
       let still = 0;
       setInterval(() => {
         const now = process.stdout.writableLength;
         still = now === last ? still + 1 : 0;
         last = now;
-        if (still >= 10) process.exit(code || 0);
+        // Nothing queued and still not done is stuck (5s). A reader that
+        // simply stopped reading gets much longer (60s) before we cut it off.
+        if (still >= (now === 0 ? 10 : 120)) process.exit(code || 0);
       }, 500).unref();
     }
   };
