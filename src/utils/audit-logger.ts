@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
+import semver from 'semver';
 import { ScanReport, ServerScanResult, Finding } from '../types/scan-result.js';
 import { atomicWriteConfig } from '../config/writer.js';
 
@@ -133,11 +134,15 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
     const before = store.data[resolvedKey(key)];
     const now = result.metadata?.version;
     if (store.data[key] && before && now && before !== now) {
+      // A resolved version swap is how a rug-pull looks, so it is MEDIUM.
+      // Only a plain patch bump of the same package drops to LOW.
+      const patchBump = semver.valid(before) && semver.valid(now)
+        && semver.gt(now, before) && semver.diff(before, now) === 'patch';
       mutationFindings[key] = [{
         id: 'server-mutation',
-        severity: 'INFO',
-        description: `Server '${result.serverName}' resolved to a new package version since the last scan (${before} -> ${now}). The config itself is unchanged.`,
-        fixRecommendation: 'Pin the version in the config if you want a fixed build.'
+        severity: patchBump ? 'LOW' : 'MEDIUM',
+        description: `Server '${result.serverName}' resolved to a different package version since the last scan (${before} -> ${now}). The config itself is unchanged. This may indicate a package swap.`,
+        fixRecommendation: 'Pin the version in the config and confirm the new release is the one you expect.'
       }];
     }
   }
@@ -166,14 +171,17 @@ function updateFingerprints(results: ServerScanResult[]) {
 
 // Hash of the config the user wrote. The resolved package version is left
 // out on purpose: an unpinned npx server gets a new version whenever its
-// publisher ships, and that is not tampering. It is tracked separately.
+// publisher ships, so the version is tracked separately and judged by how
+// it moved. The package name stays in: a different package is a swap.
 function generateFingerprint(result: ServerScanResult): string {
   const data = {
     command: result.connection?.command,
     args: result.connection?.args,
     url: result.connection?.url,
     type: result.connection?.type,
-    env: result.connection?.env // Already sorted in scan.ts
+    env: result.connection?.env, // Already sorted in scan.ts
+    // Same in offline and online scans. A swapped package is tampering.
+    packageName: result.metadata?.packageName
   };
   return crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
 }

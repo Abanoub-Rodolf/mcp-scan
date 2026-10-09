@@ -5,7 +5,7 @@ import path from 'path';
 import { checkFingerprints, logScan } from '../../src/utils/audit-logger.js';
 import { ScanReport, ServerScanResult } from '../../src/types/scan-result.js';
 
-function server(args: string[], version?: string): ServerScanResult {
+function server(args: string[], version?: string, pkg = 'pkg'): ServerScanResult {
   return {
     serverName: 'files',
     toolName: 'Cursor',
@@ -13,7 +13,8 @@ function server(args: string[], version?: string): ServerScanResult {
     findings: [],
     scanDurationMs: 1,
     connection: { command: 'npx', args, type: 'stdio', env: [] },
-    metadata: version ? { packageName: 'pkg', version } : undefined,
+    // Offline scans still know the package name; only the version is missing.
+    metadata: { packageName: pkg, ...(version ? { version } : {}) },
   };
 }
 
@@ -96,13 +97,29 @@ describe('fingerprint scope', () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it('does not call a new upstream release tampering', () => {
+  it('flags a patch bump of the same package, but only at LOW', () => {
     logScan(report([server(['-y', 'pkg'], '1.0.0')]));
-    const found = checkFingerprints([server(['-y', 'pkg'], '1.0.1')]);
-    const f = found['Cursor:files'];
-    expect(f?.every(x => x.severity !== 'MEDIUM')).toBe(true);
-    expect(f?.[0]).toMatchObject({ severity: 'INFO' });
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.1')])['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'LOW' });
     expect(f?.[0].description).toContain('1.0.0 -> 1.0.1');
+  });
+
+  it.each([
+    ['minor bump', '1.0.0', '1.1.0'],
+    ['major bump', '1.0.0', '2.0.0'],
+    ['downgrade', '1.0.5', '1.0.4'],
+    ['prerelease', '1.0.0', '1.0.1-beta.1'],
+    ['non-semver', '1.0.0', 'latest-build'],
+  ])('flags a resolved version swap (%s) at MEDIUM', (_n, before, after) => {
+    logScan(report([server(['-y', 'pkg'], before)]));
+    const f = checkFingerprints([server(['-y', 'pkg'], after)])['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
+  });
+
+  it('flags a different package name at MEDIUM even when args and version look the same', () => {
+    logScan(report([server(['-y', 'pkg'], '1.0.0', 'pkg')]));
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0', 'pkg-evil')])['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
   });
 
   it('does not flag the same config scanned offline then online', () => {
