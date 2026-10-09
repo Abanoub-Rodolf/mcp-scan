@@ -6,7 +6,7 @@ import os from 'os';
 import { Transform, TransformCallback } from 'stream';
 import { StringDecoder } from 'string_decoder';
 import { loadPolicy } from '../config/parser.js';
-import { maskPii, PrivacyOptions } from '../utils/privacy-engine.js';
+import { maskPii, maskString, PrivacyOptions } from '../utils/privacy-engine.js';
 import { reportBlessedImportError } from '../utils/dashboard-deps-hint.js';
 
 // The proxy's stdout is the protocol channel to the client, so its own
@@ -52,12 +52,13 @@ class JsonRpcInterceptor extends Transform {
     try {
       json = JSON.parse(line);
     } catch (_e) {
-      // Not JSON: forward untouched, but never put the raw line in the
-      // log or dashboard. It can't be masked, so it may hold secrets.
+      // Not JSON: forward it, but never put the raw line in the
+      // log or dashboard. It may hold secrets the string detectors miss.
       const note = `<unparsed line, ${line.length} chars, not logged>`;
       if (this.logStream) this.logStream.write(`[${this.direction} RAW] ${note}\n`);
       if (this.dashboardCallback) this.dashboardCallback(this.direction + ' RAW', note, false);
-      this.push(line + '\n');
+      // With masking on, an unparsed line gets the string detectors too.
+      this.push((this.privacyOptions ? maskString(line, this.privacyOptions) : line) + '\n');
       return;
     }
 

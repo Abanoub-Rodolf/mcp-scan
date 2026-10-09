@@ -122,6 +122,21 @@ describe('proxy hardening', () => {
     expect(logs()).toContain('[EMAIL_MASKED_2]');
   }, 30000);
 
+  it('masks a non-JSON stdout line from the server too, and does not log it', async () => {
+    maskOn();
+    const server = serverFile(`process.stdout.write('debug: mailing tail@corp.example now\\n');`);
+    const { stdout } = await run(server);
+    expect(stdout).not.toContain('tail@corp.example');
+    expect(stdout).toContain('mailing [EMAIL_MASKED] now');
+    expect(logs()).not.toContain('corp.example');
+  }, 30000);
+
+  it('forwards a non-JSON line untouched when masking is off', async () => {
+    const server = serverFile(`process.stdout.write('debug: mailing tail@corp.example now\\n');`);
+    const { stdout } = await run(server);
+    expect(stdout.trim()).toBe('debug: mailing tail@corp.example now');
+  }, 30000);
+
   // The pad shifts where the 64 KB pipe boundary lands inside a 3-byte
   // character; across the three pads at least one splits mid-character.
   it.each(['', 'a', 'aa'])('keeps multibyte characters intact when a 120 KB server line is split across chunks (pad %j)', async (pad) => {
