@@ -132,4 +132,23 @@ describe('proxy lifecycle', () => {
     });
     expect(res.stdout.trim().split(/\s+/).map(Number)).toEqual([40, bytes]);
   }, 40000);
+
+  it('gives up on a client that never reads after one stall deadline, not two', async () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 40; i++) lines.push(JSON.stringify({ jsonrpc: '2.0', id: i, result: { pad: 'x'.repeat(9000) } }));
+    const file = path.join(dir, 'responses.txt');
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+    const server = serverFile(`
+      require('child_process').spawn('sleep', ['30'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();
+      require('child_process').spawnSync('cat', [${JSON.stringify(file)}], { stdio: ['ignore', 'inherit', 'ignore'] });
+      process.exit(0);`);
+    const stamp = path.join(dir, 'stamp');
+    const started = Date.now();
+    // the reader holds the pipe open without reading for 9s
+    await execa('sh', ['-c', `(node "${CLI}" proxy --command node --args "${server}" </dev/null; node -e "require('fs').writeFileSync('${stamp}', String(Date.now()))") | sleep 9`], {
+      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir, MCP_SCAN_STALL_MS: '3000' },
+    });
+    // 3s stall + at most ~1s to flush; the old two-stage wait would be about 6s
+    expect(Number(fs.readFileSync(stamp, 'utf8')) - started).toBeLessThan(5500);
+  }, 40000);
 });

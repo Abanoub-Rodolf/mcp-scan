@@ -15,7 +15,7 @@ function warnStderr(msg: string) {
   if (!logger.isSilent) process.stderr.write(`mcp-scan proxy: ${msg}\n`);
 }
 
-class JsonRpcInterceptor extends Transform {
+export class JsonRpcInterceptor extends Transform {
   private buffer: string = '';
   // A multibyte character can straddle two chunks; decoding each chunk on
   // its own would turn the halves into U+FFFD.
@@ -26,6 +26,7 @@ class JsonRpcInterceptor extends Transform {
   private dashboardCallback?: (dir: string, msg: string, pii: boolean) => void;
   private replyToSender?: (line: string) => void;
   private refusing = false;
+  private discarding = false;
 
   constructor(direction: string, logStream: fs.WriteStream | null, privacyOptions?: PrivacyOptions, dashboardCallback?: (dir: string, msg: string, pii: boolean) => void, replyToSender?: (line: string) => void) {
     super();
@@ -37,6 +38,7 @@ class JsonRpcInterceptor extends Transform {
   }
 
   _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
+    if (this.discarding) return callback(); // gave up: queued input is dropped
     this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
 
     const lines = this.buffer.split('\n');
@@ -54,17 +56,24 @@ class JsonRpcInterceptor extends Transform {
     this.resume(); // nothing is pushed any more, but keep the buffers moving
   }
 
-  // Called when we stop waiting on a pipe that never closed: a line buffer
-  // that is not valid JSON may be a fragment cut short, so it must not go out
-  // as if it were a message. Returns whether anything was dropped.
-  abandonTail(): boolean {
+  // Called when we stop waiting. Whatever is in the line buffer, and any
+  // input still queued behind it for a stalled consumer (`unread` adds bytes
+  // the caller knows are waiting upstream), may be the front or back half of
+  // a line cut short, so none of it is forwarded: delivering the back half
+  // would send a fragment as if it were a message. One exception: nothing
+  // queued and a buffer that is complete JSON (just no newline) is kept for
+  // the flush. Returns what was dropped.
+  abandon(unread = 0): { queued: number; fragment: boolean } {
+    const queued = this.writableLength + unread;
     const tail = this.buffer.trim();
-    if (!tail) return false;
-    // A complete message that merely lacks its newline is kept for the flush.
-    try { JSON.parse(tail); return false; } catch (_e) { /* cut short */ }
+    if (queued === 0) {
+      if (!tail) return { queued: 0, fragment: false };
+      try { JSON.parse(tail); return { queued: 0, fragment: false }; } catch (_e) { /* cut short */ }
+    }
+    if (queued > 0) this.discarding = true;
     this.buffer = '';
     this.decoder = new StringDecoder('utf8');
-    return true;
+    return { queued, fragment: tail.length > 0 };
   }
 
   private handleLine(line: string) {
@@ -163,6 +172,7 @@ class JsonRpcInterceptor extends Transform {
   _flush(callback: TransformCallback) {
     // An unterminated last line goes through the same mask/drop path as any
     // other; pushing it raw would skip masking and logging.
+    if (this.discarding) return callback();
     this.buffer += this.decoder.end();
     const tail = this.buffer;
     this.buffer = '';
@@ -309,19 +319,30 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   let lastActivity = Date.now();
   child.stdout.on('data', () => { lastActivity = Date.now(); });
   const backlog = () => child.stdout.readableLength + serverInterceptor.readableLength + serverInterceptor.writableLength + process.stdout.writableLength;
-  const settle = (code: number | null, forced = false) => {
+  // How long a client with output queued may stay silent before we give up
+  // on it. One deadline: the exit poll and the post-settle net share it.
+  const stallMs = Number(process.env.MCP_SCAN_STALL_MS) || 60000;
+  const settle = (code: number | null, forced = false, idleMs = 0) => {
     if (settled) return;
     settled = true;
     if (exitPoll) clearInterval(exitPoll);
     logger.info(`Server exited with code ${code}`);
     process.exitCode = code || 0;
-    if (forced && serverInterceptor.abandonTail()) {
-      const note = 'dropped an unfinished last line from the server: it exited without a newline and its output pipe never closed';
-      warnStderr(note);
-      if (dashboardCallback) dashboardCallback('PROXY', note, false);
+    const note = (msg: string) => {
+      warnStderr(msg);
+      if (dashboardCallback) dashboardCallback('PROXY', msg, false);
+    };
+    if (forced) {
+      const dropped = serverInterceptor.abandon(child.stdout.readableLength);
+      if (dropped.queued > 0) {
+        note(`gave up on a client that stopped reading: dropped ${dropped.queued} bytes of server output not yet processed`);
+      } else if (dropped.fragment) {
+        note('dropped an unfinished last line from the server: it exited without a newline and its output pipe never closed');
+      }
     }
     // We cut the client off here too; its half-read line has nowhere to go.
-    if (clientInterceptor.abandonTail()) warnStderr('dropped an unfinished last line from the client');
+    const cut = clientInterceptor.abandon();
+    if (cut.queued > 0 || cut.fragment) warnStderr('dropped an unfinished last line from the client');
     // Stop reading both sides and run each interceptor's flush, so an
     // unterminated last line is masked, logged and answered like any other.
     // The log is closed only after both are done, or it would lose that tail.
@@ -344,14 +365,17 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
       // Safety net for a stdout that never drains: counts time with no
       // movement, not total time, so a slow reader still gets it all.
       let last = process.stdout.writableLength;
-      let still = 0;
+      // Time already spent stalled counts: the whole wait is one deadline,
+      // plus a last second to flush what is already queued on stdout.
+      const ticks = Math.ceil(stallMs / 500);
+      let still = forced && last > 0 ? Math.max(0, Math.min(ticks, Math.floor(idleMs / 500)) - 2) : 0;
       setInterval(() => {
         const now = process.stdout.writableLength;
         still = now === last ? still + 1 : 0;
         last = now;
         // Nothing queued and still not done is stuck (5s). A reader that
-        // simply stopped reading gets much longer (60s) before we cut it off.
-        if (still >= (now === 0 ? 10 : 120)) { logStream?.end(); process.exit(code || 0); }
+        // simply stopped reading gets the full stall deadline.
+        if (still >= (now === 0 ? 10 : ticks)) { logStream?.end(); process.exit(code || 0); }
       }, 500).unref();
     }
   };
@@ -362,9 +386,10 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
       const now = backlog();
       if (now !== lastBacklog) { lastBacklog = now; lastActivity = Date.now(); }
       // Nothing queued: 2s of quiet is enough. Something queued for a client
-      // that has stopped reading: that client gets 60s, then we cut it off,
+      // that has stopped reading: that client gets stallMs (60s), then we cut it off,
       // or a descendant plus a dead reader would keep us up forever.
-      if (Date.now() - lastActivity >= (now > 0 ? 60000 : 2000)) settle(code, true);
+      const idle = Date.now() - lastActivity;
+      if (idle >= (now > 0 ? stallMs : 2000)) settle(code, true, idle);
     }, 200);
   });
   child.on('close', (code) => settle(code));
