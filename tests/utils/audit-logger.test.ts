@@ -5,7 +5,7 @@ import path from 'path';
 import { checkFingerprints, logScan } from '../../src/utils/audit-logger.js';
 import { ScanReport, ServerScanResult } from '../../src/types/scan-result.js';
 
-function server(args: string[], version?: string, pkg = 'pkg'): ServerScanResult {
+function server(args: string[], version?: string, pkg = 'pkg', source: 'registry' | 'snapshot' = 'registry'): ServerScanResult {
   return {
     serverName: 'files',
     toolName: 'Cursor',
@@ -14,7 +14,7 @@ function server(args: string[], version?: string, pkg = 'pkg'): ServerScanResult
     scanDurationMs: 1,
     connection: { command: 'npx', args, type: 'stdio', env: [] },
     // Offline scans still know the package name; only the version is missing.
-    metadata: { packageName: pkg, ...(version ? { version } : {}) },
+    metadata: { packageName: pkg, ...(version ? { version, versionSource: source } : {}) },
   };
 }
 
@@ -101,7 +101,45 @@ describe('fingerprint scope', () => {
     logScan(report([server(['-y', 'pkg'], '1.0.0')]));
     const f = checkFingerprints([server(['-y', 'pkg'], '1.0.1')])['Cursor:files'];
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
+    expect(f?.[0].description).toContain('registry latest changed for an unpinned server');
     expect(f?.[0].description).toContain('1.0.0 -> 1.0.1');
+  });
+
+  it('does not flag an online scan followed by an offline one that sees an older snapshot', () => {
+    logScan(report([server(['-y', 'pkg'], '1.0.1', 'pkg', 'registry')]));
+    expect(checkFingerprints([server(['-y', 'pkg'], '1.0.0', 'pkg', 'snapshot')])).toEqual({});
+    logScan(report([server(['-y', 'pkg'], '1.0.0', 'pkg', 'snapshot')]));
+    expect(checkFingerprints([server(['-y', 'pkg'], '1.0.1', 'pkg', 'registry')])).toEqual({});
+  });
+
+  it('still catches a registry change across an offline scan in between', () => {
+    logScan(report([server(['-y', 'pkg'], '1.0.0', 'pkg', 'registry')]));
+    logScan(report([server(['-y', 'pkg'], '0.9.0', 'pkg', 'snapshot')]));
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.1', 'pkg', 'registry')])['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
+  });
+
+  it('does not flag a pinned server when the registry latest moves', () => {
+    const pinned = (latest: string) => server(['-y', 'pkg@1.0.0'], latest, 'pkg@1.0.0');
+    logScan(report([pinned('1.0.0')]));
+    expect(checkFingerprints([pinned('2.0.0')])).toEqual({});
+    const scoped = (latest: string) => server(['-y', '@s/pkg@1.0.0-rc.1'], latest, '@s/pkg@1.0.0-rc.1');
+    logScan(report([scoped('1.0.0')]));
+    expect(checkFingerprints([scoped('1.0.1')])).toEqual({});
+  });
+
+  it('flags a changed pin as a config change', () => {
+    logScan(report([server(['-y', 'pkg@1.0.0'], '1.0.0', 'pkg@1.0.0')]));
+    const f = checkFingerprints([server(['-y', 'pkg@1.0.1'], '1.0.0', 'pkg@1.0.1')])['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    expect(f?.[0].description).toContain('configuration has changed');
+  });
+
+  it('treats a dist-tag or range as unpinned', () => {
+    for (const spec of ['pkg@latest', 'pkg@^1.0.0']) {
+      logScan(report([server(['-y', spec], '1.0.0', spec)]));
+      expect(checkFingerprints([server(['-y', spec], '1.0.1', spec)])['Cursor:files']?.[0].severity).toBe('MEDIUM');
+    }
   });
 
   it.each([

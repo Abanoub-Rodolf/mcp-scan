@@ -60,7 +60,22 @@ export function logScan(report: ScanReport) {
 // quietly instead of flagging every server once.
 const SCHEMA_KEY = '__schema';
 const SCHEMA = '2';
-const resolvedKey = (key: string) => `${key}#resolved`;
+// One entry per source, so an offline scan cannot overwrite what the last
+// online scan saw (and the other way round).
+const resolvedKey = (key: string, source: string) => `${key}#resolved:${source}`;
+
+// The registry's (or snapshot's) latest for an unpinned server. A pinned
+// spec (pkg@1.2.3) is not tracked here: the spec is part of the fingerprint,
+// so changing the pin is already a config change. metadata.version is only
+// the registry's latest, never what the config resolves to.
+const EXACT_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
+function trackedLatest(result: ServerScanResult): { source: string; version: string } | undefined {
+  const { packageName, version, versionSource } = result.metadata ?? {};
+  if (!version || !versionSource) return undefined;
+  const at = packageName?.lastIndexOf('@') ?? -1;
+  if (at > 0 && EXACT_VERSION.test(packageName!.slice(at + 1))) return undefined;
+  return { source: versionSource, version };
+}
 
 // The HMAC lives inside the store as one more string entry, so the file
 // stays a flat map and the signature is replaced in the same atomic write.
@@ -265,16 +280,17 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
       continue;
     }
 
-    const before = store.data[resolvedKey(key)];
-    const now = result.metadata?.version;
-    if (store.data[key] && before && now && before !== now) {
-      // A resolved version swap is how a rug-pull looks, so it is MEDIUM
-      // whatever the bump size: a compromised publish ships as a patch.
+    const latest = trackedLatest(result);
+    const before = latest && store.data[resolvedKey(key, latest.source)];
+    if (store.data[key] && latest && before && before !== latest.version) {
+      // A new latest is how a rug-pull looks, so it is MEDIUM whatever the
+      // bump size: a compromised publish ships as a patch. Only compared
+      // against the same source, so going offline is not a change.
       mutationFindings[key] = [{
         id: 'server-mutation',
         severity: 'MEDIUM',
-        description: `Server '${result.serverName}' resolved to a different package version since the last scan (${before} -> ${now}). The config itself is unchanged. This may indicate a package swap.`,
-        fixRecommendation: 'Pin the version in the config and confirm the new release is the one you expect.'
+        description: `Server '${result.serverName}': registry latest changed for an unpinned server (${latest.source} ${before} -> ${latest.version}). The config itself is unchanged. This may indicate a package swap.`,
+        fixRecommendation: 'Pin the version in the config (pkg@x.y.z) and confirm the new release is the one you expect.'
       }];
     }
   }
@@ -310,9 +326,8 @@ function updateFingerprints(results: ServerScanResult[]): boolean {
     for (const result of results) {
       const key = `${result.toolName}:${result.serverName}`;
       fingerprints[key] = generateFingerprint(result);
-      const resolved = result.metadata?.version;
-      // An offline scan has no resolved version; keep the last known one.
-      if (resolved) fingerprints[resolvedKey(key)] = resolved;
+      const latest = trackedLatest(result);
+      if (latest) fingerprints[resolvedKey(key, latest.source)] = latest.version;
     }
 
     fingerprints[SIG_KEY] = sign(fingerprints, hmacKey);

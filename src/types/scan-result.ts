@@ -99,6 +99,9 @@ export interface Finding {
 export interface PackageMetadata {
   packageName?: string;
   version?: string;
+  // Where `version` came from: the live registry's dist-tags.latest, or the
+  // bundled snapshot when offline. Not the version the config resolves to.
+  versionSource?: 'registry' | 'snapshot';
   license?: string;
   // True only when license came from a live, authoritative registry lookup.
   // The offline CVE snapshot is a small curated set (~70 packages); a miss

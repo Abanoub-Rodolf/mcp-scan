@@ -145,6 +145,16 @@ describe('Supply Chain Scanner', () => {
     expect(result.metadata?.licenseVerified).toBeFalsy();
   });
 
+  it('labels the version as the registry latest online and as the snapshot offline', async () => {
+    mockFetch.mockResolvedValue(createMockFetchResponse(true, { 'dist-tags': { latest: '9.9.9' }, repository: null }));
+    const online = await scanSupplyChain(mockServer('some-pkg'));
+    expect(online.metadata).toMatchObject({ version: '9.9.9', versionSource: 'registry' });
+
+    const offline = await scanSupplyChain(mockServer('@modelcontextprotocol/server-filesystem'), true);
+    expect(offline.metadata?.version).toBeTruthy();
+    expect(offline.metadata?.versionSource).toBe('snapshot');
+  });
+
   it('should mark a GitHub rate limit as unverified, not as a low-trust finding', async () => {
     mockFetch.mockImplementation(async (url) => {
       if (url.includes('registry.npmjs.org')) {

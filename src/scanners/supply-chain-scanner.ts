@@ -70,6 +70,7 @@ export async function scanSupplyChain(server: ResolvedServer, offline: boolean =
     const repoUrl = extractRepoUrl(npmData);
     
     metadata.version = npmData['dist-tags']?.latest;
+    metadata.versionSource = 'registry';
     metadata.license = npmData.license || npmData.licenses?.[0]?.type;
     // A successful, parsed registry response is authoritative for license
     // presence/absence, regardless of what happens next (no repo URL, dead
@@ -157,6 +158,7 @@ function scanSupplyChainOffline(packageName: string): SupplyChainResult {
     const pkgData = snapshot.raw.packages?.[packageName];
     if (pkgData) {
       result.metadata!.version = pkgData.version;
+      result.metadata!.versionSource = 'snapshot';
       result.metadata!.license = pkgData.license;
       const hasKnownCves = Array.isArray(pkgData.vulns) && pkgData.vulns.length > 0;
       result.trustScore = hasKnownCves ? 40 : 100;

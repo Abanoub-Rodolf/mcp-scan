@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The known-servers baseline is signed (HMAC-SHA256, per-install key in `baseline.key`, mode 0600). A hand-edited store, a stripped signature, or a missing or damaged key is reported as tampering (MEDIUM) and the store is set aside and rebuilt.
 - A deleted baseline on an install that had one is reported as a missing baseline (MEDIUM), not treated as a quiet first run.
 - An unreadable, corrupt or unknown-schema baseline now fails closed with a MEDIUM `server-mutation` finding instead of being silently trusted.
-- Any change in a server's resolved package version, patch releases included, is reported at MEDIUM.
+- A change in the registry's latest version for an unpinned server, patch releases included, is reported at MEDIUM. It is only compared against the same source (registry or bundled snapshot), so going offline is not a change. A pinned `pkg@x.y.z` is covered by the config fingerprint.
 - Proxy logs are created 0600 in a 0700 directory, and lines that fail to parse or mask are no longer written to the log.
 - smol-toml 1.9.1 and lodash 4.18.1 clear known advisories.
 
