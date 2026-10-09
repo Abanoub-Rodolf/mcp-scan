@@ -86,7 +86,7 @@ function walk(data: any, options: PrivacyOptions | undefined, depth: number, env
     const renamed = keys.map(k => (ENVELOPE_KEYS.has(k) ? k : maskString(k, options)));
     // The id VALUE stays as the sender wrote it (strings and numbers only).
     // Only a real JSON-RPC message qualifies: a bare {"id": ...} is data.
-    const isMessage = envelope && 'jsonrpc' in data && ('method' in data || 'result' in data || 'error' in data);
+    const isMessage = envelope && data.jsonrpc === '2.0' && ('method' in data || 'result' in data || 'error' in data);
     const keepId = (k: string) => isMessage && k === 'id' && (typeof data[k] === 'string' || typeof data[k] === 'number');
     const value = (k: string) => (keepId(k) ? data[k] : walk(data[k], options, depth + 1, false));
     if (renamed.every((k, i) => k === keys[i])) {

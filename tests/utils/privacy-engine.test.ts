@@ -140,6 +140,7 @@ describe('Privacy Engine', () => {
     it('only exempts the id of an object that is a JSON-RPC message', () => {
       expect(maskPii({ id: 'user@corp.example' }).id).toBe('[EMAIL_MASKED]');
       expect(maskPii({ jsonrpc: '2.0', id: 'user@corp.example' }).id).toBe('[EMAIL_MASKED]');
+      expect(maskPii({ jsonrpc: null, id: 'user@corp.example', result: 1 }).id).toBe('[EMAIL_MASKED]');
       expect(maskPii({ jsonrpc: '2.0', id: 'user@corp.example', error: { code: 1 } }).id).toBe('user@corp.example');
     });
   });
