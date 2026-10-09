@@ -75,7 +75,8 @@ function walk(data: any, options: PrivacyOptions | undefined, depth: number, env
 
   if (Array.isArray(data)) {
     for (let i = 0; i < data.length; i++) {
-      data[i] = walk(data[i], options, depth + 1, envelope);
+      // only a top-level batch's direct elements are envelopes
+      data[i] = walk(data[i], options, depth + 1, envelope && depth === 0);
     }
     return data;
   }

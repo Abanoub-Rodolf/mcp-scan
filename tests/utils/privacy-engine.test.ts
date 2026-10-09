@@ -130,5 +130,11 @@ describe('Privacy Engine', () => {
       expect(batch[1].id).toBe('u@corp.example');
       expect(batch[1].params.id).toBe('[EMAIL_MASKED]');
     });
+
+    it('exempts only the top-level object and direct batch elements, not ids inside nested arrays', () => {
+      expect(maskPii([[{ id: 'user@corp.example' }]])[0][0].id).toBe('[EMAIL_MASKED]');
+      expect(maskPii({ result: [{ id: 'user@corp.example' }] }).result[0].id).toBe('[EMAIL_MASKED]');
+      expect(maskPii([{ id: 'user@corp.example' }])[0].id).toBe('user@corp.example');
+    });
   });
 });
