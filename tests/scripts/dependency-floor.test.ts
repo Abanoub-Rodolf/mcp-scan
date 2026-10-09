@@ -13,4 +13,8 @@ describe('locked dependency floors', () => {
   it('smol-toml is past GHSA-7w5x-hrqm-74c2 and GHSA-r4xh-jqrq-34v2 (<=1.8.0)', () => {
     expect(semver.gt(installed('smol-toml'), '1.8.0')).toBe(true);
   });
+
+  it('lodash is past GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh, GHSA-xxjr-mmjv-4gpg (<=4.17.23)', () => {
+    expect(semver.gt(installed('lodash'), '4.17.23')).toBe(true);
+  });
 });
