@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
-import semver from 'semver';
 import { ScanReport, ServerScanResult, Finding } from '../types/scan-result.js';
 import { atomicWriteConfig } from '../config/writer.js';
 
@@ -269,13 +268,11 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
     const before = store.data[resolvedKey(key)];
     const now = result.metadata?.version;
     if (store.data[key] && before && now && before !== now) {
-      // A resolved version swap is how a rug-pull looks, so it is MEDIUM.
-      // Only a plain patch bump of the same package drops to LOW.
-      const patchBump = semver.valid(before) && semver.valid(now)
-        && semver.gt(now, before) && semver.diff(before, now) === 'patch';
+      // A resolved version swap is how a rug-pull looks, so it is MEDIUM
+      // whatever the bump size: a compromised publish ships as a patch.
       mutationFindings[key] = [{
         id: 'server-mutation',
-        severity: patchBump ? 'LOW' : 'MEDIUM',
+        severity: 'MEDIUM',
         description: `Server '${result.serverName}' resolved to a different package version since the last scan (${before} -> ${now}). The config itself is unchanged. This may indicate a package swap.`,
         fixRecommendation: 'Pin the version in the config and confirm the new release is the one you expect.'
       }];
