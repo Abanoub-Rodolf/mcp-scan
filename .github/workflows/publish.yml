@@ -5,7 +5,24 @@ on:
     tags: [ 'v*' ]
 
 jobs:
+  # A tag push does not wait for ci.yml, so the release re-runs the gates
+  # itself and publish cannot start unless they pass.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22.x
+        cache: 'npm'
+    - run: npm ci
+    - run: npm run build
+    - run: npm test
+    - run: npm run lint
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
