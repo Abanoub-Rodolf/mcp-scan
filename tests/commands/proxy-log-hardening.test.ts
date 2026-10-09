@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runProxy } from '../../src/commands/proxy.js';
 import { loadPolicy } from '../../src/config/parser.js';
 import { maskPii } from '../../src/utils/privacy-engine.js';
+import { logger } from '../../src/utils/logger.js';
 import { spawn } from 'child_process';
 import { PassThrough } from 'stream';
 import fs from 'fs';
@@ -108,6 +109,29 @@ describe('proxy log hardening', () => {
       await runProxy({ command: 'node', args: '-v' });
       expect(fs.statSync(old).mode & 0o777).toBe(0o700);
     } finally {
+      process.env.HOME = savedHome;
+    }
+  });
+
+  it('keeps logging, with a stderr warning, when the log dir cannot be chmodded', async () => {
+    vi.mocked(loadPolicy).mockReturnValue({});
+    delete process.env.MCP_SCAN_LOG_DIR;
+    const savedHome = process.env.HOME;
+    process.env.HOME = root;
+    const chmod = vi.spyOn(fs, 'chmodSync').mockImplementation(() => { throw new Error('EPERM: not owner'); });
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await runProxy({ command: 'node', args: '-v' });
+      await send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call' }));
+      const dir = path.join(root, '.mcp-scan', 'logs');
+      const files = fs.readdirSync(dir);
+      expect(files).toHaveLength(1);
+      expect(fs.readFileSync(path.join(dir, files[0]), 'utf8')).toContain('tools/call');
+      expect(err.mock.calls.map(c => String(c[0])).join('')).toMatch(/could not restrict .* logging continues/);
+      expect(vi.mocked(logger.warn)).not.toHaveBeenCalledWith(expect.stringMatching(/logging disabled/));
+    } finally {
+      chmod.mockRestore();
+      err.mockRestore();
       process.env.HOME = savedHome;
     }
   });

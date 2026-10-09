@@ -8,6 +8,12 @@ import { loadPolicy } from '../config/parser.js';
 import { maskPii, PrivacyOptions } from '../utils/privacy-engine.js';
 import { reportBlessedImportError } from '../utils/dashboard-deps-hint.js';
 
+// The proxy's stdout is the protocol channel to the client, so its own
+// warnings go to stderr. Quiet while the dashboard owns the terminal.
+function warnStderr(msg: string) {
+  if (!logger.isSilent) process.stderr.write(`mcp-scan proxy: ${msg}\n`);
+}
+
 class JsonRpcInterceptor extends Transform {
   private buffer: string = '';
   private direction: string;
@@ -144,7 +150,14 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     fs.mkdirSync(logDir, { recursive: true, mode: 0o700 });
     // The default dir may predate this fix at 0755, with old 0644 logs in
     // it. Tighten that one; never chmod a dir the user pointed us at.
-    if (!process.env.MCP_SCAN_LOG_DIR) fs.chmodSync(logDir, 0o700);
+    // A dir we don't own can refuse the chmod; that must not cost the log.
+    if (!process.env.MCP_SCAN_LOG_DIR) {
+      try {
+        fs.chmodSync(logDir, 0o700);
+      } catch (err) {
+        warnStderr(`could not restrict ${logDir} to owner-only (${err instanceof Error ? err.message : String(err)}); logging continues at its current mode`);
+      }
+    }
     const logFile = path.join(logDir, `proxy-${Date.now()}.log`);
     logStream = fs.createWriteStream(logFile, { flags: 'a', mode: 0o600 });
     logStream.on('error', (err) => logger.warn(`Proxy log write failed: ${err.message}`));
