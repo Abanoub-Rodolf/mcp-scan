@@ -66,7 +66,7 @@ const resolvedKey = (key: string) => `${key}#resolved`;
 const SIG_KEY = '__sig';
 
 type Store =
-  | { status: 'missing' }
+  | { status: 'missing'; baselineExisted: boolean }
   | { status: 'ok' | 'unsigned' | 'legacy'; data: Record<string, string> }
   | { status: 'bad'; reason: string; tampered?: boolean };
 
@@ -127,13 +127,25 @@ function signatureMatches(data: Record<string, string>, key: Buffer): boolean {
   return crypto.timingSafeEqual(Buffer.from(have, 'hex'), Buffer.from(sign(data, key), 'hex'));
 }
 
+// Signs that this install has kept a baseline before: the key is created
+// with the first store, and the audit log is appended on every scan, so a
+// store missing next to either one was removed, not never written.
+function baselineExisted(): boolean {
+  try {
+    if (fs.existsSync(keyFile())) return true;
+    return fs.statSync(path.join(auditDir(), 'audit.log')).size > 0;
+  } catch (_e) {
+    return false;
+  }
+}
+
 function readStore(): Store {
   const file = fingerprintFile();
   let raw: string;
   try {
     raw = fs.readFileSync(file, 'utf8');
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing' };
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing', baselineExisted: baselineExisted() };
     return { status: 'bad', reason: e instanceof Error ? e.message : String(e) };
   }
   try {
@@ -183,7 +195,15 @@ function flagAll(results: ServerScanResult[], severity: Finding['severity'], tex
 export function checkFingerprints(results: ServerScanResult[]): Record<string, Finding[]> {
   const mutationFindings: Record<string, Finding[]> = {};
   const store = readStore();
-  if (store.status === 'missing') return mutationFindings;
+  // A true first run has nothing to compare against and stays quiet. A
+  // store that vanished from an install that had one is not a first run.
+  if (store.status === 'missing') {
+    if (!store.baselineExisted) return mutationFindings;
+    return flagAll(results, 'MEDIUM', name => ({
+      description: `Server '${name}' could not be checked for tampering: the fingerprint store (${fingerprintFile()}) went missing although earlier scans had recorded a baseline. Treat it as possibly deleted to hide a change.`,
+      fixRecommendation: 'A fresh baseline is built on this scan. Review the server configs by hand this once, and check what removed the file.'
+    }));
+  }
 
   // Fail closed: if the baseline cannot be trusted, no server can be
   // verified, so every server is reported rather than silently passed.

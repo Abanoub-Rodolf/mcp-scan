@@ -307,4 +307,37 @@ describe('signed baseline', () => {
     const f = checkFingerprints(evil())['Cursor:files'];
     expect(f?.map(x => x.severity).sort()).toEqual(['INFO', 'MEDIUM']);
   });
+
+  it('reports a deleted store as a missing baseline, not a quiet first run', () => {
+    logScan(report(results()));
+    const key = fs.readFileSync(keyFile(), 'utf8');
+    fs.rmSync(storeFile());
+    const f = checkFingerprints(results())['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
+    expect(f?.[0].description).toMatch(/went missing/);
+    expect(quarantined()).toHaveLength(0);
+    logScan(report(results()));
+    expect(fs.readFileSync(keyFile(), 'utf8')).toBe(key);
+    expect(checkFingerprints(results())).toEqual({});
+  });
+
+  it('catches a deleted store even when the key went with it, if the audit log remembers', () => {
+    logScan(report(results()));
+    fs.rmSync(storeFile());
+    fs.rmSync(keyFile());
+    expect(checkFingerprints(results())['Cursor:files']?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    logScan(report(results()));
+    expect(checkFingerprints(results())).toEqual({});
+  });
+
+  it('catches a store deleted before the first signed run, from an install that already scanned', () => {
+    fs.writeFileSync(path.join(home, 'audit.log'), '{"timestamp":"2026-10-01T00:00:00.000Z"}\n');
+    expect(checkFingerprints(results())['Cursor:files']?.[0]).toMatchObject({ severity: 'MEDIUM' });
+  });
+
+  it('stays quiet on a true first run, even with an empty audit log or stray files', () => {
+    fs.writeFileSync(path.join(home, 'audit.log'), '');
+    fs.writeFileSync(path.join(home, 'notes.txt'), 'x');
+    expect(checkFingerprints(results())).toEqual({});
+  });
 });
