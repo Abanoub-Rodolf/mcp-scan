@@ -143,7 +143,10 @@ function signatureMatches(data: Record<string, string>, key: Buffer): boolean {
 function baselineExisted(): boolean {
   try {
     if (fs.existsSync(keyFile())) return true;
-    return fs.statSync(path.join(auditDir(), 'audit.log')).size > 0;
+    // A scan that failed to write its baseline says so; it proves nothing.
+    // Lines from before the field existed have no flag and still count.
+    const lines = fs.readFileSync(path.join(auditDir(), 'audit.log'), 'utf8').split('\n');
+    return lines.some(l => l.trim() !== '' && !l.includes('"baselineSigned":false'));
   } catch (_e) {
     return false;
   }

@@ -384,7 +384,6 @@ describe('signed baseline', () => {
       rename.mockRestore();
     }
     expect(fs.existsSync(keyFile())).toBe(false);
-    fs.rmSync(path.join(home, 'audit.log'));
     expect(checkFingerprints(results())).toEqual({});
   });
 
