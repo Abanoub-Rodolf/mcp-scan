@@ -286,7 +286,7 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
     mutationFindings[first] = [...(mutationFindings[first] ?? []), {
       id: 'server-mutation',
       severity: 'INFO',
-      description: `The fingerprint store (${fingerprintFile()}) was not signed. It has been signed with a new per-install key, so later edits to it will be detected.`,
+      description: `The fingerprint store (${fingerprintFile()}) was not signed. It will be signed with a new per-install key on this scan, so later edits to it are detected.`,
       fixRecommendation: 'No action needed. Changes are tracked and verified from this scan on.'
     }];
   }

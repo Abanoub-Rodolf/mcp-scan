@@ -296,7 +296,7 @@ describe('signed baseline', () => {
     const found = checkFingerprints(two);
     expect(Object.values(found).flat()).toHaveLength(1);
     expect(Object.values(found).flat()[0]).toMatchObject({ id: 'server-mutation', severity: 'INFO' });
-    expect(Object.values(found).flat()[0].description).toMatch(/was not signed/);
+    expect(Object.values(found).flat()[0].description).toMatch(/was not signed.*will be signed/);
     expect(quarantined()).toHaveLength(0);
 
     logScan(report(two));
