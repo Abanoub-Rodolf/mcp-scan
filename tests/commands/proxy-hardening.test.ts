@@ -111,6 +111,17 @@ describe('proxy hardening', () => {
     expect(JSON.parse(stdout.trim())).toMatchObject({ id: 5, error: { code: -32603 } });
   }, 60000);
 
+  it('masks PII used as an object key in a forwarded response and in the log, keeping envelope keys and colliding entries', async () => {
+    maskOn();
+    const msg = JSON.stringify({ jsonrpc: '2.0', id: 4, result: { 'a@corp.example': 1, 'b@corp.example': 2 } });
+    const server = serverFile(`process.stdout.write(${JSON.stringify(msg)} + '\\n');`);
+    const { stdout } = await run(server);
+    expect(stdout).not.toContain('corp.example');
+    expect(JSON.parse(stdout.trim())).toEqual({ jsonrpc: '2.0', id: 4, result: { '[EMAIL_MASKED]': 1, '[EMAIL_MASKED_2]': 2 } });
+    expect(logs()).not.toContain('corp.example');
+    expect(logs()).toContain('[EMAIL_MASKED_2]');
+  }, 30000);
+
   // The pad shifts where the 64 KB pipe boundary lands inside a 3-byte
   // character; across the three pads at least one splits mid-character.
   it.each(['', 'a', 'aa'])('keeps multibyte characters intact when a 120 KB server line is split across chunks (pad %j)', async (pad) => {

@@ -30,6 +30,9 @@ export function maskString(str: string, options?: PrivacyOptions): string {
 
 const MAX_MASK_DEPTH = 100;
 
+// Protocol keys are never renamed, whatever the detectors say.
+const ENVELOPE_KEYS = new Set(['jsonrpc', 'id', 'method', 'params', 'result', 'error']);
+
 /**
  * Recursively masks PII in an object, array, or string.
  * Pass deepClone=true to avoid mutating the original (useful in scan pipelines).
@@ -56,10 +59,30 @@ export function maskPii(data: any, options?: PrivacyOptions, deepClone = false, 
   }
 
   if (typeof data === 'object') {
-    for (const key of Object.keys(data)) {
-      data[key] = maskPii(data[key], options, false, depth + 1);
+    const keys = Object.keys(data);
+    const renamed = keys.map(k => (ENVELOPE_KEYS.has(k) ? k : maskString(k, options)));
+    if (renamed.every((k, i) => k === keys[i])) {
+      for (const key of keys) data[key] = maskPii(data[key], options, false, depth + 1);
+      return data;
     }
-    return data;
+    // PII used as a key is masked like a value. Two keys can mask to the
+    // same text, so later ones get _2, _3... and none is dropped; a literal
+    // key that was already safe keeps its name.
+    const taken = new Set(keys.filter((k, i) => renamed[i] === k));
+    const out: Record<string, unknown> = {};
+    keys.forEach((key, i) => {
+      let name = renamed[i];
+      if (name !== key) {
+        const base = name;
+        for (let n = 2; taken.has(name); n++) {
+          name = base.endsWith(']') ? `${base.slice(0, -1)}_${n}]` : `${base}_${n}`;
+        }
+        taken.add(name);
+      }
+      // defineProperty so a key named __proto__ stays a plain entry.
+      Object.defineProperty(out, name, { value: maskPii(data[key], options, false, depth + 1), enumerable: true, writable: true, configurable: true });
+    });
+    return out;
   }
 
   return data;
