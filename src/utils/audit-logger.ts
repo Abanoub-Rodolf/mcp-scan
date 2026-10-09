@@ -54,6 +54,12 @@ export function logScan(report: ScanReport) {
   } catch (_error) {}
 }
 
+// Bumped when the fingerprint recipe changes, so an old store is rebuilt
+// quietly instead of flagging every server once.
+const SCHEMA_KEY = '__schema';
+const SCHEMA = '2';
+const resolvedKey = (key: string) => `${key}#resolved`;
+
 type Store = { status: 'missing' } | { status: 'ok'; data: Record<string, string> } | { status: 'bad'; reason: string };
 
 function fingerprintFile(): string {
@@ -108,6 +114,8 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
     return mutationFindings;
   }
 
+  if (store.data[SCHEMA_KEY] !== SCHEMA) return mutationFindings;
+
   for (const result of results) {
     const key = `${result.toolName}:${result.serverName}`;
     const currentFingerprint = generateFingerprint(result);
@@ -119,6 +127,18 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
         description: `Server '${result.serverName}' configuration has changed since the last scan. This may indicate unauthorized modification.`,
         fixRecommendation: 'Review the changes. Confirm they are intentional and not introduced by a third party.'
       }];
+      continue;
+    }
+
+    const before = store.data[resolvedKey(key)];
+    const now = result.metadata?.version;
+    if (store.data[key] && before && now && before !== now) {
+      mutationFindings[key] = [{
+        id: 'server-mutation',
+        severity: 'INFO',
+        description: `Server '${result.serverName}' resolved to a new package version since the last scan (${before} -> ${now}). The config itself is unchanged.`,
+        fixRecommendation: 'Pin the version in the config if you want a fixed build.'
+      }];
     }
   }
   return mutationFindings;
@@ -128,26 +148,32 @@ function updateFingerprints(results: ServerScanResult[]) {
   try {
     const store = readStore();
     if (store.status === 'bad') quarantineStore();
-    const fingerprints = store.status === 'ok' ? store.data : {};
+    // A store from an older recipe is rebuilt from scratch, not merged.
+    const fingerprints = store.status === 'ok' && store.data[SCHEMA_KEY] === SCHEMA ? store.data : {};
+    fingerprints[SCHEMA_KEY] = SCHEMA;
 
     for (const result of results) {
       const key = `${result.toolName}:${result.serverName}`;
       fingerprints[key] = generateFingerprint(result);
+      const resolved = result.metadata?.version;
+      // An offline scan has no resolved version; keep the last known one.
+      if (resolved) fingerprints[resolvedKey(key)] = resolved;
     }
 
     atomicWriteConfig(fingerprintFile(), JSON.stringify(fingerprints, null, 2));
   } catch (_error) {}
 }
 
+// Hash of the config the user wrote. The resolved package version is left
+// out on purpose: an unpinned npx server gets a new version whenever its
+// publisher ships, and that is not tampering. It is tracked separately.
 function generateFingerprint(result: ServerScanResult): string {
   const data = {
     command: result.connection?.command,
     args: result.connection?.args,
     url: result.connection?.url,
     type: result.connection?.type,
-    env: result.connection?.env, // Already sorted in scan.ts
-    packageName: result.metadata?.packageName,
-    version: result.metadata?.version
+    env: result.connection?.env // Already sorted in scan.ts
   };
   return crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
 }

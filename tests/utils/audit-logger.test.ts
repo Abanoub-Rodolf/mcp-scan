@@ -5,7 +5,7 @@ import path from 'path';
 import { checkFingerprints, logScan } from '../../src/utils/audit-logger.js';
 import { ScanReport, ServerScanResult } from '../../src/types/scan-result.js';
 
-function server(args: string[]): ServerScanResult {
+function server(args: string[], version?: string): ServerScanResult {
   return {
     serverName: 'files',
     toolName: 'Cursor',
@@ -13,6 +13,7 @@ function server(args: string[]): ServerScanResult {
     findings: [],
     scanDurationMs: 1,
     connection: { command: 'npx', args, type: 'stdio', env: [] },
+    metadata: version ? { packageName: 'pkg', version } : undefined,
   };
 }
 
@@ -79,5 +80,46 @@ describe('tamper store', () => {
 
   it('stays quiet on a first run with no store', () => {
     expect(checkFingerprints([server(['-y', 'pkg'])])).toEqual({});
+  });
+});
+
+describe('fingerprint scope', () => {
+  let home: string;
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-audit-fp-'));
+    process.env.MCP_SCAN_HOME = home;
+  });
+
+  afterEach(() => {
+    delete process.env.MCP_SCAN_HOME;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('does not call a new upstream release tampering', () => {
+    logScan(report([server(['-y', 'pkg'], '1.0.0')]));
+    const found = checkFingerprints([server(['-y', 'pkg'], '1.0.1')]);
+    const f = found['Cursor:files'];
+    expect(f?.every(x => x.severity !== 'MEDIUM')).toBe(true);
+    expect(f?.[0]).toMatchObject({ severity: 'INFO' });
+    expect(f?.[0].description).toContain('1.0.0 -> 1.0.1');
+  });
+
+  it('does not flag the same config scanned offline then online', () => {
+    logScan(report([server(['-y', 'pkg'])]));
+    expect(checkFingerprints([server(['-y', 'pkg'], '1.0.1')])).toEqual({});
+  });
+
+  it('still flags an edited config even when the version also moved', () => {
+    logScan(report([server(['-y', 'pkg'], '1.0.0')]));
+    const f = checkFingerprints([server(['-y', 'pkg', '--evil'], '1.0.1')])['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
+  });
+
+  it('rebuilds a store written by the older recipe without flagging anything', () => {
+    fs.writeFileSync(path.join(home, 'known-servers.json'), JSON.stringify({ 'Cursor:files': 'old-hash' }));
+    expect(checkFingerprints([server(['-y', 'pkg'], '1.0.0')])).toEqual({});
+    logScan(report([server(['-y', 'pkg'], '1.0.0')]));
+    expect(checkFingerprints([server(['-y', 'pkg', '--evil'], '1.0.0')])['Cursor:files']).toBeDefined();
   });
 });
