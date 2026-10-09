@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - An unreadable, corrupt or unknown-schema baseline now fails closed with a MEDIUM `server-mutation` finding instead of being silently trusted.
 - A change in the registry's latest version for a server whose spec names no version (or `@latest`), patch releases included, is reported at MEDIUM. Only live registry values are compared; the bundled offline snapshot never is, so going offline or upgrading mcp-scan is not a change. Any other spec (`pkg@x.y.z`, a range, a tag) is covered by the config fingerprint instead.
 - Proxy logs are created 0600 in a 0700 directory, and lines that fail to parse or mask are no longer written to the log. A message the privacy engine could not mask is dropped without leaving the other side hanging: a dropped request gets a JSON-RPC internal error (-32603) back to its sender, a dropped response is replaced by an error for the same id, and a dropped notification warns on stderr.
+- The proxy's final line, if the server exits without a trailing newline, is now masked and logged like any other line instead of being forwarded raw.
+- Masking now fails closed past 100 levels of nesting: the message is dropped and answered with the same -32603 error (it used to be forwarded and logged unmasked).
+- The proxy decodes UTF-8 across chunk boundaries, so multibyte text in long lines no longer turns into U+FFFD, and it waits for the server's last output to drain before exiting.
+- `npx pkg@latest` (and `@scope/pkg@latest`) is now looked up in the registry by its bare name, so the latest-version change check actually runs for it.
 - smol-toml 1.9.1 and lodash 4.18.1 clear known advisories.
 
 ### Changed
