@@ -248,4 +248,33 @@ describe('signed baseline', () => {
     logScan(report(evil()));
     expect(checkFingerprints(evil())).toEqual({});
   });
+
+  it('treats a signed store with no key as tampered, then starts over with a new key', () => {
+    logScan(report(results()));
+    const old = fs.readFileSync(keyFile(), 'utf8');
+    fs.rmSync(keyFile());
+    const f = checkFingerprints(results())['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
+    expect(f?.[0].description).toMatch(/baseline key is gone/);
+    expect(quarantined()).toHaveLength(1);
+    logScan(report(results()));
+    expect(fs.readFileSync(keyFile(), 'utf8')).not.toBe(old);
+    expect(checkFingerprints(results())).toEqual({});
+  });
+
+  it.each([
+    ['too short', 'abcd\n'],
+    ['not hex', 'z'.repeat(64) + '\n'],
+    ['empty', ''],
+  ])('treats a %s key file as tampered and replaces it', (_n, content) => {
+    logScan(report(results()));
+    fs.writeFileSync(keyFile(), content);
+    const f = checkFingerprints(results())['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    expect(f?.[0].description).toMatch(/baseline key unreadable/);
+    expect(quarantined()).toHaveLength(1);
+    logScan(report(results()));
+    expect(fs.readFileSync(keyFile(), 'utf8').trim()).toMatch(/^[0-9a-f]{64}$/);
+    expect(checkFingerprints(results())).toEqual({});
+  });
 });

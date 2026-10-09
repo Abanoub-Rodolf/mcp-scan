@@ -91,14 +91,17 @@ function keyFile(): string {
   return path.join(auditDir(), 'baseline.key');
 }
 
-type Key = { status: 'missing' } | { status: 'ok'; key: Buffer };
+type Key = { status: 'missing' } | { status: 'ok'; key: Buffer } | { status: 'bad'; reason: string };
 
 function readKey(): Key {
   try {
     const hex = fs.readFileSync(keyFile(), 'utf8').trim();
     if (/^[0-9a-f]{64}$/.test(hex)) return { status: 'ok', key: Buffer.from(hex, 'hex') };
-  } catch (_e) {}
-  return { status: 'missing' };
+    return { status: 'bad', reason: 'malformed' };
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing' };
+    return { status: 'bad', reason: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 function loadOrCreateKey(): Buffer {
@@ -142,6 +145,10 @@ function readStore(): Store {
     // signature, including one that looks like an older format. Otherwise
     // writing an old-format file would be a way around the check.
     const key = readKey();
+    // A store that was signed cannot be verified without its key. A missing
+    // or damaged key is how a forged store would be slipped past us.
+    if (key.status === 'bad') return tampered(`baseline key unreadable (${key.reason})`);
+    if (key.status === 'missing' && SIG_KEY in data) return tampered('signed store but the baseline key is gone');
     if (key.status === 'ok') {
       if (!(SIG_KEY in data)) return tampered('signature missing');
       if (!signatureMatches(data, key.key)) return tampered('signature does not match');
