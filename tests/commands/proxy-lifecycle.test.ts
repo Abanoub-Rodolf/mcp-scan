@@ -144,13 +144,28 @@ describe('proxy lifecycle', () => {
       process.exit(0);`);
     const stamp = path.join(dir, 'stamp');
     const started = Date.now();
-    // the reader holds the pipe open without reading for 9s
-    const res = await execa('sh', ['-c', `(node "${CLI}" proxy --command node --args "${server}" </dev/null; node -e "require('fs').writeFileSync('${stamp}', String(Date.now()))") | sleep 9`], {
-      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir, MCP_SCAN_STALL_MS: '3000' },
+    // the reader holds the pipe open without reading for 14s
+    const res = await execa('sh', ['-c', `(node "${CLI}" proxy --command node --args "${server}" </dev/null; node -e "require('fs').writeFileSync('${stamp}', String(Date.now()))") | sleep 14`], {
+      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir, MCP_SCAN_STALL_MS: '5000' },
     });
-    // 3s stall + at most ~1s to flush; the old two-stage wait would be about 6s
-    expect(Number(fs.readFileSync(stamp, 'utf8')) - started).toBeLessThan(5500);
+    // 5s stall + about 1s to flush + startup; the old two-stage wait took about 11s
+    expect(Number(fs.readFileSync(stamp, 'utf8')) - started).toBeLessThan(8500);
     // and it says what it dropped
     expect(res.stderr).toMatch(/gave up on a client that stopped reading: dropped \d+ bytes/);
+    // and when the exit then cuts off output already queued on stdout
+    expect(res.stderr).toMatch(/client stopped reading: dropped \d+ bytes of queued output/);
   }, 40000);
+
+  it('a slow reader of one huge line is not mistaken for a stalled one', async () => {
+    const big = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { pad: 'x'.repeat(4 * 1024 * 1024) } }) + '\n';
+    const file = path.join(dir, 'big.txt');
+    fs.writeFileSync(file, big);
+    const reader = path.join(dir, 'reader.js');
+    // about 400 KB/s: 64 KB every 150 ms
+    fs.writeFileSync(reader, `let n = 0; process.stdin.on('data', d => { n += d.length; process.stdin.pause(); setTimeout(() => process.stdin.resume(), 150); }); process.stdin.on('end', () => console.log(n));`);
+    const res = await execa('sh', ['-c', `node "${CLI}" proxy --command cat --args "${file}" </dev/null | node "${reader}"`], {
+      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir, MCP_SCAN_STALL_MS: '3000' },
+    });
+    expect(Number(res.stdout.trim())).toBe(Buffer.byteLength(big));
+  }, 60000);
 });
