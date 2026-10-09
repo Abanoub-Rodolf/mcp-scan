@@ -233,6 +233,18 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
       }];
     }
   }
+
+  // The store came from a version that did not sign. Its entries were just
+  // compared as usual; this scan signs it. Said once, not per server.
+  if (store.status === 'unsigned' && results.length > 0) {
+    const first = `${results[0].toolName}:${results[0].serverName}`;
+    mutationFindings[first] = [...(mutationFindings[first] ?? []), {
+      id: 'server-mutation',
+      severity: 'INFO',
+      description: `The fingerprint store (${fingerprintFile()}) was not signed. It has been signed with a new per-install key, so later edits to it will be detected.`,
+      fixRecommendation: 'No action needed. Changes are tracked and verified from this scan on.'
+    }];
+  }
   return mutationFindings;
 }
 

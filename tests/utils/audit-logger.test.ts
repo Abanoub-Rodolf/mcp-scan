@@ -277,4 +277,34 @@ describe('signed baseline', () => {
     expect(fs.readFileSync(keyFile(), 'utf8').trim()).toMatch(/^[0-9a-f]{64}$/);
     expect(checkFingerprints(results())).toEqual({});
   });
+
+  // What MR 17 wrote: schema 2, valid, but no signature and no key yet.
+  function writeUnsignedStore(rs: ServerScanResult[]) {
+    logScan(report(rs));
+    fs.rmSync(keyFile());
+    const store = JSON.parse(fs.readFileSync(storeFile(), 'utf8'));
+    delete store.__sig;
+    fs.writeFileSync(storeFile(), JSON.stringify(store));
+  }
+
+  it('signs a valid unsigned store once, with a single INFO and no quarantine', () => {
+    const two = [server(['-y', 'pkg'], '1.0.0'), { ...server(['-y', 'pkg'], '1.0.0'), serverName: 'other' }];
+    writeUnsignedStore(two);
+    const found = checkFingerprints(two);
+    expect(Object.values(found).flat()).toHaveLength(1);
+    expect(Object.values(found).flat()[0]).toMatchObject({ id: 'server-mutation', severity: 'INFO' });
+    expect(Object.values(found).flat()[0].description).toMatch(/was not signed/);
+    expect(quarantined()).toHaveLength(0);
+
+    logScan(report(two));
+    expect(fs.readFileSync(keyFile(), 'utf8').trim()).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.parse(fs.readFileSync(storeFile(), 'utf8')).__sig).toMatch(/^[0-9a-f]{64}$/);
+    expect(checkFingerprints(two)).toEqual({});
+  });
+
+  it('still compares an unsigned store while upgrading it', () => {
+    writeUnsignedStore(results());
+    const f = checkFingerprints(evil())['Cursor:files'];
+    expect(f?.map(x => x.severity).sort()).toEqual(['INFO', 'MEDIUM']);
+  });
 });
