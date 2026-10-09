@@ -30,6 +30,10 @@ export function logScan(report: ScanReport) {
       }
     }
 
+    // Fingerprints first, so the entry can say whether this scan left a
+    // signed baseline behind. A later unsigned store is then not an upgrade.
+    const baselineSigned = updateFingerprints(report.results);
+
     const logEntry = {
       timestamp: new Date().toISOString(),
       user: os.userInfo().username,
@@ -45,13 +49,11 @@ export function logScan(report: ScanReport) {
         info: report.infoCount
       },
       clients: [...new Set(report.results.map(r => r.toolName))],
-      servers: report.results.map(r => r.serverName)
+      servers: report.results.map(r => r.serverName),
+      baselineSigned
     };
 
     fs.appendFileSync(logFile, JSON.stringify(logEntry) + '\n', 'utf8');
-    
-    // Update fingerprints
-    updateFingerprints(report.results);
   } catch (_error) {}
 }
 
@@ -139,6 +141,17 @@ function baselineExisted(): boolean {
   }
 }
 
+// True once any scan on this install left a signed baseline. Read from the
+// audit log, which anyone with write access can edit, so it only raises the
+// bar for a script that strips the signature and the key and nothing else.
+function everSigned(): boolean {
+  try {
+    return fs.readFileSync(path.join(auditDir(), 'audit.log'), 'utf8').includes('"baselineSigned":true');
+  } catch (_e) {
+    return false;
+  }
+}
+
 function readStore(): Store {
   const file = fingerprintFile();
   let raw: string;
@@ -165,9 +178,13 @@ function readStore(): Store {
       if (!(SIG_KEY in data)) return tampered('signature missing');
       if (!signatureMatches(data, key.key)) return tampered('signature does not match');
     }
-    if (data[SCHEMA_KEY] === SCHEMA) return { status: key.status === 'ok' ? 'ok' : 'unsigned', data };
+    // No key and no signature reads as an upgrade, unless this install
+    // already signed a baseline: then someone removed both.
+    const unkeyed = (status: 'unsigned' | 'legacy'): Store =>
+      everSigned() ? tampered('baseline was signed before, but its signature and key are gone') : { status, data };
+    if (data[SCHEMA_KEY] === SCHEMA) return key.status === 'ok' ? { status: 'ok', data } : unkeyed('unsigned');
     if (SCHEMA_KEY in data) return { status: 'bad', reason: `unknown schema '${data[SCHEMA_KEY]}'` };
-    return isLegacyShape(data) ? { status: 'legacy', data } : { status: 'bad', reason: 'no schema marker and not the old store format' };
+    return isLegacyShape(data) ? unkeyed('legacy') : { status: 'bad', reason: 'no schema marker and not the old store format' };
   } catch (e) {
     return { status: 'bad', reason: e instanceof Error ? e.message : String(e) };
   }
@@ -268,7 +285,7 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
   return mutationFindings;
 }
 
-function updateFingerprints(results: ServerScanResult[]) {
+function updateFingerprints(results: ServerScanResult[]): boolean {
   try {
     const store = readStore();
     if (store.status === 'bad') quarantineStore();
@@ -277,7 +294,7 @@ function updateFingerprints(results: ServerScanResult[]) {
     const fingerprints = store.status === 'ok' || store.status === 'unsigned' ? { ...store.data } : {};
     delete fingerprints[SIG_KEY];
     fingerprints[SCHEMA_KEY] = SCHEMA;
-    const key = loadOrCreateKey();
+    const hmacKey = loadOrCreateKey();
 
     for (const result of results) {
       const key = `${result.toolName}:${result.serverName}`;
@@ -287,9 +304,12 @@ function updateFingerprints(results: ServerScanResult[]) {
       if (resolved) fingerprints[resolvedKey(key)] = resolved;
     }
 
-    fingerprints[SIG_KEY] = sign(fingerprints, key);
+    fingerprints[SIG_KEY] = sign(fingerprints, hmacKey);
     atomicWriteConfig(fingerprintFile(), JSON.stringify(fingerprints, null, 2));
-  } catch (_error) {}
+    return true;
+  } catch (_error) {
+    return false;
+  }
 }
 
 // Hash of the config the user wrote. The resolved package version is left

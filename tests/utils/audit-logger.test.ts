@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -279,12 +279,15 @@ describe('signed baseline', () => {
   });
 
   // What MR 17 wrote: schema 2, valid, but no signature and no key yet.
+  // Its audit log lines predate the baselineSigned field.
   function writeUnsignedStore(rs: ServerScanResult[]) {
     logScan(report(rs));
     fs.rmSync(keyFile());
     const store = JSON.parse(fs.readFileSync(storeFile(), 'utf8'));
     delete store.__sig;
     fs.writeFileSync(storeFile(), JSON.stringify(store));
+    const log = path.join(home, 'audit.log');
+    fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replaceAll(',"baselineSigned":true', ''));
   }
 
   it('signs a valid unsigned store once, with a single INFO and no quarantine', () => {
@@ -339,5 +342,37 @@ describe('signed baseline', () => {
     fs.writeFileSync(path.join(home, 'audit.log'), '');
     fs.writeFileSync(path.join(home, 'notes.txt'), 'x');
     expect(checkFingerprints(results())).toEqual({});
+  });
+
+  it('does not take a stripped signature plus a deleted key for an upgrade', () => {
+    logScan(report(results()));
+    forgeBaselineFor(evil());
+    const store = JSON.parse(fs.readFileSync(storeFile(), 'utf8'));
+    delete store.__sig;
+    fs.writeFileSync(storeFile(), JSON.stringify(store));
+    fs.rmSync(keyFile());
+    const f = checkFingerprints(evil())['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    expect(f?.[0].description).toMatch(/signed before/);
+    expect(quarantined()).toHaveLength(1);
+  });
+
+  it('does not take an old-format file plus a deleted key for a baseline reset', () => {
+    logScan(report(results()));
+    fs.writeFileSync(storeFile(), JSON.stringify({ 'Cursor:files': 'a'.repeat(64) }));
+    fs.rmSync(keyFile());
+    const f = checkFingerprints(results())['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    expect(quarantined()).toHaveLength(1);
+  });
+
+  it('does not record a signed baseline when the store could not be written', () => {
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => { throw new Error('disk full'); });
+    try {
+      logScan(report(results()));
+    } finally {
+      rename.mockRestore();
+    }
+    expect(fs.readFileSync(path.join(home, 'audit.log'), 'utf8')).toContain('"baselineSigned":false');
   });
 });
