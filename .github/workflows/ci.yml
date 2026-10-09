@@ -29,5 +29,5 @@ jobs:
     - run: npm run build
     - run: npm test
     - run: npm run lint
-    - name: Dependency audit (block on critical)
-      run: npm audit --audit-level=critical
+    - name: Dependency audit (block on high, runtime tree)
+      run: node scripts/audit-gate.mjs
