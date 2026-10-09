@@ -64,17 +64,18 @@ const SCHEMA = '2';
 // sources (e.g. #resolved:snapshot) are left in place and never read.
 const resolvedKey = (key: string) => `${key}#resolved:registry`;
 
-// The registry's latest for an unpinned server. Not tracked: a pinned spec
-// (pkg@1.2.3), because the spec is part of the fingerprint and changing the
-// pin is already a config change; and the bundled offline snapshot, whose
-// version moves whenever mcp-scan itself is upgraded and says nothing about
-// the user's servers. metadata.version is never what the config resolves to.
-const EXACT_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
+// The registry's latest for a server whose spec has no version part (or
+// says `latest`), where latest really is what runs. Not tracked: any other
+// spec (an exact pin, a range, a tag), because the spec is part of the
+// fingerprint, and a range or tag resolves to something other than latest
+// (^1.0.0 stays in 1.x when 2.0.0 ships); and the bundled offline snapshot,
+// whose version moves whenever mcp-scan itself is upgraded. metadata.version
+// is never what the config resolves to.
 function trackedLatest(result: ServerScanResult): string | undefined {
   const { packageName, version, versionSource } = result.metadata ?? {};
   if (!version || versionSource !== 'registry') return undefined;
   const at = packageName?.lastIndexOf('@') ?? -1;
-  if (at > 0 && EXACT_VERSION.test(packageName!.slice(at + 1))) return undefined;
+  if (at > 0 && packageName!.slice(at + 1) !== 'latest') return undefined;
   return version;
 }
 

@@ -156,12 +156,19 @@ describe('fingerprint scope', () => {
     expect(f?.[0].description).toContain('configuration has changed');
   });
 
-  it('treats a dist-tag or range as unpinned', () => {
-    for (const spec of ['pkg@latest', 'pkg@^1.0.0']) {
+  it('tracks the bare name and @latest, where latest is what runs', () => {
+    for (const spec of ['pkg', 'pkg@latest']) {
       logScan(report([server(['-y', spec], '1.0.0', spec)]));
       expect(checkFingerprints([server(['-y', spec], '1.0.1', spec)])['Cursor:files']?.[0].severity).toBe('MEDIUM');
     }
   });
+
+  it.each(['pkg@^1.0.0', 'pkg@~1.0.0', 'pkg@v1.2.3', 'pkg@beta', '@s/pkg@^1.0.0'])(
+    'does not track registry latest for %s, which can resolve to something else',
+    (spec) => {
+      logScan(report([server(['-y', spec], '1.0.0', spec)]));
+      expect(checkFingerprints([server(['-y', spec], '2.0.0', spec)])).toEqual({});
+    });
 
   it.each([
     ['minor bump', '1.0.0', '1.1.0'],
