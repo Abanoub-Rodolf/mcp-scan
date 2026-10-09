@@ -116,6 +116,8 @@ describe('E2E Scan', () => {
     expect(ids).not.toContain('unverified-source');
     // supply-chain scanner: packument has no repository URL
     expect(ids).toContain('supply-chain-low-trust');
+    // a throwing scanner is swallowed into a LOW scanner-error finding
+    expect(ids).not.toContain('scanner-error');
     expect(report.highCount).toBeGreaterThan(0);
 
     expect(calls).toContain(`https://registry.npmjs.org/${pkg}/latest`);
