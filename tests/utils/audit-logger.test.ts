@@ -97,10 +97,10 @@ describe('fingerprint scope', () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it('flags a patch bump of the same package, but only at LOW', () => {
+  it('flags a patch bump of the same package at MEDIUM, not LOW', () => {
     logScan(report([server(['-y', 'pkg'], '1.0.0')]));
     const f = checkFingerprints([server(['-y', 'pkg'], '1.0.1')])['Cursor:files'];
-    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'LOW' });
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
     expect(f?.[0].description).toContain('1.0.0 -> 1.0.1');
   });
 
