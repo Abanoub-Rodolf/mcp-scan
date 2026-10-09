@@ -33,7 +33,7 @@ describe('Policy Engine', () => {
         return '';
     });
 
-    const report = await runScan({ silent: true, config: 'config.json' });
+    const report = await runScan({ silent: true, config: 'config.json', offline: true });
     const serverResult = report.results.find(r => r.serverName === 'test-server');
     expect(serverResult?.findings.some(f => f.id === 'blocked-package-policy')).toBe(true);
   });
@@ -57,7 +57,7 @@ describe('Policy Engine', () => {
         return '';
     });
 
-    const report = await runScan({ silent: true, config: 'config.json' });
+    const report = await runScan({ silent: true, config: 'config.json', offline: true });
     const serverResult = report.results.find(r => r.serverName === 'test-server');
     expect(serverResult?.findings.some(f => f.id === 'unverified-source')).toBe(false);
   });

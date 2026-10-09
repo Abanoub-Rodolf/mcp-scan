@@ -34,7 +34,7 @@ describe('Ignore List', () => {
     });
 
     // Set severity to 'info' to see suppressed findings
-    const report = await runScan({ silent: true, config: mockConfigPath, severity: 'info' });
+    const report = await runScan({ silent: true, config: mockConfigPath, severity: 'info', offline: true });
     const serverResult = report.results[0];
     const finding = serverResult.findings.find(f => f.id === 'unverified-source');
     
