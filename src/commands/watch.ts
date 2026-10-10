@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { runScan } from './scan.js';
 import { logger } from '../utils/logger.js';
-import { BaselineKeyError } from '../utils/audit-logger.js';
+import { BaselineKeyError, keyFile } from '../utils/audit-logger.js';
 import { EXIT_ERROR } from '../utils/exit-codes.js';
 import { detectTools } from '../config/detector.js';
 import { ScanReport, Finding, ServerScanResult } from '../types/scan-result.js';
@@ -43,10 +43,11 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
     } catch (e) {
       if (e instanceof BaselineKeyError) {
         // Rescans run from a timer, where a rejection would be unhandled and
-        // dump a stack. Say it once, keep watching: fixing the key path and
-        // touching a config recovers without a restart.
+        // dump a stack. Say it once and keep watching: the key file is a
+        // trigger below, so fixing it rescans without a restart.
         logger.error(e.message);
         process.exitCode = EXIT_ERROR;
+        logger.log(chalk.dim('Scan skipped. Fixing baseline.key rescans.'));
         return;
       }
       if (!(e instanceof PolicyError)) throw e;
@@ -96,17 +97,22 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
 
   await performScan();
 
-  // A broken policy skips every scan until it is fixed, so saving it must rescan too.
+  // A broken policy or baseline key skips every scan until it is fixed, so
+  // saving either must rescan too.
+  const keyPath = keyFile();
   const triggers = [
     ...validPaths,
     path.join(process.cwd(), '.mcp-scan.json'),
     path.join(process.cwd(), '.mcp-scan-policy.yml'),
     path.join(os.homedir(), '.mcp-scan-policy.yml'),
+    keyPath,
   ];
 
   for (const configPath of triggers) {
     const dir = path.dirname(configPath);
     if (watchedDirs.has(dir)) continue;
+    // The audit dir may not exist yet (fresh install); nothing to fix there.
+    if (configPath === keyPath && !fs.existsSync(dir)) continue;
     watchedDirs.add(dir);
 
     try {
