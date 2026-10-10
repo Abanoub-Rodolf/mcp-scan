@@ -6,6 +6,8 @@ const NO_TIMERS = ban("node:timers imports (timers.promises is a sleep)");
 // one list feeds the static-import paths and the selector regex for the dynamic forms
 const TIMERS_MODULES = ["timers", "timers/promises"].flatMap(m => [m, `node:${m}`]);
 const TIMERS_MODULE = `/^(${TIMERS_MODULES.map(m => m.replace("/", "\\/")).join("|")})$/`;
+// a module name is a string or a template without holes: 'timers' or `timers`
+const isTimersModule = path => `:matches([${path}.value=${TIMERS_MODULE}], [${path}.quasis.0.value.cooked=${TIMERS_MODULE}])`;
 const TIMERS = new Set(["setTimeout", "setInterval"]);
 const GLOBALS = new Set(["globalThis", "global", "window", "self"]);
 const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression", "FunctionDeclaration"]);
@@ -223,8 +225,11 @@ export default [
     // A fixed sleep as synchronization is what made proxy tests flake under
     // load (2026-10-10). Wait on the real signal instead: vi.waitFor, a marker
     // file, a log or stderr line, a reply, or fake timers.
-    // Known gap: only a const alias of the timer is followed, not a `let`, a
-    // function wrapper, or a timer reached through another object.
+    // Known gaps: only a const alias of the timer is followed, not a `let`, a
+    // function wrapper, or a timer reached through another object. A resolver
+    // run as `r['call']()` or handed over as `setTimeout(r.call, 5)` is not seen.
+    // The timers module is banned by name in import, import(), require() and
+    // getBuiltinModule(), but not through `createRequire(...)('timers')` or `module.require('timers')`.
     files: ["tests/**/*.ts"],
     plugins: { local: { rules: { "no-sleep-promise": noSleepPromise } } },
     rules: {
@@ -234,11 +239,11 @@ export default [
       }],
       "no-restricted-syntax": ["error",
         {
-          selector: `ImportExpression[source.value=${TIMERS_MODULE}]`,
+          selector: `ImportExpression${isTimersModule("source")}`,
           message: NO_TIMERS,
         },
         {
-          selector: `CallExpression:matches([callee.name='require'], [callee.property.name='getBuiltinModule'])[arguments.0.value=${TIMERS_MODULE}]`,
+          selector: `CallExpression:matches([callee.name='require'], [callee.property.name='getBuiltinModule'], [callee.property.value='getBuiltinModule'])${isTimersModule("arguments.0")}`,
           message: NO_TIMERS,
         },
         {

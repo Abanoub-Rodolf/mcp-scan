@@ -239,6 +239,10 @@ const MODULE_FORMS = [
   (m: string) => `await import('${m}');`,
   (m: string) => `const x = require('${m}'); void x;`,
   (m: string) => `const x = process.getBuiltinModule('${m}'); void x;`,
+  (m: string) => `await import(\`${m}\`);`,
+  (m: string) => `const x = require(\`${m}\`); void x;`,
+  (m: string) => `const x = process['getBuiltinModule']('${m}'); void x;`,
+  (m: string) => `const x = process["getBuiltinModule"](\`${m}\`); void x;`,
 ];
 const MODULE_NAMES = ['timers', 'node:timers', 'timers/promises', 'node:timers/promises'];
 
