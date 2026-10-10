@@ -30,6 +30,7 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   const watchedDirs = new Set<string>();
   const keyPath = keyFile();
   let scanning = false;
+  let keyDirty = false;
   let keyTimeout: NodeJS.Timeout;
 
   // A scan can create or remove baseline.key itself (loadOrCreateKey, and the
@@ -47,12 +48,41 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
 
   const performScan = async (changedPath?: string) => {
     scanning = true;
+    const keyAtStart = keyState();
     try {
       await scan(changedPath);
     } finally {
       keySnapshot = keyState();
       scanning = false;
+      // An outside edit that landed mid-scan was not seen by it. Our own
+      // write also differs from the start state, but the rescan then ends on
+      // the state it started from, so this converges after one extra scan.
+      if (keyDirty) {
+        keyDirty = false;
+        if (keySnapshot !== keyAtStart) enqueue(keyPath);
+      }
     }
+  };
+
+  // One scan at a time, at most one waiting: overlapping scans would race on
+  // exitCode, the key snapshot and the screen. Errors are caught here so a
+  // timer-fired scan can't become an unhandled rejection that kills watch.
+  let inflight: Promise<void> = Promise.resolve();
+  let queued = false;
+  let queuedPath: string | undefined;
+  const enqueue = (changedPath?: string) => {
+    queuedPath = changedPath;
+    if (queued) return;
+    queued = true;
+    inflight = inflight.then(async () => {
+      queued = false;
+      try {
+        await performScan(queuedPath);
+      } catch (e: any) {
+        logger.error(e.message);
+        process.exitCode = EXIT_ERROR;
+      }
+    });
   };
 
   const scan = async (changedPath?: string) => {
@@ -142,21 +172,23 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
     watchedDirs.add(dir);
 
     try {
-      fs.watch(dir, (eventType, filename) => {
+      const watcher = fs.watch(dir, (eventType, filename) => {
         const changedPath = filename ? path.join(dir, filename) : null;
         if (changedPath === keyPath) {
-          if (scanning) return;
+          if (scanning) { keyDirty = true; return; }
           clearTimeout(keyTimeout);
           keyTimeout = setTimeout(() => {
-            if (!scanning && keyState() !== keySnapshot) performScan(changedPath);
+            if (scanning) keyDirty = true;
+            else if (keyState() !== keySnapshot) enqueue(changedPath);
           }, 500);
           return;
         }
         if (changedPath && triggers.includes(changedPath)) {
           clearTimeout(debounceTimeout);
-          debounceTimeout = setTimeout(() => performScan(changedPath), 500);
+          debounceTimeout = setTimeout(() => enqueue(changedPath), 500);
         }
       });
+      watcher.on('error', (e: Error) => logger.error(`Watch on ${dir} stopped: ${e.message}`));
     } catch (error: any) {
       logger.error(`Failed to watch directory ${dir}: ${error.message}`);
     }
