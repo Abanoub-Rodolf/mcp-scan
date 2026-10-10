@@ -40,7 +40,7 @@ describe('malformed offline CVE snapshot, through the built CLI', () => {
   });
   afterAll(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
-  it('scan --json: stdout is byte-identical to a healthy snapshot, only stderr differs', async () => {
+  it('scan --json: stdout matches a healthy snapshot (durations masked), only stderr differs', async () => {
     snapshot([]);
     const healthy = await run(['scan', '--json', '--offline', '--config', FIXTURE]);
     snapshot(BROKEN);
