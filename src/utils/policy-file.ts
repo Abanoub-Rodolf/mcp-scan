@@ -16,10 +16,9 @@ export class PolicyError extends Error {
 export function policyFileExists(p: string): boolean {
   if (fs.existsSync(p)) return true;
   try {
-    fs.lstatSync(p);
+    return fs.lstatSync(p, { throwIfNoEntry: false }) !== undefined;
+  } catch (_e) {
     return true;
-  } catch (e: any) {
-    return e.code !== 'ENOENT' && e.code !== 'ENOTDIR';
   }
 }
 
