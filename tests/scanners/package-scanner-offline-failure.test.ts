@@ -32,6 +32,17 @@ describe('offline CVE check on a malformed snapshot', () => {
     expect(stderr()).toMatch(/Offline CVE check for 'bad-snap' failed .*incomplete/);
   });
 
+  it('warns once per failure, with control characters stripped from the name', async () => {
+    vi.mocked(loadCveSnapshot).mockReturnValue({
+      raw: { updatedAt: new Date().toISOString(), packages: { 'evil\x1b[2Jpkg': { version: '1.0.0', vulns: [null as any] } } },
+    });
+    await scanPackageDeep(server('evil\x1b[2Jpkg'), true);
+    await scanPackageDeep(server('evil\x1b[2Jpkg'), true);
+    expect(stderr().match(/Offline CVE check/g)).toHaveLength(1);
+    expect(stderr()).not.toContain('\x1b');
+    expect(stderr()).toContain("'evil?[2Jpkg'");
+  });
+
   it('stays quiet on a healthy snapshot', async () => {
     vi.mocked(loadCveSnapshot).mockReturnValue({
       raw: { updatedAt: new Date().toISOString(), packages: { 'ok-snap': { version: '1.0.0', vulns: [] } } },
