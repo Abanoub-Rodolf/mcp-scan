@@ -178,11 +178,11 @@ rules:
     action: warn
     match:
       severity: critical
-      pii_types: ["Credit Card"]
+      category: ["credit card"]
 ```
 
 Rules need `id` + `action` (`block`, `warn`, `skip`, `override-severity`).
-Match keys: `server_name`, `finding_id`, `severity`, `category`, `license_type`, `pii_types`.
+Match keys: `server_name`, `finding_id`, `severity`, `category` (substring of the finding text), `license_type` (the server's package license, exact match, case-insensitive). Any other key, or a severity that isn't info, low, medium, high or critical, is an error.
 Validate with `mcp-scan policy validate`.
 
 A policy file that exists but can't be used stops the scan (error on stderr naming the file, exit 1) instead of running without it. That covers an unparseable `.mcp-scan.json` or `.mcp-scan-policy.yml`, a wrong-typed field (`"blockedPackages": "x"`), a YAML policy that fails `policy validate`, and `--policy <path>` pointing at a missing file. No policy file at all is fine; the scan runs with defaults.

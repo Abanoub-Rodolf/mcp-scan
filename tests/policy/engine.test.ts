@@ -91,4 +91,18 @@ describe('Policy Engine', () => {
         const out = applyPolicy(results, policy);
         expect(out[0].findings).toHaveLength(0);
     });
+
+    it('9. license_type matches only servers with that license, not every finding', () => {
+        const mk = (name: string, license?: string): ServerScanResult => ({
+            serverName: name, toolName: 't', configPath: '', scanDurationMs: 0,
+            findings: [{ id: 'permission-risk', severity: 'HIGH', description: 'x' }],
+            metadata: license ? { license } : undefined,
+        });
+        const results = [mk('gpl-server', 'GPL-3.0'), mk('mit-server', 'MIT'), mk('unknown-server')];
+        const policy: SecurityPolicy = { version: 1, rules: [{ id: 'skip-gpl', action: 'skip', match: { license_type: 'gpl-3.0' } }] };
+        const out = applyPolicy(results, policy);
+        expect(out.find(r => r.serverName === 'gpl-server')!.findings).toHaveLength(0);
+        expect(out.find(r => r.serverName === 'mit-server')!.findings).toHaveLength(1);
+        expect(out.find(r => r.serverName === 'unknown-server')!.findings).toHaveLength(1);
+    });
 });

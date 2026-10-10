@@ -18,7 +18,6 @@ export interface PolicyRule {
       severity?: string | string[];
       category?: string | string[];
       license_type?: string | string[];
-      pii_types?: string | string[];
   };
 }
 
@@ -54,7 +53,9 @@ function schemaProblem(parsed: SecurityPolicy | null): string | null {
   return null;
 }
 
-const MATCH_KEYS = ['server_name', 'finding_id', 'severity', 'category', 'license_type', 'pii_types'];
+// Only keys ruleMatches reads. A key accepted here but never read makes a skip
+// rule match every finding, so findings carry no PII field and pii_types is not here.
+const MATCH_KEYS = ['server_name', 'finding_id', 'severity', 'category', 'license_type'];
 const isSeverity = (v: unknown) => typeof v === 'string' && v.toUpperCase() in SEVERITY_ORDER;
 const SEVERITY_LIST = Object.keys(SEVERITY_ORDER).join(', ').toLowerCase();
 
@@ -146,6 +147,12 @@ function ruleMatches(rule: PolicyRule, result: ServerScanResult, finding: Findin
     if (m.server_name && !toArray(m.server_name).includes(result.serverName)) return false;
     if (m.finding_id && !toArray(m.finding_id).includes(finding.id)) return false;
     if (m.severity && !toArray(m.severity).map(s => s.toUpperCase()).includes(finding.severity.toUpperCase())) return false;
+    // Server-level: the license the package registry reported for this server.
+    // Exact (case-insensitive) so 'GPL' does not also cover 'LGPL'/'AGPL' by accident.
+    if (m.license_type) {
+      const license = result.metadata?.license;
+      if (!license || !toArray(m.license_type).some(l => String(l).toLowerCase() === license.toLowerCase())) return false;
+    }
     if (m.category && !toArray(m.category).some(c => finding.description.toLowerCase().includes(String(c).toLowerCase()))) return false;
   }
   if (rule.scanner && !finding.id.includes(rule.scanner)) return false;
