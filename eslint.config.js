@@ -8,8 +8,9 @@ const NO_TIMERS = ban("imports of the timers module (timers.promises is a sleep,
 // one list feeds the static-import paths and the selector regex for the dynamic forms
 const TIMERS_MODULES = ["timers", "timers/promises"].flatMap(m => [m, `node:${m}`]);
 const TIMERS_MODULE = `/^(${TIMERS_MODULES.map(m => m.replace("/", "\\/")).join("|")})$/`;
-// a module name is a string or a template without holes: 'timers' or `timers`
-const isTimersModule = path => `:matches([${path}.value=${TIMERS_MODULE}], [${path}.quasis.0.value.cooked=${TIMERS_MODULE}])`;
+// a module name is a string or a template without holes: 'timers' or `timers`.
+// A template with holes (`timers${x}`) names nothing we can read, so it is not banned.
+const isTimersModule = path => `:matches([${path}.value=${TIMERS_MODULE}], [${path}.quasis.length=1][${path}.quasis.0.value.cooked=${TIMERS_MODULE}])`;
 const TIMERS = new Set(["setTimeout", "setInterval"]);
 const GLOBALS = new Set(["globalThis", "global", "window", "self"]);
 const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression", "FunctionDeclaration"]);
@@ -59,7 +60,9 @@ const noSleepPromise = {
 
     // Where does the executor's resolver end up: on a timer, handed off, or both?
     // `obj`: the variable holds a `Promise.withResolvers()` result, so only
-    // `.resolve` of it is the resolver, and the object itself going anywhere hands it off.
+    // `.resolve` of it is the resolver. `.reject` and `.promise` are ignored; any
+    // other read (the object itself, a rest element, an unreadable key) hands it off.
+    // `const { resolve } = w` and `w?.resolve` are reads of resolve like `w.resolve`.
     const analyze = (exec, resolver, obj = false) => {
       const inside = n => n.range[0] >= exec.range[0] && n.range[1] <= exec.range[1];
       const fnsOf = site => {
@@ -72,6 +75,44 @@ const noSleepPromise = {
       const stack = new Set();
       const memo = new Map();
 
+      // the name of a plain or literal key: w.resolve, w["resolve"], w[`resolve`], { resolve: r }
+      const nameOf = (computed, k) => {
+        if (!computed) return k.type === "Identifier" ? k.name : k.value;
+        if (k.type === "Literal") return k.value;
+        if (k.type === "TemplateLiteral" && !k.expressions.length) return k.quasis[0].value.cooked;
+        return undefined;
+      };
+      // variables that hold the withResolvers object itself, not one of its functions
+      const objs = new Set(obj ? [resolver] : []);
+      // a type assertion, `!` or a comma expression still evaluates to its operand
+      const WRAPS = new Set(["TSAsExpression", "TSNonNullExpression", "TSSatisfiesExpression"]);
+      const inner = e => {
+        for (;;) {
+          if (WRAPS.has(e.type)) e = e.expression;
+          else if (e.type === "SequenceExpression") e = e.expressions.at(-1);
+          else return e;
+        }
+      };
+      const sameObj = (e, v) => { const u = inner(e); if (u.type === "Identifier" && objs.has(lookup(u))) objs.add(v); return v; };
+      // the outermost wrapper around a read: `w as any`, `w!`, `(0, w)`
+      const outer = n => {
+        for (let p = n.parent; p && (WRAPS.has(p.type) || (p.type === "SequenceExpression" && p.expressions.at(-1) === n)); p = n.parent) n = p;
+        return n;
+      };
+      // `w || o`, `c ? w : o`, `{ w }`, `[w]`, `{ ...w }` hold w without being w: treat as a handoff
+      const holds = (n, p) => p.type === "LogicalExpression" || p.type === "ArrayExpression" || p.type === "SpreadElement"
+        || (p.type === "ConditionalExpression" && p.test !== n) || (p.type === "Property" && p.parent.type === "ObjectExpression");
+      // `const { resolve: r, promise } = w`: r is the resolver, promise and reject are not
+      // it, and a rest element or a key we cannot read could be anything.
+      const unpack = (decl, out) => {
+        for (const prop of decl.id.properties) {
+          const k = prop.type === "Property" ? nameOf(prop.computed, prop.key) : undefined;
+          if (k === "reject" || k === "promise") continue;
+          const target = prop.type === "Property" && prop.value.type === "AssignmentPattern" ? prop.value.left : prop.value;
+          if (k === "resolve" && target.type === "Identifier") merge(out, follow(declared(decl, x => x.name === target.name)));
+          else out.given = true;
+        }
+      };
       // A variable stands for the value it holds: follow every read of it.
       const follow = v => {
         const out = none();
@@ -79,9 +120,23 @@ const noSleepPromise = {
         stack.add(v);
         for (const ref of v.references) {
           if (ref.isWriteOnly()) continue;
-          const m = ref.identifier.parent;
-          if (!obj || m.type !== "MemberExpression" || m.object !== ref.identifier) merge(out, trace(ref.identifier));
-          else if ((m.computed ? m.property.value : m.property.name) === "resolve") merge(out, trace(m));
+          const id = ref.identifier;
+          if (!objs.has(v)) { merge(out, trace(id)); continue; }
+          const n = outer(id);
+          const m = n.parent;
+          if (m.type === "VariableDeclarator" && m.init === n && m.id.type === "ObjectPattern") unpack(m, out);
+          else if (holds(n, m)) out.given = true;
+          else if (m.type !== "MemberExpression" || m.object !== n) {
+            merge(out, trace(id));
+            // `const [x] = w` and the like take the object out of sight
+            if (m.type === "VariableDeclarator" && m.init === n && m.id.type !== "Identifier") out.given = true;
+          } else {
+            const k = nameOf(m.computed, m.property);
+            if (k === "reject" || k === "promise") continue;
+            // `w?.resolve` is a read of resolve; a key we cannot read is a handoff
+            if (k === "resolve") merge(out, trace(m.parent.type === "ChainExpression" ? m.parent : m));
+            else out.given = true;
+          }
         }
         stack.delete(v);
         return out;
@@ -131,12 +186,12 @@ const noSleepPromise = {
           case "AssignmentExpression": {
             if (p.right !== e) break;
             const v = p.left.type === "Identifier" ? lookup(p.left) : null;
-            if (v?.defs[0] && inside(v.defs[0].name)) merge(out, follow(v));
+            if (v?.defs[0] && inside(v.defs[0].name)) merge(out, follow(sameObj(e, v)));
             else hit("given", p);
             break;
           }
           case "VariableDeclarator":
-            if (p.init === e && p.id.type === "Identifier") merge(out, follow(declared(p, v => v.name === p.id.name)));
+            if (p.init === e && p.id.type === "Identifier") merge(out, follow(sameObj(e, declared(p, v => v.name === p.id.name))));
             break;
           case "ReturnStatement":
             hit("given", p);
