@@ -13,7 +13,15 @@ describe('policyFileExists', () => {
   it('is false only when the file is really absent', () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pfe-'));
     expect(policyFileExists(path.join(dir, '.mcp-scan.json'))).toBe(false);
-    expect(policyFileExists(path.join(dir, 'not-a-dir', '.mcp-scan.json'))).toBe(false);
+    fs.writeFileSync(path.join(dir, 'blocker'), '');
+    expect(policyFileExists(path.join(dir, 'blocker', '.mcp-scan.json'))).toBe(false);
+  });
+
+  it('treats a dangling symlink as present', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pfe-'));
+    const link = path.join(dir, '.mcp-scan.json');
+    fs.symlinkSync(path.join(dir, 'gone.json'), link);
+    expect(policyFileExists(link)).toBe(true);
   });
 
   // A parent without search permission hides the file from existsSync too;

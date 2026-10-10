@@ -17,8 +17,9 @@ export function policyFileExists(p: string): boolean {
   if (fs.existsSync(p)) return true;
   try {
     return fs.lstatSync(p, { throwIfNoEntry: false }) !== undefined;
-  } catch (_e) {
-    return true;
+  } catch (e: any) {
+    // throwIfNoEntry only covers ENOENT; a parent that is a file still means absent.
+    return e?.code !== 'ENOTDIR';
   }
 }
 
