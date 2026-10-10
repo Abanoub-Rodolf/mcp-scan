@@ -40,6 +40,12 @@ const SLEEPS = [
   'await new Promise(r => { const a = r; setTimeout(a, 5); });',
   'await new Promise(r => { const a = r; const b = a; setTimeout(b, 5); });',
   'await new Promise(r => { const rec = { resolve: r }; setTimeout(r, 5); void rec; });',
+  // using it inside a function nobody gets, or logging it, hands nothing off
+  'await new Promise(r => { console.log(r); setTimeout(r, 5); });',
+  'await new Promise(r => { const u = () => { use(r); }; setTimeout(r, 5); });',
+  'await new Promise(r => { const u = () => { saved = r; }; setTimeout(r, 5); });',
+  'await new Promise(r => { const u = () => r; setTimeout(r, 5); void u; });',
+  'await new Promise(r => { function u() { return r; } setTimeout(r, 5); });',
   // a shadowing binding is a different variable, whatever it is used for
   'await new Promise(r => { function h(r) { use(r); } h(1); setTimeout(r, 5); });',
   'await new Promise(r => { try { go(); } catch (r) { use(r); } setTimeout(r, 5); });',
@@ -85,6 +91,10 @@ const ALLOWED = [
   // a named handler given to a listener
   "await new Promise(r => { const h = () => r(); ee.on('x', h); setTimeout(r, 5); });",
   "await new Promise(r => { function h() { r(); } ee.on('x', h); setTimeout(r, 5); });",
+  // the same uses inside a function that is given away
+  "await new Promise(r => { ee.on('x', () => { use(r); }); setTimeout(r, 5); });",
+  "await new Promise(r => { const u = () => { saved = r; }; ee.on('x', u); setTimeout(r, 5); });",
+  "await new Promise(r => { handlers.x = () => r; setTimeout(r, 5); });",
   // not a promise executor, or a plain timer
   "const t = setTimeout(() => {}, 5); clearTimeout(t);",
   "await new Promise(r => { r(1); });",

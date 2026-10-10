@@ -13,6 +13,9 @@ const isTimer = n => n.type === "CallExpression" && (
   (n.callee.type === "MemberExpression" && !n.callee.computed && n.callee.object.type === "Identifier" &&
     GLOBALS.has(n.callee.object.name) && n.callee.property.type === "Identifier" && TIMERS.has(n.callee.property.name)));
 
+// Logging a value does not take ownership of it.
+const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.name === "console";
+
 // A sleep promise: the resolver (first executor param, any constructor name)
 // reaches a timer and goes nowhere else, `setTimeout(r, 5)` or
 // `setTimeout(() => r(), 5)`. It is not a sleep when the resolver is also handed
@@ -64,8 +67,10 @@ const noSleepPromise = {
         const out = none();
         const hit = (kind, site) => {
           const fns = fnsOf(site);
+          // inside a nested function, only a function that is itself given counts
+          const owned = fns.some(f => fnFlow(f).given);
           if (kind === "timer" || fns.some(f => fnFlow(f).timer)) out.timer = true;
-          else if (kind === "given" || fns.some(f => fnFlow(f).given)) out.given = true;
+          if (kind === "given" ? !fns.length || owned : kind === "call" && owned) out.given = true;
         };
         let p = e.parent;
         // `r.bind(...)` stands for the resolver
@@ -79,7 +84,7 @@ const noSleepPromise = {
           case "NewExpression":
             if (p.callee === e) hit("call", p);
             else if (isTimer(p)) { if (p.arguments[0] === e) hit("timer", p); }
-            else hit("given", p);
+            else if (!isConsole(p)) hit("given", p);
             break;
           case "AssignmentExpression": {
             if (p.right !== e) break;
