@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 
 const runScanMock = vi.fn();
 vi.mock('../../src/commands/scan.js', () => ({
@@ -33,6 +34,8 @@ const emptyReport = {
 
 describe('watch mode and an unusable baseline key', () => {
   let onChange: (event: string, file: string) => void;
+  let onKeyDirChange: ((event: string, file: string) => void) | undefined;
+  let home: string;
   const unhandled: unknown[] = [];
   const onUnhandled = (e: unknown) => { unhandled.push(e); };
 
@@ -42,10 +45,14 @@ describe('watch mode and an unusable baseline key', () => {
     unhandled.length = 0;
     process.on('unhandledRejection', onUnhandled);
     process.exitCode = undefined;
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-watch-home-'));
+    vi.stubEnv('MCP_SCAN_HOME', home);
+    onKeyDirChange = undefined;
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     vi.spyOn(fs, 'watch').mockImplementation(((dir: string, cb: (e: string, f: string) => void) => {
       // watch also registers the policy file dirs; only the config's dir matters here
       if (dir === path.dirname(CONFIG)) onChange = cb;
+      if (dir === home) onKeyDirChange = cb;
       return {} as fs.FSWatcher;
     }) as unknown as typeof fs.watch);
   });
@@ -57,6 +64,8 @@ describe('watch mode and an unusable baseline key', () => {
     process.exitCode = undefined;
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    fs.rmSync(home, { recursive: true, force: true });
   });
 
   const rescan = async () => {
@@ -85,5 +94,43 @@ describe('watch mode and an unusable baseline key', () => {
     expect(runScanMock).toHaveBeenCalledTimes(3);
     // undefined is exit 0; watch clears the code after any good scan
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it('says the scan was skipped and what rescans it', async () => {
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+    runScanMock.mockRejectedValueOnce(new BaselineKeyError('baseline key /k is a directory, move it'));
+
+    await rescan();
+
+    expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('Scan skipped. Fixing baseline.key rescans.'));
+  });
+
+  it('rescans when baseline.key changes and clears the failure', async () => {
+    runScanMock.mockRejectedValueOnce(new BaselineKeyError('baseline key /k is a directory, move it'));
+    await runWatch();
+    expect(process.exitCode).toBe(1);
+    expect(onKeyDirChange).toBeDefined();
+
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    onKeyDirChange!('rename', 'baseline.key');
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(runScanMock).toHaveBeenCalledTimes(2);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('ignores other files in the audit dir and survives a missing audit dir', async () => {
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+    onKeyDirChange!('change', 'audit.log');
+    await vi.advanceTimersByTimeAsync(600);
+    expect(runScanMock).toHaveBeenCalledTimes(1);
+
+    process.removeAllListeners('SIGINT');
+    process.removeAllListeners('SIGTERM');
+    vi.stubEnv('MCP_SCAN_HOME', path.join(home, 'nope'));
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await expect(runWatch()).resolves.toBeUndefined();
   });
 });
