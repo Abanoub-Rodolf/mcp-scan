@@ -15,13 +15,15 @@ function warnStderr(msg: string) {
   if (!logger.isSilent) process.stderr.write(`mcp-scan proxy: ${msg}\n`);
 }
 
-// writableLength counts a whole queued write until it finishes; libuv's
-// writeQueueSize counts what of it the kernel has not taken yet. They
-// overlap, so the bytes still owed to the client are the larger one, not the
-// sum. A value Node does not give us as a finite number counts as 0, so a
+// writableLength stays at the full size of an in-flight write until it
+// completes, so it overstates what the client is still owed once the kernel
+// has taken part of it. libuv's writeQueueSize counts only what the kernel has
+// not taken yet, so it wins when Node gives it as a finite number above 0.
+// Otherwise (no handle, or nothing handed to libuv yet) fall back to
+// writableLength. A value that is not a finite number counts as 0, so a
 // changed internal can never wedge the proxy.
 const finite = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0);
-export const queuedBytes = (writableLength: unknown, writeQueueSize: unknown): number => Math.max(finite(writableLength), finite(writeQueueSize));
+export const queuedBytes = (writableLength: unknown, writeQueueSize: unknown): number => finite(writeQueueSize) || finite(writableLength);
 
 const isJson = (text: string) => { try { JSON.parse(text); return true; } catch (_e) { return false; } };
 

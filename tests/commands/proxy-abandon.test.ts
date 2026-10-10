@@ -50,9 +50,15 @@ describe('JsonRpcInterceptor.abandon', () => {
     expect(await drain(ic)).toEqual([]);
   });
 
-  it('counts bytes owed to the client once, and never lets a odd value through', () => {
-    expect(queuedBytes(30000043, 30000043)).toBe(30000043); // overlap, not double
-    expect(queuedBytes(4096, 100)).toBe(4096);
+  it('reports what the kernel has not taken, not the whole in-flight write', () => {
+    // measured: a 30,000,001-byte write, reader took 1 MiB and paused
+    expect(queuedBytes(30000001, 28820353)).toBe(28820353);
+    expect(queuedBytes(4096, 100)).toBe(100);
+    expect(queuedBytes(30000043, 30000043)).toBe(30000043);
+    // no usable libuv figure: fall back to the stream's own count
+    expect(queuedBytes(4096, 0)).toBe(4096);
+    expect(queuedBytes(4096, undefined)).toBe(4096);
+    expect(queuedBytes(4096, NaN)).toBe(4096);
     expect(queuedBytes(0, 0)).toBe(0);
     for (const bad of [undefined, null, NaN, Infinity, -5, '7', {}]) expect(queuedBytes(bad, bad)).toBe(0);
     expect(queuedBytes(undefined, 12)).toBe(12);
