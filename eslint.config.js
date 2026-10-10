@@ -20,5 +20,33 @@ export default [
         "caughtErrorsIgnorePattern": "^_",
       }],
     }
-  }
+  },
+  {
+    // A fixed sleep as synchronization is what made proxy tests flake under
+    // load (2026-10-10). Wait on the real signal instead: vi.waitFor, a marker
+    // file, a log or stderr line, a reply, or fake timers.
+    files: ["tests/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": ["error",
+        {
+          selector: "NewExpression[callee.name='Promise'][arguments.0.params.length=1] CallExpression[callee.name='setTimeout']",
+          message: "No sleep promises in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.",
+        },
+        {
+          selector: "ImportDeclaration[source.value=/^(node:)?timers\\/promises$/]",
+          message: "No timers/promises sleeps in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.",
+        },
+        {
+          selector: "CallExpression:matches([callee.name='promisify'], [callee.property.name='promisify']) > Identifier[name='setTimeout']",
+          message: "No promisified setTimeout in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.",
+        },
+      ],
+    },
+  },
+  {
+    // TODO(!23): that MR owns this file and still sleeps in it (a 300ms wait and
+    // a 10ms poll interval). Drop this override once it merges and they are gone.
+    files: ["tests/commands/proxy-lifecycle.test.ts"],
+    rules: { "no-restricted-syntax": "off" },
+  },
 ];
