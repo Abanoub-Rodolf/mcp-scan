@@ -15,6 +15,14 @@ function warnStderr(msg: string) {
   if (!logger.isSilent) process.stderr.write(`mcp-scan proxy: ${msg}\n`);
 }
 
+// writableLength counts a whole queued write until it finishes; libuv's
+// writeQueueSize counts what of it the kernel has not taken yet. They
+// overlap, so the bytes still owed to the client are the larger one, not the
+// sum. A value Node does not give us as a finite number counts as 0, so a
+// changed internal can never wedge the proxy.
+const finite = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0);
+export const queuedBytes = (writableLength: unknown, writeQueueSize: unknown): number => Math.max(finite(writableLength), finite(writeQueueSize));
+
 const isJson = (text: string) => { try { JSON.parse(text); return true; } catch (_e) { return false; } };
 
 export class JsonRpcInterceptor extends Transform {
@@ -219,7 +227,10 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   // loadPolicy returns null for a file it could not parse. Running without
   // masking because the policy was unreadable would defeat the point of it.
   const policyFile = path.join(process.cwd(), '.mcp-scan.json');
-  if (fs.existsSync(policyFile) && (!policy || typeof policy !== 'object' || Array.isArray(policy))) {
+  // lstat, not existsSync: a dangling symlink "does not exist" to existsSync
+  // but is still a policy the user put there that we failed to read.
+  const policyPresent = (() => { try { fs.lstatSync(policyFile); return true; } catch (_e) { return false; } })();
+  if (policyPresent && (!policy || typeof policy !== 'object' || Array.isArray(policy))) {
     logger.error(`Not starting: ${policyFile} exists but is not a valid policy object, so privacy settings cannot be trusted. Fix or remove it.`);
     process.exitCode = 1;
     return;
@@ -342,8 +353,10 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   // Bytes still on their way to the client. writableLength only drops when a
   // whole queued write finishes, so one huge line read slowly looks frozen;
   // the libuv write queue shrinks as the reader takes bytes, so count it too.
-  const stdoutQueue = () => (process.stdout as any)._handle?.writeQueueSize ?? 0;
-  const stdoutPending = () => process.stdout.writableLength + stdoutQueue();
+  const stdoutQueue = () => finite((process.stdout as any)._handle?.writeQueueSize);
+  // Movement signal: either figure changing means bytes moved (the sum
+  // changes whenever one does). Not a byte count; see queuedBytes for that.
+  const stdoutPending = () => finite(process.stdout.writableLength) + stdoutQueue();
   const backlog = () => child.stdout.readableLength + serverInterceptor.readableLength + serverInterceptor.writableLength + stdoutPending();
   // How long a client with output queued may stay silent before we give up
   // on it. One deadline: the exit poll and the post-settle net share it.
@@ -403,10 +416,11 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
         const now = stdoutPending();
         still = now === last ? still + 1 : floor;
         last = now;
+        const owed = queuedBytes(process.stdout.writableLength, stdoutQueue());
         // Nothing queued and still not done is stuck (5s). A reader that
         // simply stopped reading gets the full stall deadline.
         if (still >= (now === 0 ? 10 : ticks)) {
-          if (now > 0) note(`client stopped reading: dropped ${now} bytes of queued output`);
+          if (owed > 0) note(`client stopped reading: dropped ${owed} bytes of queued output`);
           logStream?.end();
           process.exit(code || 0);
         }

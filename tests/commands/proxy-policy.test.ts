@@ -38,6 +38,21 @@ describe('proxy policy file', () => {
     expect(res.started).toBe(false);
   }, 30000);
 
+  it('refuses a .mcp-scan.json that is a dangling symlink', async () => {
+    fs.symlinkSync(path.join(dir, 'missing-policy.json'), path.join(dir, '.mcp-scan.json'));
+    const res = await run();
+    expect(res.exitCode).not.toBe(0);
+    expect(res.started).toBe(false);
+  }, 30000);
+
+  it('follows a symlink to a valid policy', async () => {
+    fs.writeFileSync(path.join(dir, 'real.json'), JSON.stringify({ privacy: { maskPii: true } }));
+    fs.symlinkSync(path.join(dir, 'real.json'), path.join(dir, '.mcp-scan.json'));
+    const res = await run();
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain('[EMAIL_MASKED]');
+  }, 30000);
+
   it('starts normally with a valid policy, or with none', async () => {
     const none = await run();
     expect(none.exitCode).toBe(0);
