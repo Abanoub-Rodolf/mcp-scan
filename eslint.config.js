@@ -109,9 +109,9 @@ const noSleepPromise = {
         if (p.type === "MemberExpression" && p.object === e && !p.computed && p.parent.type === "CallExpression" && p.parent.callee === p) {
           const how = p.property.name;
           // `r.call(...)` and `r.apply(...)` run the resolver, like `r()`
-          if (how === "call" || how === "apply") { hit("call", p.parent); return out; }
+          if (how === "call" || how === "apply") hit("call", p.parent);
           // `r.bind(...)` stands for the resolver
-          if (how === "bind") {
+          else if (how === "bind") {
             e = p.parent;
             p = e.parent;
           }

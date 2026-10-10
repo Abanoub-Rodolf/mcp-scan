@@ -69,6 +69,9 @@ const SLEEPS = [
   'await new Promise(r => { setTimeout(() => { r.apply(null, []); }, 5); });',
   'await new Promise(r => { setTimeout(() => { r.apply(null, [1]); }, 5); });',
   'await new Promise(r => { const f = () => r.call(null); setTimeout(f, 5); });',
+  // a direct .call is a call, not a handoff
+  'await new Promise(r => { r.call(null); setTimeout(r, 5); });',
+  'await new Promise(r => { r.apply(null, []); setTimeout(r, 5); });',
   // a comma expression is the last operand
   'await new Promise(r => { setTimeout((0, r), 5); });',
   // a named executor is followed like an inline one
@@ -194,6 +197,9 @@ const ALLOWED = [
   "await new Promise(r => { ee.on('x', r); setTimeout(() => r.call(null), 5); });",
   "await new Promise(r => { ee.on('x', () => { r.apply(null, []); }); setTimeout(() => r.call(null), 5); });",
   "await new Promise(r => { const h = () => r.call(null); ee.on('x', h); setTimeout(r, 5); });",
+  // the resolver as the delay is not a callback or a later argument
+  "await new Promise(r => { setTimeout(go, r); });",
+  "await new Promise(r => { setInterval(go, r); r(1); });",
   // a comma expression whose last operand is not the resolver
   "await new Promise(r => { setTimeout((r, 0), 5); void r; });",
   "await new Promise(r => { ee.on('x', (0, r)); setTimeout((0, r), 5); });",
