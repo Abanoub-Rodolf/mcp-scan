@@ -57,7 +57,6 @@ const SLEEPS = [
   'await new Promise(r => { const u = () => { saved = r; }; setTimeout(r, 5); });',
   'await new Promise(r => { const u = () => r; setTimeout(r, 5); void u; });',
   'await new Promise(r => { function u() { return r; } setTimeout(r, 5); });',
-  // a shadowing binding is a different variable, whatever it is used for
   // the resolver rides along as a later timer argument
   'await new Promise(r => { setTimeout((x) => x(), 5, r); });',
   'await new Promise(r => { setTimeout(go, 5, r); });',
@@ -107,6 +106,7 @@ const SLEEPS = [
   'const w = Promise.withResolvers(); setTimeout(w["resolve"], 5);',
   'const w = Promise.withResolvers(); setTimeout(() => { w.resolve(); }, 5); void w.reject;',
   'const P = Promise; const { resolve } = P.withResolvers(); setInterval(resolve, 5);',
+  // a shadowing binding is a different variable, whatever it is used for
   'await new Promise(r => { function h(r) { use(r); } h(1); setTimeout(r, 5); });',
   'await new Promise(r => { try { go(); } catch (r) { use(r); } setTimeout(r, 5); });',
   'await new Promise(r => { function keep(r) { return r; } keep(null); setTimeout(r, 5); });',
