@@ -18,7 +18,7 @@ vi.mock('../../src/utils/logger.js', () => {
   };
 });
 
-const CONFIG = path.resolve('/tmp/mcp-scan-watch-test/config.json');
+const CONFIG = path.join(os.tmpdir(), 'mcp-scan-watch-test', 'config.json');
 vi.mock('../../src/config/detector.js', () => ({
   detectTools: async () => [{ name: 'x', configPath: CONFIG, exists: true }],
 }));
@@ -113,6 +113,8 @@ describe('watch mode and an unusable baseline key', () => {
     expect(onKeyDirChange).toBeDefined();
 
     runScanMock.mockResolvedValueOnce(emptyReport);
+    // the user fixes the key: it now exists, unlike when the failing scan ended
+    fs.writeFileSync(path.join(home, 'baseline.key'), 'k');
     onKeyDirChange!('rename', 'baseline.key');
     await vi.advanceTimersByTimeAsync(600);
 
@@ -120,17 +122,66 @@ describe('watch mode and an unusable baseline key', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it('ignores other files in the audit dir and survives a missing audit dir', async () => {
+  it('ignores other files in the audit dir', async () => {
     runScanMock.mockResolvedValueOnce(emptyReport);
     await runWatch();
     onKeyDirChange!('change', 'audit.log');
     await vi.advanceTimersByTimeAsync(600);
     expect(runScanMock).toHaveBeenCalledTimes(1);
+  });
 
-    process.removeAllListeners('SIGINT');
-    process.removeAllListeners('SIGTERM');
-    vi.stubEnv('MCP_SCAN_HOME', path.join(home, 'nope'));
+  it('does not watch a missing audit dir and does not report it as a failure', async () => {
+    const missing = path.join(home, 'nope');
+    vi.stubEnv('MCP_SCAN_HOME', missing);
     runScanMock.mockResolvedValueOnce(emptyReport);
-    await expect(runWatch()).resolves.toBeUndefined();
+    await runWatch();
+
+    expect(vi.mocked(fs.watch).mock.calls.map(c => c[0])).not.toContain(missing);
+    expect(logger.error).not.toHaveBeenCalledWith(expect.stringContaining('Failed to watch'));
+  });
+
+  it('watches the config dir once when it is also the audit dir, and rescans on a key event', async () => {
+    const shared = path.dirname(CONFIG);
+    fs.mkdirSync(shared, { recursive: true });
+    vi.stubEnv('MCP_SCAN_HOME', shared);
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+    expect(vi.mocked(fs.watch).mock.calls.filter(c => c[0] === shared)).toHaveLength(1);
+
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    fs.writeFileSync(path.join(shared, 'baseline.key'), 'k');
+    try {
+      onChange('rename', 'baseline.key');
+      await vi.advanceTimersByTimeAsync(600);
+      expect(runScanMock).toHaveBeenCalledTimes(2);
+    } finally {
+      fs.rmSync(shared, { recursive: true, force: true });
+    }
+  });
+
+  it('does not rescan for a baseline.key change its own scan made', async () => {
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+
+    // the rescan creates the key and the watcher event arrives after it ends
+    runScanMock.mockImplementationOnce(async () => {
+      fs.writeFileSync(path.join(home, 'baseline.key'), 'k');
+      return emptyReport;
+    });
+    await rescan();
+    expect(runScanMock).toHaveBeenCalledTimes(2);
+    onKeyDirChange!('rename', 'baseline.key');
+    await vi.advanceTimersByTimeAsync(600);
+    expect(runScanMock).toHaveBeenCalledTimes(2);
+
+    // and one that lands while the scan is still running
+    runScanMock.mockImplementationOnce(async () => {
+      fs.rmSync(path.join(home, 'baseline.key'), { force: true });
+      onKeyDirChange!('rename', 'baseline.key');
+      return emptyReport;
+    });
+    await rescan();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(runScanMock).toHaveBeenCalledTimes(3);
   });
 });
