@@ -351,6 +351,7 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   // 'exit' we give up only when nothing has moved for 2s: no new bytes from
   // the server and nothing queued on the way to a (possibly slow) client.
   let settled = false;
+  let exitPoll: NodeJS.Timeout | undefined;
   let lastActivity = Date.now();
   child.stdout.on('data', () => { lastActivity = Date.now(); });
   process.stdout.on('drain', () => { lastActivity = Date.now(); });
@@ -374,7 +375,7 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     if (settled) return;
     settled = true;
     const idleMs = Date.now() - lastActivity;
-    clearInterval(exitPoll);
+    if (exitPoll) clearInterval(exitPoll);
     logger.info(exited ? `Server exited with code ${code}` : 'Stopping the server: its client stopped reading');
     process.exitCode = code || 0;
     if (forced) {
@@ -444,7 +445,7 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     lastActivity = Date.now();
     lastBacklog = backlog();
   });
-  const exitPoll = setInterval(() => {
+  exitPoll = setInterval(() => {
     const now = backlog();
     if (now !== lastBacklog) { lastBacklog = now; lastActivity = Date.now(); }
     const idle = Date.now() - lastActivity;
