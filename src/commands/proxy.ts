@@ -42,6 +42,8 @@ export const owedBytes = (s: any): number => {
 
 const isJson = (text: string) => { try { JSON.parse(text); return true; } catch (_e) { return false; } };
 
+const UNREACHABLE = 'Internal error: server is no longer reachable';
+
 export class JsonRpcInterceptor extends Transform {
   private buffer: string = '';
   // A multibyte character can straddle two chunks; decoding each chunk on
@@ -88,20 +90,27 @@ export class JsonRpcInterceptor extends Transform {
     this.resume(); // nothing is pushed any more, but keep the buffers moving
   }
 
-  // The consumer reports each chunk it took from us once its write settles.
-  // A chunk can hold several pushed lines; every request in one that never
-  // reached the destination is answered like a refused one, so a burst sent
-  // just before the pipe broke does not leave its senders waiting.
+  // The consumer takes the entries for each chunk when it writes it, in push
+  // order, and reports the write's outcome for exactly those. Every request in
+  // a chunk that never reached the destination is answered like a refused one,
+  // so a burst sent just before the pipe broke does not leave its senders
+  // waiting. Binding at write time means the outcome callbacks may fire in any
+  // order.
   trackDelivery() {
     this.tracking = true;
   }
 
-  settled(chunk: Buffer, err?: Error | null) {
+  claim(chunk: Buffer) {
     // every pushed line ends in exactly one newline, and 0x0a never occurs inside a UTF-8 sequence
     let n = 0;
     for (let i = chunk.indexOf(10); i !== -1; i = chunk.indexOf(10, i + 1)) n++;
-    for (const { batch, requests } of this.inFlight.splice(0, n)) {
-      if (err && requests.length > 0 && this.replyToSender) this.replyToSender(this.errorLines(requests, batch, 'Internal error: server is no longer reachable'));
+    return this.inFlight.splice(0, n);
+  }
+
+  settled(entries: { batch: boolean; requests: { id: string | number }[] }[], err?: Error | null) {
+    if (!err || !this.replyToSender) return;
+    for (const { batch, requests } of entries) {
+      if (requests.length > 0) this.replyToSender(this.errorLines(requests, batch, UNREACHABLE));
     }
   }
 
@@ -137,6 +146,7 @@ export class JsonRpcInterceptor extends Transform {
     try {
       json = JSON.parse(line);
     } catch (_e) {
+      if (this.refusing) return; // nobody to answer, and nowhere to send it
       // Not JSON: forward it, but never put the raw line in the
       // log or dashboard. It may hold secrets the string detectors miss.
       const note = `<unparsed line, ${line.length} chars, not logged>`;
@@ -149,7 +159,7 @@ export class JsonRpcInterceptor extends Transform {
 
     if (this.refusing) {
       const { batch, requests } = this.snapshotIds(json);
-      if (requests.length > 0 && this.replyToSender) this.replyToSender(this.errorLines(requests, batch, 'Internal error: server is no longer reachable'));
+      if (requests.length > 0 && this.replyToSender) this.replyToSender(this.errorLines(requests, batch, UNREACHABLE));
       return;
     }
 
@@ -392,7 +402,8 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   clientInterceptor.trackDelivery();
   process.stdin.pipe(clientInterceptor);
   clientInterceptor.on('data', (chunk: Buffer) => {
-    const ok = child.stdin.write(chunk, err => clientInterceptor.settled(chunk, err));
+    const sent = clientInterceptor.claim(chunk);
+    const ok = child.stdin.write(chunk, err => clientInterceptor.settled(sent, err));
     if (!ok && !child.stdin.destroyed) {
       clientInterceptor.pause();
       child.stdin.once('drain', () => clientInterceptor.resume());
