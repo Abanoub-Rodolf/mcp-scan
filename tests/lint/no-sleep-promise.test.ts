@@ -233,6 +233,9 @@ const ALLOWED = [
   "const { setTimeout: st } = obj; await new Promise(r => st(r, 5));",
   "const { other: st } = globalThis; await new Promise(r => st(r, 5));",
   "const st = other(setTimeout); await new Promise(r => st(r, 5));",
+  // a rest element has no value: the pattern walk must skip it, not crash
+  "const { ...rest } = globalThis; await new Promise(r => rest(r, 5));",
+  "const { a, ...rest } = globalThis; await new Promise(r => rest(r, 5)); void a;",
   "const t = setTimeout; await new Promise(r => { t(() => { throw new Error('d'); }, 5); r(1); });",
   // withResolvers: the resolver also handed off, or only reject on the timer
   "const { resolve } = Promise.withResolvers(); ee.on('x', resolve); setTimeout(resolve, 5);",
