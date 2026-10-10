@@ -15,8 +15,9 @@ function newest(dir: string): number {
 }
 
 export default function setup() {
-  const dist = path.resolve('dist/index.js');
-  if (!fs.existsSync(dist) || fs.statSync(dist).mtimeMs < newest(path.resolve('src'))) {
+  const outputs = ['dist/index.js', 'dist/lib.js', 'data/cve-snapshot.json'].map(f => path.resolve(f));
+  const oldest = outputs.every(f => fs.existsSync(f)) ? Math.min(...outputs.map(f => fs.statSync(f).mtimeMs)) : 0;
+  if (oldest < newest(path.resolve('src'))) {
     execSync('npm run build', { stdio: 'ignore' });
   }
 }
