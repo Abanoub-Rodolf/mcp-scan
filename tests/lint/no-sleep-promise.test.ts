@@ -129,6 +129,8 @@ const SLEEPS = [
   'const w = Promise.withResolvers(); const v = w; setTimeout(v.resolve, 5);',
   'const w = Promise.withResolvers(); const { resolve } = w; const f = resolve.bind(null); setTimeout(f, 5);',
   'const w = Promise.withResolvers(); const f = w.resolve; setTimeout(f.bind(null), 5);',
+  // a cycle of aliases must not recurse forever
+  'await new Promise(r => { let a = r; let b = a; a = b; setTimeout(a, 5); });',
   'const w = Promise.withResolvers(); setTimeout(() => { w.resolve(); }, 5); void w.reject;',
   'const P = Promise; const { resolve } = P.withResolvers(); setInterval(resolve, 5);',
   // a shadowing binding is a different variable, whatever it is used for
