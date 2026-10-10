@@ -5,7 +5,37 @@ on:
     tags: [ 'v*' ]
 
 jobs:
+  # A tag push does not wait for ci.yml, so the release re-runs the gates
+  # itself and publish cannot start unless they pass.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - name: Tag must match package.json version
+      run: |
+        v="v$(node -p "require('./package.json').version")"
+        if [ "$v" != "$GITHUB_REF_NAME" ]; then
+          echo "tag $GITHUB_REF_NAME does not match package.json version $v" >&2
+          exit 1
+        fi
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22.x
+        cache: 'npm'
+    - run: npm ci
+    - run: npm run build
+    - name: Shipped action bundle is current
+      run: |
+        npm run build:action
+        git diff --exit-code action/dist
+        test -z "$(git status --porcelain action/dist)"
+    - run: npm test
+    - run: npm run lint
+    - run: node scripts/audit-gate.mjs
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -13,6 +43,13 @@ jobs:
       id-token: write # for npm provenance
     steps:
     - uses: actions/checkout@v4
+    - name: Tag must match package.json version
+      run: |
+        v="v$(node -p "require('./package.json').version")"
+        if [ "$v" != "$GITHUB_REF_NAME" ]; then
+          echo "tag $GITHUB_REF_NAME does not match package.json version $v" >&2
+          exit 1
+        fi
     - uses: actions/setup-node@v4
       with:
         # node 24 ships npm >= 11.5.1, required for OIDC trusted-publisher

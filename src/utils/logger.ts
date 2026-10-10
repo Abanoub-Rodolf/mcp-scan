@@ -9,22 +9,27 @@ const lowColor = chalk.dim;
 const passColor = chalk.hex('#3FB950');
 const dimColor = chalk.dim;
 
+// In `mcp-scan proxy` stdout carries the MCP protocol, so the proxy flips
+// this to send every log line to stderr. Scan output is untouched.
+const out = (...args: unknown[]) => (logger.toStderr ? console.error(...args) : console.log(...args));
+
 export const logger = {
+  toStderr: false,
   isSilent: false,
   isVerbose: false,
   
-  brand: (msg: string) => !logger.isSilent && console.log(brandColor.bold(msg)),
-  critical: (msg: string) => !logger.isSilent && console.log(criticalColor('✖ CRITICAL:'), msg),
-  high: (msg: string) => !logger.isSilent && console.log(highColor('▲ HIGH:'), msg),
-  medium: (msg: string) => !logger.isSilent && console.log(mediumColor('■ MEDIUM:'), msg),
-  low: (msg: string) => !logger.isSilent && console.log(lowColor('• LOW:'), msg),
-  pass: (msg: string) => !logger.isSilent && console.log(passColor.bold('✓ PASS:'), msg),
-  info: (msg: string) => !logger.isSilent && console.log(brandColor('ℹ INFO:'), msg),
-  fix: (msg: string) => !logger.isSilent && console.log(dimColor(`  ↳ ${msg}`)),
-  detail: (msg: string) => !logger.isSilent && logger.isVerbose && console.log(dimColor(`    ${msg}`)),
-  divider: () => !logger.isSilent && console.log(dimColor('──────────────────────────────────────────────────')),
-  warn: (msg: string) => !logger.isSilent && console.log(chalk.yellow.bold('! WARN:'), msg),
+  brand: (msg: string) => !logger.isSilent && out(brandColor.bold(msg)),
+  critical: (msg: string) => !logger.isSilent && out(criticalColor('✖ CRITICAL:'), msg),
+  high: (msg: string) => !logger.isSilent && out(highColor('▲ HIGH:'), msg),
+  medium: (msg: string) => !logger.isSilent && out(mediumColor('■ MEDIUM:'), msg),
+  low: (msg: string) => !logger.isSilent && out(lowColor('• LOW:'), msg),
+  pass: (msg: string) => !logger.isSilent && out(passColor.bold('✓ PASS:'), msg),
+  info: (msg: string) => !logger.isSilent && out(brandColor('ℹ INFO:'), msg),
+  fix: (msg: string) => !logger.isSilent && out(dimColor(`  ↳ ${msg}`)),
+  detail: (msg: string) => !logger.isSilent && logger.isVerbose && out(dimColor(`    ${msg}`)),
+  divider: () => !logger.isSilent && out(dimColor('──────────────────────────────────────────────────')),
+  warn: (msg: string) => !logger.isSilent && out(chalk.yellow.bold('! WARN:'), msg),
   error: (msg: string) => console.error(chalk.red.bold('✖ ERROR:'), msg),
-  log: (msg: string) => !logger.isSilent && console.log(msg),
-  emptyLine: () => !logger.isSilent && console.log(''),
+  log: (msg: string) => !logger.isSilent && out(msg),
+  emptyLine: () => !logger.isSilent && out(''),
 };

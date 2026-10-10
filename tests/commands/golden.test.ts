@@ -35,6 +35,7 @@ function normalize(report: Record<string, unknown>): Record<string, unknown> {
         if (cr.metadata && typeof cr.metadata === 'object') {
           const meta = { ...cr.metadata as Record<string, unknown> };
           delete meta.version;
+          delete meta.versionSource;
           delete meta.repositoryUrl;
           delete meta.author;
           delete meta.license;

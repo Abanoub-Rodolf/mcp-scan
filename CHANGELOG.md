@@ -12,6 +12,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   Scans now keep the 5 newest. Backups the `fix` command makes of your own
   MCP client configs are never pruned.
 
+## [2.1.0] - 2026-10-09
+
+### Security
+- The known-servers baseline is signed (HMAC-SHA256, per-install key in `baseline.key`, mode 0600). A hand-edited store, a stripped signature or a damaged key is reported as tampering (MEDIUM) and the store is set aside and rebuilt. A missing key counts as tampering only when the store was signed or the audit log shows an earlier signing; otherwise it reads as an upgrade.
+- A deleted baseline is reported as a missing baseline (MEDIUM) when the key or the audit log still shows an earlier one, instead of being treated as a quiet first run. Deleting the baseline, the key and the audit log together still reads as a first run; that is a local-store limit, described in the README.
+- An unreadable, corrupt or unknown-schema baseline now fails closed with a MEDIUM `server-mutation` finding instead of being silently trusted.
+- A change in the registry's latest version for a server whose spec names no version (or `@latest`), patch releases included, is reported at MEDIUM. Only live registry values are compared; the bundled offline snapshot never is, so going offline or upgrading mcp-scan is not a change. Any other spec (`pkg@x.y.z`, a range, a tag) is covered by the config fingerprint instead.
+- Proxy logs are created 0600 in a 0700 directory, and lines that fail to parse or mask are no longer written to the log. A message the privacy engine could not mask is dropped without leaving the other side hanging: a dropped request gets a JSON-RPC internal error (-32603) back to its sender, a dropped response is replaced by an error for the same id, and a dropped notification warns on stderr.
+- With `privacy.maskPii` on, every string value, every object key except the six JSON-RPC envelope keys `jsonrpc`, `id`, `method`, `params`, `result` and `error` (colliding masked keys are suffixed `_2`, `_3`, none dropped) and every non-JSON line that ends in a newline, in both directions, goes through the built-in detectors before it is logged or forwarded. A final line with no trailing newline is masked and logged like any other if it is JSON (it used to be forwarded raw); if it is not valid JSON it is dropped with a warning.
+- Masking fails closed: a message nested past 100 levels, or that errors while being masked, is dropped and answered with a -32603 error carrying the sender's original id (it used to be forwarded and logged unmasked past 100 levels). Not covered: non-string JSON values such as numbers, text the detectors do not match, and the server's own stderr, which passes through untouched.
+- A server that closes its stdin (EPIPE) no longer crashes the proxy. It warns once per stream (stderr, or the dashboard under `--ui`), and every request that arrives after the error is seen gets a -32603 error carrying its own id; notifications are ignored. A request already in flight when the error surfaces gets no reply.
+- If the client goes away (the proxy's stdout closes), the proxy terminates the server and exits instead of leaving both running.
+- After the server exits, the proxy waits for its output pipe to close. If a process the server started keeps that pipe open, it exits once output has been idle for 2 seconds (nothing arriving from the server and nothing queued for the client). A client that has output queued and takes no bytes of it for 60 seconds (progress is counted in bytes the pipe accepts, so a slow reader of even one huge line never trips it) is given up on, and the proxy exits at most about a second after that. Output already queued on the proxy's stdout at that point is lost, with a warning; server output the proxy had not processed yet is dropped, also with a warning (stderr, or the dashboard under `--ui`). When the server exits, a last line cut off mid-message is kept if it is complete JSON and otherwise dropped with a warning, so a fragment is never forwarded as a message. The proxy log is closed only after every line the proxy forwards, an unterminated last one included, has been masked and written.
+- The proxy refuses to start (exit code 1, no server launched) if `.mcp-scan.json` exists but cannot be parsed or is not a JSON object, instead of running with masking silently off.
+- The `id` of a top-level JSON-RPC message (an object with `"jsonrpc": "2.0"` and one of `method`, `result` or `error`; each element's, in a batch) is passed through unmasked and unrenamed, by design: it is a correlation token, and masking `req-1234567890` or a UUID would stop replies matching their requests. A dropped message is answered with that same raw id. The same text inside params or a result is still masked. An id that itself looks like PII therefore appears in the proxy log as sent.
+- With masking off, the proxy forwards each JSON line as received (it used to re-serialize it) and no longer throws on extremely deep nesting.
+- Masking compiles its detectors once instead of per string: a 1.9 MB, 20,000-object response masks in about 46 ms instead of about 160 ms.
+- The proxy decodes UTF-8 across chunk boundaries, so multibyte text in long lines no longer turns into U+FFFD, and it waits for the server's last output to drain before exiting.
+- `npx pkg@latest` (and `@scope/pkg@latest`) is now looked up in the registry by its bare name, so the latest-version change check actually runs for it.
+- smol-toml 1.9.1 and lodash 4.18.1 clear known advisories.
+
+### Changed
+- Do not run mcp-scan 2.0.13 or older against a store that 2.1.0 has signed (for example a global 2.0.13 next to an `npx mcp-scan@latest`). The old version loads the whole store, overwrites its own entries with old-recipe fingerprints and writes it back without re-signing, so the next 2.1.0 scan reports a MEDIUM integrity failure ("signature does not match") for every server. It is a one-time false alarm: that scan sets the file aside as `known-servers.json.corrupt-<time>` and rebuilds a signed baseline, and the following scan is clean. Use one version per machine, or review the configs by hand after the alarm.
+- The fingerprint covers the config you wrote plus the package name; the resolved version is tracked separately.
+- Upgrading from 2.0.x resets the baseline once: that scan reports one INFO per scanned server ("baseline was reset") and makes no change check, then writes a signed baseline. A current-format store that is only unsigned is compared as usual and signed with a single INFO line. The empty `{}` store that 2.0.13 writes after a scan with no servers is treated like any other 2.0.x store: one INFO per scanned server, then a signed baseline. It is reported as tampering (MEDIUM) if this install signed a baseline before or a key is already present.
+- The stale CVE snapshot warning prints once per run.
+- `mcp-scan proxy` sends all its own log lines (banner, info, warnings) to stderr, so stdout carries only the MCP protocol. Scan output is unchanged.
+
+### Build
+- Publishing to npm now requires build, tests, lint and a dependency audit gate to pass.
+- `npm test` builds first, so a fresh clone goes green.
+- Internal planning and campaign notes are no longer tracked in the repo.
+
 ## [2.0.13] - 2026-09-07
 
 ### Changed

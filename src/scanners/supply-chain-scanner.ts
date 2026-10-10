@@ -34,6 +34,15 @@ export interface SupplyChainResult {
   metadata?: PackageMetadata;
 }
 
+// What the registry is asked about. A bare name or `name@latest` runs the
+// registry's latest, so look up the bare name (scoped names keep their
+// leading @). Any other spec (pin, range, tag) is left as written, as before:
+// it is not what latest resolves to, and the baseline does not track it.
+function registryName(spec: string): string {
+  const at = spec.indexOf('@', 1);
+  return at > 0 && spec.slice(at + 1) === 'latest' ? spec.slice(0, at) : spec;
+}
+
 export async function scanSupplyChain(server: ResolvedServer, offline: boolean = false): Promise<SupplyChainResult> {
   const findings: Finding[] = [];
   let trustScore = 50; // Neutral starting point
@@ -47,8 +56,10 @@ export async function scanSupplyChain(server: ResolvedServer, offline: boolean =
 
   if (!packageName) return { findings, trustScore: 100, metadata };
 
+  const lookupName = registryName(packageName);
+
   if (offline) {
-    return scanSupplyChainOffline(packageName);
+    return scanSupplyChainOffline(packageName, lookupName);
   }
 
   metadata.source = 'npm';
@@ -58,18 +69,19 @@ export async function scanSupplyChain(server: ResolvedServer, offline: boolean =
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
-    const npmRes = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`, { signal: controller.signal });
+    const npmRes = await fetch(`https://registry.npmjs.org/${encodeURIComponent(lookupName)}`, { signal: controller.signal });
     clearTimeout(timeout);
 
     if (!npmRes.ok) {
       logger.warn(`Supply Chain: Failed to fetch npm registry data for ${packageName}. Switching to offline snapshot.`);
-      return scanSupplyChainOffline(packageName);
+      return scanSupplyChainOffline(packageName, lookupName);
     }
 
     const npmData = await npmRes.json() as NpmPackageData;
     const repoUrl = extractRepoUrl(npmData);
     
     metadata.version = npmData['dist-tags']?.latest;
+    metadata.versionSource = 'registry';
     metadata.license = npmData.license || npmData.licenses?.[0]?.type;
     // A successful, parsed registry response is authoritative for license
     // presence/absence, regardless of what happens next (no repo URL, dead
@@ -140,23 +152,24 @@ export async function scanSupplyChain(server: ResolvedServer, offline: boolean =
   } catch (error: any) {
     if (error.name === 'AbortError') {
       logger.warn(`Supply Chain: Fetch timed out for ${packageName}. Switching to offline mode.`);
-      return scanSupplyChainOffline(packageName);
+      return scanSupplyChainOffline(packageName, lookupName);
     }
     logger.warn(`Supply Chain: Error during scan for ${packageName}: ${error instanceof Error ? error.message : String(error)}. Switching to offline mode.`);
-    return scanSupplyChainOffline(packageName);
+    return scanSupplyChainOffline(packageName, lookupName);
   }
 
   return { findings, trustScore, metadata };
 }
 
-function scanSupplyChainOffline(packageName: string): SupplyChainResult {
+function scanSupplyChainOffline(packageName: string, lookupName: string = packageName): SupplyChainResult {
   const result: SupplyChainResult = { findings: [], trustScore: 30, metadata: { source: 'npm', packageName } };
   try {
     const snapshot = loadCveSnapshot();
     if (!snapshot) return result;
-    const pkgData = snapshot.raw.packages?.[packageName];
+    const pkgData = snapshot.raw.packages?.[lookupName];
     if (pkgData) {
       result.metadata!.version = pkgData.version;
+      result.metadata!.versionSource = 'snapshot';
       result.metadata!.license = pkgData.license;
       const hasKnownCves = Array.isArray(pkgData.vulns) && pkgData.vulns.length > 0;
       result.trustScore = hasKnownCves ? 40 : 100;

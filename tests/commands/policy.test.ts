@@ -14,13 +14,13 @@ describe('Policy Engine', () => {
       blockedPackages: ['malicious-pkg']
     };
     
-    vi.mocked(fs.existsSync).mockImplementation((p: string) => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
         if (p.toString().endsWith('.mcp-scan.json')) return true;
         if (p.toString().endsWith('config.json')) return true;
         return false;
     });
 
-    vi.mocked(fs.readFileSync).mockImplementation((p: string) => {
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
         if (p.toString().endsWith('.mcp-scan.json')) return JSON.stringify(policy);
         if (p.toString().endsWith('config.json')) return JSON.stringify({
             mcpServers: {
@@ -33,7 +33,7 @@ describe('Policy Engine', () => {
         return '';
     });
 
-    const report = await runScan({ silent: true, config: 'config.json' });
+    const report = await runScan({ silent: true, config: 'config.json', offline: true });
     const serverResult = report.results.find(r => r.serverName === 'test-server');
     expect(serverResult?.findings.some(f => f.id === 'blocked-package-policy')).toBe(true);
   });
@@ -43,8 +43,8 @@ describe('Policy Engine', () => {
       suppressRules: ['unverified-source']
     };
 
-    vi.mocked(fs.existsSync).mockImplementation((p: string) => p.toString().endsWith('.mcp-scan.json') || p.toString().endsWith('config.json'));
-    vi.mocked(fs.readFileSync).mockImplementation((p: string) => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => p.toString().endsWith('.mcp-scan.json') || p.toString().endsWith('config.json'));
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
         if (p.toString().endsWith('.mcp-scan.json')) return JSON.stringify(policy);
         if (p.toString().endsWith('config.json')) return JSON.stringify({
             mcpServers: {
@@ -57,7 +57,7 @@ describe('Policy Engine', () => {
         return '';
     });
 
-    const report = await runScan({ silent: true, config: 'config.json' });
+    const report = await runScan({ silent: true, config: 'config.json', offline: true });
     const serverResult = report.results.find(r => r.serverName === 'test-server');
     expect(serverResult?.findings.some(f => f.id === 'unverified-source')).toBe(false);
   });

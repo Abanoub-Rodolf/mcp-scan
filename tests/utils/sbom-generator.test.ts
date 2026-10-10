@@ -39,12 +39,12 @@ describe('SBOM Generator', () => {
     expect(sbom.bomFormat).toBe('CycloneDX');
     expect(sbom.specVersion).toBe('1.5');
     expect(sbom.components).toHaveLength(1);
-    expect(sbom.components[0].name).toBe('@mcp/test-server');
-    expect(sbom.components[0].hashes[0].content).toBe('sha512-abc');
+    expect(sbom.components[0]!.name).toBe('@mcp/test-server');
+    expect(sbom.components[0]!.hashes![0]!.content).toBe('sha512-abc');
     
     expect(sbom.vulnerabilities).toHaveLength(1);
-    expect(sbom.vulnerabilities[0].id).toBe('exposed-secret');
-    expect(sbom.vulnerabilities[0].ratings[0].severity).toBe('critical');
+    expect(sbom.vulnerabilities![0]!.id).toBe('exposed-secret');
+    expect(sbom.vulnerabilities![0]!.ratings[0].severity).toBe('critical');
   });
 
   it('2. should generate a valid SPDX SBOM', async () => {
@@ -63,8 +63,8 @@ describe('SBOM Generator', () => {
     };
 
     const sbom = await generateSbom(emptyReport);
-    expect(sbom.components[0].name).toBe('local');
-    expect(sbom.components[0].version).toBe('0.0.0');
+    expect(sbom.components[0]!.name).toBe('local');
+    expect(sbom.components[0]!.version).toBe('0.0.0');
     
     const spdx = generateSpdx(emptyReport);
     expect(spdx).toContain('PackageName: local');

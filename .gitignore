@@ -24,3 +24,17 @@ GEMINI_AUDIT.md
 coverage/
 *.sarif
 test-runner*.js
+
+# Internal planning, agent prompts and campaign material. Kept on disk,
+# not published (2026-10 audit).
+/linkedin-campaign/
+/.prompts/
+/.gemini/
+/docs/social/
+/docs/GROWTH-ROADMAP.md
+/GEMINI_NEXT.md
+/LINKEDIN-LAUNCH-PROMPT.md
+/MILESTONE-AUDIT.md
+/PRD.md
+/RESEARCH-V2.md
+/TASKS*.md
