@@ -185,6 +185,8 @@ Rules need `id` + `action` (`block`, `warn`, `skip`, `override-severity`).
 Match keys: `server_name`, `finding_id`, `severity`, `category`, `license_type`, `pii_types`.
 Validate with `mcp-scan policy validate`.
 
+A policy file that exists but can't be used stops the scan (error on stderr naming the file, exit 1) instead of running without it. That covers an unparseable `.mcp-scan.json` or `.mcp-scan-policy.yml`, a wrong-typed field (`"blockedPackages": "x"`), a YAML policy that fails `policy validate`, and `--policy <path>` pointing at a missing file. No policy file at all is fine; the scan runs with defaults.
+
 ---
 
 ## Compliance Mapping

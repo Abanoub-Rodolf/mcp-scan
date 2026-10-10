@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- Policy loading now fails closed. If `.mcp-scan.json` or `.mcp-scan-policy.yml` (current directory, then home) exists but cannot be read or parsed, or has a wrong-typed field (`blockedPackages: "x"`, `maxSeverity: "severe"`, `privacy.maskPii: "true"`, a YAML policy without `version: 1` and a `rules` list, an empty YAML file), the command stops before scanning with an error on stderr naming the file and the problem, and exits 1. `--policy <path>` naming a file that does not exist does the same. It used to warn (or say nothing) and scan with no policy, which silently dropped `blockedPackages`, `requiredEnvVarPrefix`, `suppressRules`, `maxSeverity` and every YAML rule. A CI run that was passing with a broken policy file will now fail until the file is fixed or removed. Absent policy files are unchanged. Library callers of `runScan` get a thrown `PolicyError`; `watch` exits 1 on a bad policy at start and skips (never reports "all clear" for) a scan after the file breaks; `report` stops instead of skipping each config. `policy show` and `policy list` on a broken file now exit 1.
+
 ## [2.1.0] - 2026-10-09
 
 ### Security
