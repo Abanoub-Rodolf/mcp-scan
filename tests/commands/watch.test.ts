@@ -179,6 +179,7 @@ describe('watch mode and an unusable baseline key', () => {
     expect(runScanMock).toHaveBeenCalledTimes(2);
   });
 
+  const FIXED_MTIME = 1_700_000_000;
   const keyFilePath = () => path.join(home, 'baseline.key');
   const flush = async () => {
     await vi.advanceTimersByTimeAsync(0);
@@ -192,17 +193,27 @@ describe('watch mode and an unusable baseline key', () => {
     // the key appears while the scan runs (an outside edit, or our own write)
     runScanMock.mockImplementationOnce(async () => {
       fs.writeFileSync(keyFilePath(), 'k');
+      fs.utimesSync(keyFilePath(), FIXED_MTIME, FIXED_MTIME); // whole seconds compare exactly
       onKeyDirChange!('rename', 'baseline.key');
+      return emptyReport;
+    });
+    // the queued follow-up rewrites the key to the same bytes and mtime and
+    // fires an event, which is what the loop guard has to absorb
+    runScanMock.mockImplementationOnce(async () => {
+      fs.writeFileSync(keyFilePath(), 'k');
+      fs.utimesSync(keyFilePath(), FIXED_MTIME, FIXED_MTIME);
+      onKeyDirChange!('change', 'baseline.key');
       return emptyReport;
     });
     await rescan();
     await flush();
     expect(runScanMock).toHaveBeenCalledTimes(3);
 
-    // the follow-up scan leaves the key alone, so it must not loop
     await vi.advanceTimersByTimeAsync(5000);
     await flush();
     expect(runScanMock).toHaveBeenCalledTimes(3);
+    expect(process.exitCode).toBeUndefined();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('does not rescan when a scan creates then removes the key (failed store write)', async () => {
@@ -263,6 +274,36 @@ describe('watch mode and an unusable baseline key', () => {
     await rescan();
     expect(runScanMock).toHaveBeenCalledTimes(3);
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it('keeps scanning after a scan throws something that is not an Error', async () => {
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+
+    runScanMock.mockRejectedValueOnce('plain string');
+    await rescan();
+    expect(logger.error).toHaveBeenCalledWith('plain string');
+
+    // null has no .message: reading it in the handler used to reject the chain for good
+    runScanMock.mockRejectedValueOnce(null);
+    await rescan();
+    expect(unhandled).toEqual([]);
+
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await rescan();
+    expect(runScanMock).toHaveBeenCalledTimes(4);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('names a dead watcher in every later scan footer', async () => {
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+
+    dirErrorHandler!(new Error('EMFILE'));
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await rescan();
+
+    expect(logger.warn).toHaveBeenCalledWith(`Not watching: ${home} (restart watch)`);
   });
 
   it('reports a watcher error on the audit dir', async () => {
