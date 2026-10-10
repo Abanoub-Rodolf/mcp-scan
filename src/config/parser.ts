@@ -3,6 +3,8 @@ import path from 'path';
 import * as toml from 'smol-toml';
 import { McpConfig, ResolvedServer, McpScanPolicy, McpServerEntry } from '../types/config.js';
 import { logger } from '../utils/logger.js';
+import { PolicyError, policyFileExists, readPolicyFile } from '../utils/policy-file.js';
+import { SEVERITY_ORDER, isSeverity } from '../types/severity.js';
 
 /**
  * Strips JSONC comments and trailing commas with a proper string-state
@@ -154,17 +156,60 @@ export function extractServers(toolName: string, configPath: string, config: Mcp
   return servers;
 }
 
-export function loadPolicy(cwd: string = process.cwd()): McpScanPolicy | null {
-  const policyPath = path.join(cwd, '.mcp-scan.json');
-  try {
-    if (fs.existsSync(policyPath)) {
-      const content = fs.readFileSync(policyPath, 'utf8');
-      return parseJsonC(content) as McpScanPolicy;
+const isStringArray = (v: unknown) => Array.isArray(v) && v.every(x => typeof x === 'string');
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+// Returns the first wrong-typed field, or null. A string where a list is
+// expected would otherwise make includes() match substrings, or never match,
+// and the rule would quietly stop enforcing.
+function policyShapeProblem(p: unknown): string | null {
+  if (!isPlainObject(p)) return 'expected a JSON object';
+  for (const key of ['allowedPackages', 'blockedPackages', 'allowedDomains', 'suppressRules']) {
+    if (p[key] !== undefined && !isStringArray(p[key])) return `"${key}" must be an array of strings`;
+  }
+  if (p.requiredEnvVarPrefix !== undefined && typeof p.requiredEnvVarPrefix !== 'string') {
+    return '"requiredEnvVarPrefix" must be a string';
+  }
+  if (p.maxSeverity !== undefined
+    && !(typeof p.maxSeverity === 'string' && isSeverity(p.maxSeverity.toUpperCase()))) {
+    return `"maxSeverity" must be one of ${Object.keys(SEVERITY_ORDER).join(', ').toLowerCase()}`;
+  }
+  if (p.privacy !== undefined) {
+    const pr = p.privacy;
+    if (!isPlainObject(pr)) return '"privacy" must be an object';
+    if (pr.maskPii !== undefined && typeof pr.maskPii !== 'boolean') return '"privacy.maskPii" must be true or false';
+    if (pr.excludePatterns !== undefined && !isStringArray(pr.excludePatterns)) {
+      return '"privacy.excludePatterns" must be an array of strings';
     }
-  } catch (error: any) {
-    logger.warn(`Failed to parse policy at ${policyPath}: ${error.message}`);
+    if (pr.customPatterns !== undefined
+      && !(isPlainObject(pr.customPatterns) && Object.values(pr.customPatterns).every(v => typeof v === 'string'))) {
+      return '"privacy.customPatterns" must be an object of strings';
+    }
   }
   return null;
+}
+
+/**
+ * Absent file: null, scan runs with no policy. A file that is there but
+ * cannot be read, parsed or has a wrong-typed field throws PolicyError:
+ * a typo must not turn enforcement off.
+ */
+export function loadPolicy(cwd: string = process.cwd()): McpScanPolicy | null {
+  const policyPath = path.join(cwd, '.mcp-scan.json');
+  if (!policyFileExists(policyPath)) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = parseJsonC(readPolicyFile(policyPath));
+  } catch (error: any) {
+    throw new PolicyError(`Cannot use policy ${policyPath}: ${error.message}. Fix or remove the file; the scan will not run without it.`);
+  }
+  const problem = policyShapeProblem(parsed);
+  if (problem) {
+    throw new PolicyError(`Invalid policy ${policyPath}: ${problem}. Fix or remove the file; the scan will not run without it.`);
+  }
+  return parsed as McpScanPolicy;
 }
 
 export function loadIgnoreList(cwd: string = process.cwd()): string[] {

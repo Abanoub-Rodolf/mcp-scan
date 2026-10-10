@@ -6,38 +6,68 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { logger } from './logger.js';
 import { auditDir } from './audit-logger.js';
+import { PolicyError, policyFileExists, readPolicyFile } from './policy-file.js';
+import { SEVERITY_ORDER, isSeverity } from '../types/severity.js';
 
 function rulesDir(): string {
   return path.join(auditDir(), 'rules');
 }
 
+const RULE_TARGETS = ['env', 'args', 'command', 'url', 'name'];
+
+// A rule that is skipped later (bad regex, unknown severity the tally drops)
+// is a check that silently stops running, so it is rejected at load.
+function ruleProblem(r: any): string | null {
+  if (typeof r !== 'object' || r === null || Array.isArray(r)) return 'expected an object';
+  if (typeof r.id !== 'string' || !r.id) return `'id' must be a non-empty string`;
+  if (!isSeverity(r.severity)) return `rule '${r.id}': 'severity' must be one of ${Object.keys(SEVERITY_ORDER).join(', ')}`;
+  if (!RULE_TARGETS.includes(r.target)) return `rule '${r.id}': 'target' must be one of ${RULE_TARGETS.join(', ')}`;
+  if (typeof r.pattern !== 'string') return `rule '${r.id}': 'pattern' must be a string`;
+  try {
+    new RegExp(r.pattern, 'i');
+  } catch (e: any) {
+    return `rule '${r.id}': invalid pattern: ${e.message}`;
+  }
+  if (r.negate !== undefined && typeof r.negate !== 'boolean') return `rule '${r.id}': 'negate' must be true or false`;
+  return null;
+}
+
 /**
- * Reads one rule file. Returns null when the file cannot be read or does
- * not contain valid JSON; the two failure modes get distinct messages so
- * a permissions problem is not misread as bad JSON.
+ * Reads one rule file. An unreadable file, bad JSON or an invalid rule
+ * throws PolicyError: running with only some of the user's rules would
+ * look like a clean scan. The read and parse failures keep distinct
+ * messages so a permissions problem is not misread as bad JSON.
  */
-function readRuleFile(fullPath: string): CustomRule[] | null {
+function readRuleFile(fullPath: string): CustomRule[] {
+  const fail = (why: string) =>
+    new PolicyError(`${why}. Fix or remove ${fullPath}; the scan will not run without it.`);
+
   let content: string;
   try {
-    content = fs.readFileSync(fullPath, 'utf8');
+    // fd-based and non-blocking open: a FIFO named *.json would hang a plain read.
+    content = readPolicyFile(fullPath);
   } catch (e: any) {
-    logger.warn(`Failed to read rule file ${fullPath}: ${e.message}`);
-    return null;
+    throw fail(`Cannot read custom rule file ${fullPath}: ${e.message}`);
   }
 
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(content);
-    return Array.isArray(parsed) ? parsed : [parsed];
+    parsed = JSON.parse(content);
   } catch (e: any) {
-    logger.warn(`Failed to parse rule file ${fullPath}: ${e.message}`);
-    return null;
+    throw fail(`Cannot parse custom rule file ${fullPath}: ${e.message}`);
   }
+  const list = Array.isArray(parsed) ? parsed : [parsed];
+  for (const r of list) {
+    const problem = ruleProblem(r);
+    if (problem) throw fail(`Invalid custom rule in ${fullPath}: ${problem}`);
+  }
+  return list as CustomRule[];
 }
 
 export function loadCustomRules(): CustomRule[] {
   const rules: CustomRule[] = [];
   const dir = rulesDir();
-  if (!fs.existsSync(dir)) {
+  if (!policyFileExists(dir)) {
     // One-time migration hint: MCP_SCAN_HOME users whose rules loaded
     // from ~/.mcp-scan/rules before the home override existed.
     const legacy = path.join(os.homedir(), '.mcp-scan', 'rules');
@@ -47,10 +77,15 @@ export function loadCustomRules(): CustomRule[] {
     return rules;
   }
 
-  for (const file of fs.readdirSync(dir)) {
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir);
+  } catch (e: any) {
+    throw new PolicyError(`Cannot read custom rules directory ${dir}: ${e.message}. Fix or remove it; the scan will not run without it.`);
+  }
+  for (const file of files) {
     if (!file.endsWith('.json')) continue;
-    const parsed = readRuleFile(path.join(dir, file));
-    if (parsed) rules.push(...parsed);
+    rules.push(...readRuleFile(path.join(dir, file)));
   }
   return rules;
 }

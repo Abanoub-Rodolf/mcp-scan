@@ -7,6 +7,8 @@ import { detectTools } from '../config/detector.js';
 import { ScanReport, Finding, ServerScanResult } from '../types/scan-result.js';
 import chalk from 'chalk';
 import { sendWebhook, sendSlackWebhook } from '../utils/webhook.js';
+import { PolicyError } from '../utils/policy-file.js';
+import { EXIT_POLICY_ERROR } from '../utils/exit-codes.js';
 
 export async function runWatch(options: { webhook?: string, slackWebhook?: string } = {}) {
   logger.brand('Starting enhanced watch mode...');
@@ -33,7 +35,21 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
     if (changedPath) logger.detail(`Triggered by change in: ${changedPath}`);
     logger.divider();
 
-    const currentReport = await runScan({ silent: true });
+    let currentReport: ScanReport;
+    try {
+      currentReport = await runScan({ silent: true });
+    } catch (err) {
+      if (!(err instanceof PolicyError)) throw err;
+      logger.error(err.message);
+      // First scan: nothing to watch without a trustworthy policy. Later
+      // scans: keep watching, but never report "all clear" for a scan that
+      // did not run.
+      if (!lastReport) process.exit(EXIT_POLICY_ERROR);
+      process.exitCode = EXIT_POLICY_ERROR;
+      logger.log(chalk.dim('Scan skipped. Saving the fixed policy file rescans.'));
+      return;
+    }
+    process.exitCode = undefined;
     
     if (lastReport) {
       const { newFindings, resolvedFindings } = diffReports(lastReport, currentReport);
@@ -70,7 +86,15 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
 
   await performScan();
 
-  for (const configPath of validPaths) {
+  // A broken policy skips every scan until it is fixed, so saving it must rescan too.
+  const triggers = [
+    ...validPaths,
+    path.join(process.cwd(), '.mcp-scan.json'),
+    path.join(process.cwd(), '.mcp-scan-policy.yml'),
+    path.join(os.homedir(), '.mcp-scan-policy.yml'),
+  ];
+
+  for (const configPath of triggers) {
     const dir = path.dirname(configPath);
     if (watchedDirs.has(dir)) continue;
     watchedDirs.add(dir);
@@ -78,7 +102,7 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
     try {
       fs.watch(dir, (eventType, filename) => {
         const changedPath = filename ? path.join(dir, filename) : null;
-        if (changedPath && validPaths.includes(changedPath)) {
+        if (changedPath && triggers.includes(changedPath)) {
           clearTimeout(debounceTimeout);
           debounceTimeout = setTimeout(() => performScan(changedPath), 500);
         }
@@ -90,7 +114,8 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   
   const onExit = () => {
     logger.info('Stopping watch mode.');
-    process.exit(0);
+    // A policy that broke mid-session set exitCode; Ctrl+C must not erase it.
+    process.exit(process.exitCode ?? 0);
   };
   process.on('SIGINT', onExit);
   process.on('SIGTERM', onExit);

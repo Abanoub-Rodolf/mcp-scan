@@ -12,8 +12,13 @@
  * - audit <server>: 1 on CRITICAL or HIGH findings after the deep audit.
  * - diff <old> <new>: 1 when any regression (newly added finding of any
  *   severity) exists between the two reports.
+ * - any command that needs a policy: 1 and a message on stderr when a policy
+ *   file exists but cannot be read or parsed, has a wrong-typed field, or
+ *   when --policy names a file that is missing. Same code as findings, so
+ *   the message is the way to tell them apart; the scan never runs.
  * - watch / proxy: long-running processes; they manage their own exit on
  *   termination signals and carry no severity-based contract.
  */
 export const EXIT_OK = 0;
 export const EXIT_FINDINGS = 1;
+export const EXIT_POLICY_ERROR = 1;

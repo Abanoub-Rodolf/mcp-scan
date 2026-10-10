@@ -1,64 +1,44 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runScan } from '../../src/commands/scan.js';
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
-vi.mock('fs');
-
+// Real files in a temp cwd: the loaders open and fstat the policy, so the
+// old whole-module fs mock no longer describes what they do.
 describe('Policy Engine', () => {
+  let dir: string;
+  let home: string;
+
   beforeEach(() => {
-    vi.clearAllMocks();
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-policy-scan-'));
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-policy-scan-home-'));
+    process.env.MCP_SCAN_HOME = home;
+    vi.spyOn(process, 'cwd').mockReturnValue(dir);
+    vi.spyOn(os, 'homedir').mockReturnValue(home);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.MCP_SCAN_HOME;
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
   });
 
+  const scanWith = async (policy: object, args: string[]) => {
+    fs.writeFileSync(path.join(dir, '.mcp-scan.json'), JSON.stringify(policy));
+    const config = path.join(dir, 'config.json');
+    fs.writeFileSync(config, JSON.stringify({ mcpServers: { 'test-server': { command: 'npx', args } } }));
+    const report = await runScan({ silent: true, config, offline: true });
+    return report.results.find(r => r.serverName === 'test-server');
+  };
+
   it('should apply blockedPackages policy', async () => {
-    const policy = {
-      blockedPackages: ['malicious-pkg']
-    };
-    
-    vi.mocked(fs.existsSync).mockImplementation((p) => {
-        if (p.toString().endsWith('.mcp-scan.json')) return true;
-        if (p.toString().endsWith('config.json')) return true;
-        return false;
-    });
-
-    vi.mocked(fs.readFileSync).mockImplementation((p) => {
-        if (p.toString().endsWith('.mcp-scan.json')) return JSON.stringify(policy);
-        if (p.toString().endsWith('config.json')) return JSON.stringify({
-            mcpServers: {
-                "test-server": {
-                    command: "npx",
-                    args: ["malicious-pkg"]
-                }
-            }
-        });
-        return '';
-    });
-
-    const report = await runScan({ silent: true, config: 'config.json', offline: true });
-    const serverResult = report.results.find(r => r.serverName === 'test-server');
-    expect(serverResult?.findings.some(f => f.id === 'blocked-package-policy')).toBe(true);
+    const result = await scanWith({ blockedPackages: ['malicious-pkg'] }, ['malicious-pkg']);
+    expect(result?.findings.some(f => f.id === 'blocked-package-policy')).toBe(true);
   });
 
   it('should apply suppressRules policy', async () => {
-    const policy = {
-      suppressRules: ['unverified-source']
-    };
-
-    vi.mocked(fs.existsSync).mockImplementation((p) => p.toString().endsWith('.mcp-scan.json') || p.toString().endsWith('config.json'));
-    vi.mocked(fs.readFileSync).mockImplementation((p) => {
-        if (p.toString().endsWith('.mcp-scan.json')) return JSON.stringify(policy);
-        if (p.toString().endsWith('config.json')) return JSON.stringify({
-            mcpServers: {
-                "test-server": {
-                    command: "npx",
-                    args: ["@some/pkg"]
-                }
-            }
-        });
-        return '';
-    });
-
-    const report = await runScan({ silent: true, config: 'config.json', offline: true });
-    const serverResult = report.results.find(r => r.serverName === 'test-server');
-    expect(serverResult?.findings.some(f => f.id === 'unverified-source')).toBe(false);
+    const result = await scanWith({ suppressRules: ['unverified-source'] }, ['@some/pkg']);
+    expect(result?.findings.some(f => f.id === 'unverified-source')).toBe(false);
   });
 });

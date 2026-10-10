@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- Policy loading now fails closed. If `.mcp-scan.json` or `.mcp-scan-policy.yml` (current directory, then home) exists but cannot be read or parsed, or has a wrong-typed field (`blockedPackages: "x"`, `maxSeverity: "severe"`, `privacy.maskPii: "true"`, a YAML policy without `version: 1` and a `rules` list, an empty YAML file), the command stops before scanning with an error on stderr naming the file and the problem, and exits 1. `--policy <path>` naming a file that does not exist does the same. It used to warn (or say nothing) and scan with no policy, which silently dropped `blockedPackages`, `requiredEnvVarPrefix`, `suppressRules`, `maxSeverity` and every YAML rule. A CI run that was passing with a broken policy file will now fail until the file is fixed or removed. Absent policy files are unchanged. Library callers of `runScan` get a thrown `PolicyError`, exported from the package; `watch` exits 1 on a bad policy at start, skips (never reports "all clear" for) a scan after the file breaks, and rescans when the fixed policy file is saved; `report` stops instead of skipping each config. `policy show` and `policy list` on a broken file (a dangling symlink included) now exit 1.
+- A YAML policy is now checked beyond `id` and `action`: an unknown `match` key (`finding_ids`), a `match` value that is not a string or list of strings, or a severity that is not one of info, low, medium, high, critical (in an `override-severity` rule, any rule's `severity`, or `match.severity`) stops the run. Before, such a rule silently never matched, or wrote a severity the summary dropped, so `ci` could exit 0 with findings present.
+- A custom rule file in `~/.mcp-scan/rules` that cannot be read, is not valid JSON, or holds an invalid rule (unknown `severity` or `target`, a `pattern` that is not a valid regex, wrong-typed `negate`) now stops the run instead of warning and scanning with the remaining rules. A missing rules directory is still fine.
+- YAML policy `match.license_type` now works: it matches findings on servers whose package license equals the value (case-insensitive, exact). It was accepted before but ignored, so a `skip` rule using it matched every finding. `match.pii_types` is removed from the accepted keys because findings carry no PII field to match on, so a policy using it now fails to load; use `category` (a substring of the finding text) instead. The README example is updated.
+- Custom rule files are read through the same non-blocking path as policy files, so a FIFO in `~/.mcp-scan/rules` is rejected instead of hanging the scan. A custom rule `severity` such as `constructor` is no longer accepted by accident.
+- A policy path that is a dangling symlink reports the missing link target.
+- A policy file behind a directory mcp-scan cannot search is treated as present and unreadable, not absent.
+- A package whose registry entry has a legacy object license (`"license": {"type": "MIT"}`) or another non-string shape no longer crashes the scan; the license is stored as a string (the object's `type`, or the first `licenses[].type`) or left unset.
+- YAML policy rules are stricter: an unknown top-level rule key (`matcher`, `scaner`), an empty or whitespace-only `scanner`, and empty strings in `match` values (alone or in a list) are errors. Before, they were ignored and the rule matched every finding.
+- The policy file is opened once and its type checked on the open file, so a FIFO swapped in after the check can no longer hang the read.
+
 ### Fixed
 - Every scan left a new `known-servers.json.backup-<timestamp>` in
   `~/.mcp-scan` and nothing removed them; one real install had over 1,100.

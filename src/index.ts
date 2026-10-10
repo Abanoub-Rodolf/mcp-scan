@@ -5,7 +5,8 @@ import chalk from 'chalk';
 import { runScan } from './commands/scan.js';
 import { runAudit } from './commands/audit.js';
 import { runFix } from './commands/fix.js';
-import { EXIT_FINDINGS } from './utils/exit-codes.js';
+import { EXIT_FINDINGS, EXIT_POLICY_ERROR } from './utils/exit-codes.js';
+import { PolicyError } from './utils/policy-file.js';
 import { runWatch } from './commands/watch.js';
 import { runLs } from './commands/ls.js';
 import { runInit } from './commands/init.js';
@@ -291,4 +292,10 @@ program
     runBadge(packageName, options);
   });
 
-program.parse();
+// An unusable policy stops any command that scans, with a message instead of
+// a stack. Every other error keeps its old unhandled-rejection behavior.
+program.parseAsync().catch((err) => {
+  if (!(err instanceof PolicyError)) throw err;
+  console.error(chalk.red.bold('✖ ERROR:'), err.message);
+  process.exitCode = EXIT_POLICY_ERROR;
+});

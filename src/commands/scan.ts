@@ -31,13 +31,16 @@ import { logScan, checkFingerprints } from '../utils/audit-logger.js';
 import { recalcSeverityCounts, countTotalFindings } from '../utils/severity-tally.js';
 import { repoHint, reportHint, findReportablePackage } from '../utils/repo-hint.js';
 import { loadCustomRules, evaluateCustomRules } from '../utils/rule-engine.js';
-import { SEVERITY_ORDER, Severity } from '../types/severity.js';
+import { SEVERITY_ORDER, Severity, isSeverity } from '../types/severity.js';
 import { logger } from '../utils/logger.js';
 
 export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   const startTime = Date.now();
   
+  // Both policies load before anything is scanned or written: a broken one
+  // throws PolicyError and the scan never starts.
   const policy = loadPolicy();
+  const yamlPolicy = loadYamlPolicy(options.policy);
   const ignoreList = loadIgnoreList();
   const customRules = loadCustomRules();
   if (policy && !options.silent) {
@@ -86,7 +89,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   const seenServers = new Set<string>();
   
   const minSeverityLevel = (options.severity || policy?.maxSeverity || 'low').toUpperCase() as Severity;
-  if (!(minSeverityLevel in SEVERITY_ORDER)) {
+  if (!isSeverity(minSeverityLevel)) {
     throw new Error(`Invalid severity '${options.severity}'. Valid values: ${Object.keys(SEVERITY_ORDER).join(', ').toLowerCase()}`);
   }
   const minSeverity = SEVERITY_ORDER[minSeverityLevel];
@@ -284,7 +287,6 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   }
 
   // 18. Apply YAML Policy
-  const yamlPolicy = loadYamlPolicy(options.policy);
   if (yamlPolicy) {
     applyPolicy(report.results, yamlPolicy);
     if (!options.silent) {
