@@ -20,6 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `runScan` (the library entry) now rejects with `BaselineKeyError` when `baseline.key` is a directory or any other non-regular file, before it does any work. The class is exported from the package root so callers can `instanceof` it; the CLI already turns it into a one-line error and exit 1.
 
 ### Fixed
+- A scan that cannot append to `~/.mcp-scan/audit.log` (full disk, read-only home, a directory in the way) now prints one line to stderr naming the log and the error. It was silent, so a missing audit trail went unnoticed. The scan still completes.
+- The offline CVE lookup warns when it fails on an unexpected snapshot shape ("vulnerability results may be incomplete"). It used to return no findings, which read as "no known vulnerabilities".
+- `doctor` says why the npm update check failed (registry unreachable, or the HTTP status) in verbose output instead of printing a bare failure.
 - `watch` now rescans when `baseline.key` is fixed. It used to watch only config and policy files, so after a `BaselineKeyError` recovery waited on an unrelated config edit. The error is now followed by a dim "Scan skipped. Fixing baseline.key rescans." line, like the policy error. If the `~/.mcp-scan` directory does not exist yet, it is simply not watched.
 - Every scan left a new `known-servers.json.backup-<timestamp>` in
   `~/.mcp-scan` and nothing removed them; one real install had over 1,100.
