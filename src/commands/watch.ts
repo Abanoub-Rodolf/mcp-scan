@@ -105,7 +105,8 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   
   const onExit = () => {
     logger.info('Stopping watch mode.');
-    process.exit(0);
+    // A policy that broke mid-session set exitCode; Ctrl+C must not erase it.
+    process.exit(process.exitCode ?? 0);
   };
   process.on('SIGINT', onExit);
   process.on('SIGTERM', onExit);
