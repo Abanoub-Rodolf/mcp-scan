@@ -102,8 +102,12 @@ export async function runDoctor() {
         const latest = data.version;
         updateOk = true;
         updateDetail = `Latest version available on npm: ${latest}`;
+    } else {
+        updateDetail = `npm registry returned ${res.status}: ${res.statusText}`;
     }
-  } catch (_e) {}
+  } catch (e: any) {
+    updateDetail = `npm registry unreachable: ${e.message}`;
+  }
   check('Update check (npm)', updateOk, updateDetail);
 
   logger.divider();
