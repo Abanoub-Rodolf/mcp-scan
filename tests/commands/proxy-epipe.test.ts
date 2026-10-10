@@ -71,23 +71,39 @@ describe('proxy writes after the server is gone', () => {
     childStdin.end();
     const deep = (() => { let v: unknown = 'x@corp.example'; for (let i = 0; i < 150; i++) v = { n: v }; return v; })();
     childStdout.write(JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'sampling/createMessage', params: deep }) + '\n');
-    await new Promise(r => setTimeout(r, 100));
-    expect(warnings().length).toBeGreaterThan(0);
+    await vi.waitFor(() => expect(warnings().length).toBeGreaterThan(0), { timeout: 10000, interval: 5 });
   });
 
   it('a real server that closes its stdin and keeps running does not crash the proxy', async () => {
     stderrSpy.mockRestore();
+    const closed = path.join(dir, 'server-closed-stdin');
+    const release = path.join(dir, 'release');
     const server = path.join(dir, 'server.js');
-    fs.writeFileSync(server, `require('fs').closeSync(0); setTimeout(() => process.exit(0), 1500);`);
+    // Stays up until released (or the test dir vanishes), so host load can't
+    // make it exit before the writes below meet the closed stdin.
+    fs.writeFileSync(server, `
+      const fs = require('fs');
+      fs.closeSync(0);
+      fs.writeFileSync(${JSON.stringify(closed)}, '1');
+      setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}) || !fs.existsSync(${JSON.stringify(dir)})) process.exit(0); }, 20);
+      setTimeout(() => process.exit(0), 30000);`);
     const proc = execa('node', [CLI, 'proxy', '--command', 'node', '--args', server], {
       cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: path.join(dir, 'logs2') }, stdin: 'pipe',
     });
-    await new Promise(r => setTimeout(r, 500));
-    for (let i = 0; i < 5; i++) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: i, method: 'x' }) + '\n');
-    await new Promise(r => setTimeout(r, 200));
-    proc.stdin!.end();
+    let err = '';
+    proc.stderr!.on('data', d => { err += d; });
+    proc.stdin!.on('error', () => {});
+    const wait = (check: () => void) => vi.waitFor(check, { timeout: 20000, interval: 10 });
+    try {
+      await wait(() => expect(fs.existsSync(closed)).toBe(true));
+      for (let i = 0; i < 5; i++) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: i, method: 'x' }) + '\n');
+      await wait(() => expect(err).toMatch(/server stdin is no longer writable/));
+      proc.stdin!.end();
+    } finally {
+      fs.writeFileSync(release, '1');
+    }
     const res = await proc;
     expect(res.stderr).not.toMatch(/Unhandled|node:events|at .*\(node:/);
     expect(res.exitCode).toBe(0);
-  }, 30000);
+  }, 40000);
 });
