@@ -44,8 +44,8 @@ export default [
     },
   },
   {
-    // TODO(!23): that MR owns this file and still sleeps in it (a 300ms wait and
-    // a 10ms poll interval). Drop this override once it merges and they are gone.
+    // TODO: proxy-lifecycle.test.ts still sleeps (a 300ms wait and
+    // a 10ms poll interval). Convert them to signal waits, then drop this override.
     files: ["tests/commands/proxy-lifecycle.test.ts"],
     rules: { "no-restricted-syntax": "off" },
   },
