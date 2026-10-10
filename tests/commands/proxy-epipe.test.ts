@@ -52,7 +52,7 @@ describe('proxy writes after the server is gone', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  const warnings = () => stderrSpy.mock.calls.map(c => String(c[0])).filter(l => l.includes('mcp-scan proxy:'));
+  const warnings = (): string[] => stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).filter((l: string) => l.includes('mcp-scan proxy:'));
 
   it('survives EPIPE on the server stdin and says so once', async () => {
     const epipe = () => Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
