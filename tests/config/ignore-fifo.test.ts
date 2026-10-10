@@ -69,7 +69,7 @@ describe('.mcp-scan-ignore that is not a regular file', () => {
     let err: ReturnType<typeof vi.spyOn>;
     beforeEach(() => { err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true); });
     afterEach(() => { err.mockRestore(); });
-    const notices = () => err.mock.calls.filter(c => String(c[0]).includes('.mcp-scan-ignore'));
+    const notices = () => err.mock.calls.filter((c: unknown[]) => String(c[0]).includes('.mcp-scan-ignore'));
 
     it('stays quiet when the caller asked for silent', () => {
       fs.mkdirSync(path.join(dir, '.mcp-scan-ignore'));
