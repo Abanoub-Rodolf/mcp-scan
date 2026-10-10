@@ -90,6 +90,16 @@ describe('CLI fails closed on an unusable policy', () => {
     expect(res.stderr).toMatch(/severity 'bogus'/);
   }, 30000);
 
+  it('an unparseable custom rule file stops the run', async () => {
+    const rules = path.join(home, '.mcp-scan', 'rules');
+    fs.mkdirSync(rules, { recursive: true });
+    fs.writeFileSync(path.join(rules, 'mine.json'), '[{ "id": ');
+    const res = await run(['scan', '--ci']);
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain('mine.json');
+    expect(res.stdout).toBe('');
+  }, 30000);
+
   it('absent policy files still scan and exit 0', async () => {
     const res = await run(['scan', '--ci']);
     expect(res.exitCode).toBe(0);
