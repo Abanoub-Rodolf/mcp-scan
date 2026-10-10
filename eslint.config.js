@@ -49,7 +49,7 @@ const noSleepPromise = {
         const out = none();
         if (!v || stack.has(v)) return out;
         stack.add(v);
-        for (const ref of v.references) if (!ref.init && !ref.isWriteOnly()) merge(out, trace(ref.identifier));
+        for (const ref of v.references) if (!ref.isWriteOnly()) merge(out, trace(ref.identifier));
         stack.delete(v);
         return out;
       };
