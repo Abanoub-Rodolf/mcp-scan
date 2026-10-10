@@ -3,6 +3,7 @@ import path from 'path';
 import * as toml from 'smol-toml';
 import { McpConfig, ResolvedServer, McpScanPolicy, McpServerEntry } from '../types/config.js';
 import { logger } from '../utils/logger.js';
+import { readRegularFile, NotRegularFileError } from '../utils/regular-file.js';
 
 /**
  * Strips JSONC comments and trailing commas with a proper string-state
@@ -170,13 +171,16 @@ export function loadPolicy(cwd: string = process.cwd()): McpScanPolicy | null {
 export function loadIgnoreList(cwd: string = process.cwd()): string[] {
   const ignorePath = path.join(cwd, '.mcp-scan-ignore');
   try {
-    if (fs.existsSync(ignorePath)) {
-      const content = fs.readFileSync(ignorePath, 'utf8');
-      return content.split('\n')
-        .map(line => line.trim())
-        .filter(line => line && !line.startsWith('#'));
+    return readRegularFile(ignorePath).split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'));
+  } catch (error) {
+    // Skipped, not fatal: the list only suppresses findings, so dropping it
+    // can add findings but never hide one. stderr, because this runs before
+    // --json silences the logger and stdout must stay parseable.
+    if (error instanceof NotRegularFileError) {
+      process.stderr.write(`mcp-scan: ignoring ${ignorePath}: ${error.message}\n`);
     }
-  } catch (_error) {}
+  }
   return [];
 }
-

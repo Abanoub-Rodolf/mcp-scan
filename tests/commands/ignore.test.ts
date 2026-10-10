@@ -24,9 +24,17 @@ describe('Ignore List', () => {
         return false;
     });
 
+    // The ignore list is opened once and read through the descriptor.
+    const IGNORE_FD = 4242;
+    vi.mocked(fs.openSync).mockImplementation((p: any) => {
+        if (p.toString() === mockIgnorePath) return IGNORE_FD;
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    });
+    vi.mocked(fs.fstatSync).mockReturnValue({ isFile: () => true, isDirectory: () => false } as any);
+
     vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+        if (p === IGNORE_FD) return 'unverified-source\n';
         const pathStr = p.toString();
-        if (pathStr === mockIgnorePath) return 'unverified-source\n';
         if (pathStr === mockConfigPath || pathStr === resolvedConfigPath) return JSON.stringify({
             mcpServers: { "test": { command: "npx", args: ["some-pkg"] } }
         });
