@@ -4,6 +4,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { ScanReport, ServerScanResult, Finding } from '../types/scan-result.js';
 import { atomicWriteConfig } from '../config/writer.js';
+import { readRegularFile } from './regular-file.js';
 
 // MCP_SCAN_HOME lets embedders and tests redirect the audit store away
 // from the real user home (the test suite sets it to a temp dir). Read at
@@ -113,11 +114,37 @@ function keyFile(): string {
   return path.join(auditDir(), 'baseline.key');
 }
 
+// Thrown when baseline.key is there but is not a file (a directory, FIFO or
+// device). Nothing can be signed or verified, and every way to carry on
+// either hid that behind a misleading finding or deleted the user's path, so
+// the scan stops and says what to move.
+export class BaselineKeyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BaselineKeyError';
+  }
+}
+
+export function assertBaselineKeyUsable(): void {
+  const p = keyFile();
+  let st: fs.Stats | undefined;
+  try {
+    st = fs.statSync(p, { throwIfNoEntry: false });
+  } catch (_e) {
+    return; // unreadable parent and the like: the normal key handling reports it
+  }
+  if (!st || st.isFile()) return;
+  throw new BaselineKeyError(
+    `baseline key ${p} ${st.isDirectory() ? 'is a directory' : 'is not a regular file'}, so the known-servers baseline cannot be signed or verified. ` +
+    'Move or remove it, then run mcp-scan again.'
+  );
+}
+
 type Key = { status: 'missing' } | { status: 'ok'; key: Buffer } | { status: 'bad'; reason: string };
 
 function readKey(): Key {
   try {
-    const hex = fs.readFileSync(keyFile(), 'utf8').trim();
+    const hex = readRegularFile(keyFile()).trim();
     if (/^[0-9a-f]{64}$/.test(hex)) return { status: 'ok', key: Buffer.from(hex, 'hex') };
     return { status: 'bad', reason: 'malformed' };
   } catch (e) {

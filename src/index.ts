@@ -5,7 +5,9 @@ import chalk from 'chalk';
 import { runScan } from './commands/scan.js';
 import { runAudit } from './commands/audit.js';
 import { runFix } from './commands/fix.js';
-import { EXIT_FINDINGS } from './utils/exit-codes.js';
+import { EXIT_FINDINGS, EXIT_ERROR } from './utils/exit-codes.js';
+import { BaselineKeyError } from './utils/audit-logger.js';
+import { logger } from './utils/logger.js';
 import { runWatch } from './commands/watch.js';
 import { runLs } from './commands/ls.js';
 import { runInit } from './commands/init.js';
@@ -291,4 +293,10 @@ program
     runBadge(packageName, options);
   });
 
-program.parse();
+// A refusal to run is a message and exit 1, not a stack trace. Any other
+// rejection is rethrown and behaves as before.
+program.parseAsync().catch((e) => {
+  if (!(e instanceof BaselineKeyError)) throw e;
+  logger.error(e.message);
+  process.exitCode = EXIT_ERROR;
+});

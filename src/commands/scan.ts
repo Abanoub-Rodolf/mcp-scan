@@ -27,7 +27,7 @@ import { DetectedTool } from '../types/config.js';
 import { createSpinner } from '../utils/spinner.js';
 import { printJsonReport } from '../utils/json-reporter.js';
 import { printReport } from '../utils/reporter.js';
-import { logScan, checkFingerprints } from '../utils/audit-logger.js';
+import { logScan, checkFingerprints, assertBaselineKeyUsable } from '../utils/audit-logger.js';
 import { recalcSeverityCounts, countTotalFindings } from '../utils/severity-tally.js';
 import { repoHint, reportHint, findReportablePackage } from '../utils/repo-hint.js';
 import { loadCustomRules, evaluateCustomRules } from '../utils/rule-engine.js';
@@ -36,6 +36,9 @@ import { logger } from '../utils/logger.js';
 
 export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   const startTime = Date.now();
+
+  // Before any work: a key path that is not a file cannot be fixed mid-scan.
+  assertBaselineKeyUsable();
   
   const policy = loadPolicy();
   const ignoreList = loadIgnoreList();
