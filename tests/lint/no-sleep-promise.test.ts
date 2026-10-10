@@ -139,6 +139,10 @@ const SLEEPS = [
   'const w = Promise.withResolvers(); const v = (0, w); setTimeout(v.resolve, 5);',
   // the test of a conditional only reads w
   'const w = Promise.withResolvers(); const x = w ? 1 : 2; setTimeout(w.resolve, 5); void x;',
+  // an alias made by assignment is w
+  'const w = Promise.withResolvers(); let v; v = w; setTimeout(v.resolve, 5);',
+  // a function copied out of w is a function, not the object
+  'const w = Promise.withResolvers(); const { resolve } = w; const f = resolve; f.length; setTimeout(f, 5);',
   // a cycle of aliases must not recurse forever
   'await new Promise(r => { let a = r; let b = a; a = b; setTimeout(a, 5); });',
   'const w = Promise.withResolvers(); setTimeout(() => { w.resolve(); }, 5); void w.reject;',
@@ -307,6 +311,8 @@ const ALLOWED = [
   "const w = Promise.withResolvers(); const a = [w]; ee.on('x', a[0].resolve); setTimeout(w.resolve, 5);",
   "const w = Promise.withResolvers(); const { resolve } = w as any; ee.on('x', resolve); setTimeout(w.resolve, 5);",
   "const w = Promise.withResolvers(); ee.on('x', (w as any).resolve); setTimeout(w.resolve, 5);",
+  // an alias made by assignment, given away
+  "const w = Promise.withResolvers(); let v; v = w; ee.on('x', v); setTimeout(w.resolve, 5);",
   "const w = Promise.withResolvers(); ee.on('x', w.other); setTimeout(w.resolve, 5);",
   "const { resolve } = Promise.withResolvers(); resolve(1);",
   "Promise.withResolvers();",
