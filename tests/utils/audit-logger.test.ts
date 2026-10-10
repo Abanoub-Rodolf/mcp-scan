@@ -417,13 +417,27 @@ describe('signed baseline', () => {
     expect(checkFingerprints(two)).toEqual({});
   });
 
-  it('treats the empty store 2.0.13 wrote for a zero-server scan as an empty baseline, not corruption', () => {
+  it('treats the empty store 2.0.13 wrote for a zero-server scan as an old-format baseline: one INFO per server, then signed', () => {
     fs.writeFileSync(storeFile(), '{}');
-    expect(checkFingerprints(results())).toEqual({});
+    const f = checkFingerprints(results())['Cursor:files'];
+    expect(f).toHaveLength(1);
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'INFO' });
+    expect(f?.[0].description).toMatch(/baseline was reset/);
     expect(quarantined()).toHaveLength(0);
     logScan(report(results()));
     expect(JSON.parse(fs.readFileSync(storeFile(), 'utf8')).__sig).toMatch(/^[0-9a-f]{64}$/);
     expect(checkFingerprints(results())).toEqual({});
+  });
+
+  it('still reports something when a signed install has its store replaced by {} and its key and signing history removed', () => {
+    logScan(report(results()));
+    fs.rmSync(keyFile());
+    fs.writeFileSync(storeFile(), '{}');
+    const log = path.join(home, 'audit.log');
+    fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replaceAll(',"baselineSigned":true', ''));
+    const f = checkFingerprints(results())['Cursor:files'];
+    expect(f?.length).toBeGreaterThan(0);
+    expect(f?.[0].severity).toBe('INFO');
   });
 
   it('still calls an empty unsigned store tampered on an install that signed before', () => {

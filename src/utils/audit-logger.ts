@@ -213,11 +213,10 @@ function readStore(): Store {
     // already signed a baseline: then someone removed both.
     const unkeyed = (status: 'unsigned' | 'legacy'): Store =>
       everSigned() ? tampered('baseline was signed before, but its signature and key are gone') : { status, data };
-    // <= 2.0.13 writes {} when a scan finds no servers: an empty baseline,
-    // not a damaged one. (With a key on file it already failed above.)
-    if (Object.keys(data).length === 0) {
-      return everSigned() ? tampered('baseline was signed before, but its signature and key are gone') : { status: 'missing', baselineExisted: false };
-    }
+    // <= 2.0.13 writes {} when a scan finds no servers: an old-format
+    // store with no entries, handled like any other old-format store (an
+    // INFO per server), and tampered when this install signed before.
+    if (Object.keys(data).length === 0) return unkeyed('legacy');
     if (data[SCHEMA_KEY] === SCHEMA) return key.status === 'ok' ? { status: 'ok', data } : unkeyed('unsigned');
     if (SCHEMA_KEY in data) return { status: 'bad', reason: `unknown schema '${data[SCHEMA_KEY]}'` };
     return isLegacyShape(data) ? unkeyed('legacy') : { status: 'bad', reason: 'no schema marker and not the old store format' };
