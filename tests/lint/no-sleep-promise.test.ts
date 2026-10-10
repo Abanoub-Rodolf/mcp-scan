@@ -1,3 +1,5 @@
+// Gaps the rule still has are listed in the 'Known gaps' comment above noSleepPromise in eslint.config.js.
+// A shape is either in a table below or in that comment, never both.
 import { describe, it, expect } from 'vitest';
 import { ESLint } from 'eslint';
 import path from 'path';
@@ -321,6 +323,199 @@ const ALLOWED = [
   "await new Promise(r => { r(1); });",
 ];
 
+// Third round: nine classes of bypass found by cold reviews of the sibling rules in
+// two other repos. Keyed by class so a failing case names its class (c1 .. c9).
+const BYPASS_BANNED: Record<string, string[]> = {
+  // setInterval is a timer wherever setTimeout is
+  c1: [
+    'const s = promisify(setInterval); void s;',
+    'const s = util.promisify(setInterval); void s;',
+    'const t = setInterval; const s = promisify(t); void s;',
+    'const s = promisify(globalThis.setTimeout); void s;',
+    'const s = promisify(setInterval as any); void s;',
+    'const si = setInterval; await new Promise(r => si(r, 5));',
+    'await new Promise(r => globalThis.setInterval(r, 5));',
+  ],
+  // .call, .apply, .bind and the comma form run the same timer
+  c2: [
+    'await new Promise(r => setTimeout.call(null, r, 50));',
+    'await new Promise(r => setTimeout.apply(null, [r, 50]));',
+    'await new Promise(r => setTimeout.bind(null)(r, 50));',
+    'await new Promise(r => setTimeout.bind(null, r, 50)());',
+    'await new Promise(r => (0, setTimeout)(r, 50));',
+    'await new Promise(r => (0, globalThis.setTimeout)(r, 50));',
+    'await new Promise(r => globalThis.setTimeout.call(globalThis, () => r(), 50));',
+    'await new Promise(r => setInterval.call(null, r, 50));',
+    'await new Promise(r => { const args = [r, 50]; setTimeout.apply(null, args); });',
+    'await new Promise(r => { const t = setTimeout.bind(null); t(r, 50); });',
+    'await new Promise(r => (setTimeout as any)(r, 50));',
+    'await new Promise(r => (globalThis as any).setTimeout(r, 50));',
+    "await new Promise(r => globalThis['setTimeout'](r, 50));",
+    'await new Promise(r => globalThis?.setTimeout(r, 50));',
+  ],
+  // the timers module in the forms the first rounds did not cover
+  c3: [
+    "const t = module.require('timers'); void t;",
+    "const t = createRequire(import.meta.url)('node:timers/promises'); void t;",
+    "const t = await import('node:timers/promises').then(m => m.scheduler.wait(5)); void t;",
+  ],
+  // the constructor reached some other way
+  c4: [
+    'const P = Promise; await new P(r => setTimeout(r, 50));',
+    'await new globalThis.Promise(r => setTimeout(r, 50));',
+    'await new (Promise as any)(r => setTimeout(r, 50));',
+    'class P extends Promise<void> {} await new P(r => setTimeout(r, 50));',
+    'class S extends Promise<void> { constructor() { super(r => setTimeout(r, 50)); } } await new S();',
+    'class S extends Promise<void> { constructor(ms: number) { super((r) => { setTimeout(r, ms); }); } } await new S(5);',
+    'await Reflect.construct(Promise, [(r: any) => setTimeout(r, 50)]);',
+    'const P = globalThis.Promise; const { resolve } = P.withResolvers(); setTimeout(resolve, 50);',
+    'const { resolve } = (Promise as any).withResolvers(); setTimeout(resolve, 5);',
+    "const w = Promise['withResolvers'](); setTimeout(w.resolve, 5);",
+    'const w = globalThis.Promise.withResolvers(); setTimeout(w.resolve, 5);',
+  ],
+  // the resolver goes to a helper declared in this file, and the helper owns the timer
+  c5: [
+    'const after = (f: () => void) => setTimeout(f, 50); await new Promise((r) => after(r));',
+    'function after(f: () => void) { setTimeout(f, 50); } await new Promise((r) => { after(r); });',
+    'const after = (f: () => void, ms: number) => { setTimeout(() => f(), ms); }; await new Promise((r) => after(r, 50));',
+    'const after = (f: () => void) => setTimeout(f, 50); const again = (g: () => void) => after(g); await new Promise((r) => again(r));',
+    'const after = (f: () => void) => { const g = f; setInterval(g, 50); }; await new Promise((r) => after(r));',
+    'const after = (ms: number, f: () => void) => setTimeout(f, ms); await new Promise((r) => after(50, r));',
+    'const after = (f: () => void) => setTimeout(f, 50); const { resolve } = Promise.withResolvers(); after(resolve);',
+    'const after = (f: () => void) => setTimeout(f, 50); await new Promise((r) => { const ok = r; after(ok); });',
+    // a helper that only hands the resolver back still wraps it for the timer
+    'const same = (f: () => void) => f; await new Promise((r) => setTimeout(same(r), 50));',
+    'await new Promise((r) => ((f: () => void) => setTimeout(f, 50))(r));',
+  ],
+  // the resolver aliased, reject only named, resolve defaulted
+  c6: [
+    'await new Promise((res, rej) => { const ok = res; setTimeout(() => ok(), 50); void rej; });',
+    'await new Promise((res = undefined, rej) => { setTimeout(res, 50); void rej; });',
+    'await new Promise((res, rej) => { const ok = res; setTimeout(ok, 50); void rej; });',
+    'await new Promise((res, rej) => { let ok; ok = res; setTimeout(() => ok(), 50); void rej; });',
+    'await new Promise((res, rej) => { const ok = res as () => void; setTimeout(() => ok(), 50); void rej; });',
+    "await new Promise((res, rej) => { const ok = res; setTimeout(() => { rej(new Error('x')); ok(); }, 50); });",
+    'await new Promise((res = undefined, rej = undefined) => { setTimeout(() => res(), 50); void rej; });',
+  ],
+  // the timer reached through destructuring, quoted or computed keys, objects, arrays, defaults
+  c7: [
+    'const { setTimeout } = globalThis; await new Promise(r => setTimeout(r, 50));',
+    "const { 'setTimeout': wait } = globalThis; await new Promise(r => wait(r, 50));",
+    "const { ['setInterval']: wait } = globalThis; await new Promise(r => wait(r, 50));",
+    'const { setTimeout: wait } = self; await new Promise(r => wait(r, 50));',
+    'const { setTimeout: wait } = globalThis as any; await new Promise(r => wait(r, 50));',
+    'const { setInterval: wait } = global; await new Promise(r => wait(r, 50));',
+    'const o = { wait: setTimeout }; await new Promise(r => o.wait(r, 50));',
+    'const { wait } = { wait: setTimeout }; await new Promise(r => wait(r, 50));',
+    'const [w] = [setTimeout]; await new Promise(r => w(r, 50));',
+    'const arr = [setTimeout]; await new Promise(r => arr[0](r, 50));',
+    'const f = (w = setTimeout) => new Promise(r => w(r, 50)); void f;',
+    'function f(w = setTimeout) { return new Promise(r => w(r, 50)); } void f;',
+    'const f = ({ wait = setTimeout }) => new Promise(r => wait(r, 50)); void f;',
+    'const { wait = setTimeout } = opts; await new Promise(r => wait(r, 50));',
+    'const w = opts.timer ?? setTimeout; await new Promise(r => w(r, 50));',
+    'const w = cond ? setTimeout : fake; await new Promise(r => w(r, 50));',
+    'const g = globalThis; await new Promise(r => g.setTimeout(r, 50));',
+  ],
+  // withResolvers assigned later, and resolvers stored for a timer elsewhere
+  c8: [
+    'let d; d = Promise.withResolvers(); setTimeout(() => d.resolve(), 50); await d.promise;',
+    'let d: any; d = Promise.withResolvers<void>(); setTimeout(d.resolve, 50);',
+    'let resolve; ({ resolve } = Promise.withResolvers()); setTimeout(resolve, 50);',
+    'let d; d = Promise.withResolvers(); setTimeout(() => (d).resolve(), 50);',
+    'let d; d = Promise.withResolvers(); setTimeout(() => d?.resolve(), 50);',
+    'let d; d = Promise.withResolvers(); setTimeout(() => d!.resolve(), 50);',
+    'const rs: Array<() => void> = []; await new Promise(res => { rs[0] = res; setTimeout(() => rs.forEach(f => f()), 50); });',
+    'const rs: Array<() => void> = []; const p = new Promise(res => { rs[0] = res; }); setTimeout(() => rs.forEach(f => f()), 50); await p;',
+    'const rs: Array<() => void> = []; const p = new Promise(res => { rs.push(res); }); setTimeout(() => rs[0](), 50); await p;',
+    'const pending = new Map(); const p = new Promise(res => { pending.set(1, res); }); setTimeout(() => pending.get(1)(), 50); await p;',
+    'let saved: any; const p = new Promise(res => { saved = res; }); setTimeout(() => saved(), 50); await p;',
+    'const rs: Array<() => void> = []; const w = Promise.withResolvers(); rs[0] = w.resolve; setTimeout(() => rs.forEach(f => f()), 50);',
+    'const rs: Array<() => void> = []; const p = new Promise(res => { rs.push(res); }); setTimeout(rs.shift()!, 50); await p;',
+    'const rs: Array<() => void> = []; const p = new Promise(res => { rs.push(res); }); function flush() { rs.forEach(f => f()); } setTimeout(flush, 50); await p;',
+    'const rs: Array<() => void> = []; const p = new Promise(res => { rs.push(res); }); setTimeout(() => { for (const f of rs) f(); }, 50); await p;',
+    'const d: any = {}; d.p = new Promise(res => { d.resolve = res; }); setTimeout(() => d.resolve(), 50);',
+    'let d; d = Promise.withResolvers(); const { resolve } = d; setTimeout(resolve, 50);',
+  ],
+};
+
+const BYPASS_ALLOWED: Record<string, string[]> = {
+  c1: [
+    'const s = promisify(fs.readFile); void s;',
+    'const s = promisify(other.setTimeout); void s;',
+  ],
+  c2: [
+    "await new Promise(r => { ee.on('x', r); setTimeout.call(null, r, 50); });",
+    "await new Promise((r, j) => { setTimeout.call(null, () => j(new Error('deadline')), 5000); void r; });",
+    'await new Promise((r, j) => { setTimeout.apply(null, [j, 5000]); void r; });',
+    "await new Promise((r, j) => { (0, setTimeout)(() => j(new Error('d')), 5000); void r; });",
+    'await new Promise(r => { setTimeout.call(null, go, r); r(1); });',
+    'await new Promise(r => { setTimeout.bind(null)(go, r); r(1); });',
+  ],
+  c3: [
+    "const t = foo.require('path'); void t;",
+    "const t = createRequire(import.meta.url)('node:path'); void t;",
+  ],
+  c4: [
+    "class S extends Promise<void> { constructor() { super((r, j) => { setTimeout(() => j(new Error('d')), 50); void r; }); } } void S;",
+    "class S extends Promise<void> { constructor() { super((r) => { ee.on('x', r); setTimeout(r, 50); }); } } void S;",
+  ],
+  c5: [
+    "const watch = (f: () => void) => { ee.on('x', f); setTimeout(f, 50); }; await new Promise((r) => watch(r));",
+    "const fail = (f: () => void) => setTimeout(() => { throw new Error('d'); }, 50); await new Promise((r) => fail(r));",
+    'const call = (f: () => void) => f(); await new Promise((r) => call(r));',
+    'await new Promise((r) => importedHelper(r));',
+    // mutual recursion between helpers must end
+    'function a(f: () => void) { b(f); } function b(f: () => void) { a(f); } await new Promise((r) => a(r));',
+    "const after = (f: () => void) => setTimeout(f, 50); await new Promise((r) => { ee.on('x', r); after(r); });",
+    'const delay = (ms: number) => setTimeout(go, ms); await new Promise((r) => delay(r));',
+  ],
+  c6: [
+    'await new Promise((res, rej) => { setTimeout(rej as never, 50); void res; });',
+    'await new Promise((res, rej) => { const bad = rej; setTimeout(bad, 50); void res; });',
+    "await new Promise((res, rej) => { const ok = res; ee.on('x', ok); setTimeout(() => rej(new Error('d')), 5000); });",
+    'await new Promise((res = undefined, rej) => { setTimeout(rej, 50); void res; });',
+  ],
+  c7: [
+    'const o = { wait: fake }; await new Promise(r => o.wait(r, 50));',
+    'const f = (w = fake) => new Promise(r => w(r, 50)); void f;',
+    "const o = { wait: setTimeout }; await new Promise(r => { ee.on('x', r); o.wait(r, 50); });",
+    'const [w] = [fake, setTimeout]; await new Promise(r => w(r, 50));',
+    "const { setTimeout: st } = globalThis; await new Promise((r, j) => { st(() => j(new Error('d')), 5000); void r; });",
+    'const g = other; await new Promise(r => g.setTimeout(r, 50));',
+    'const arr = [setTimeout]; await new Promise(r => arr[1](r, 50));',
+  ],
+  c8: [
+    "let d; d = Promise.withResolvers(); ee.on('x', d.resolve); setTimeout(() => d.resolve(), 50);",
+    "let d; d = Promise.withResolvers(); setTimeout(() => d.reject(new Error('d')), 5000); ee.on('x', () => d.resolve());",
+    "const rs: Array<() => void> = []; const p = new Promise(res => { rs.push(res); }); ee.on('x', () => rs.forEach(f => f())); await p;",
+    "const rs: Array<() => void> = []; const p = new Promise(res => { rs.push(res); }); setTimeout(() => console.log('tick'), 50); await p;",
+    "const rs: Array<() => void> = []; const p = new Promise(res => { rs.push(res); }); setTimeout(() => { rs.length = 0; }, 50); await p;",
+    "let saved: any; const p = new Promise(res => { saved = res; }); setTimeout(() => { throw new Error('d'); }, 50); void saved; await p;",
+  ],
+  // a property or a value that merely has the timer's name is not the timer
+  c9: [
+    'const ms = opts.setTimeout; expect(ms).toBe(5);',
+    'const { setTimeout: ms } = opts; expect(ms).toBe(5);',
+    'const o = { setTimeout: 5 }; expect(o.setTimeout).toBe(5);',
+    'await new Promise((res, rej) => { setTimeout(rej as never, 50); res(1); });',
+    'await new Promise((res, rej) => { setTimeout(rej as never, 50); void res; });',
+    'const ms = cfg.setInterval; expect(ms).toBeGreaterThan(0);',
+  ],
+};
+
+const BYPASS_STATIC: string[] = [
+  "import timers = require('node:timers');\nvoid timers;\n",
+  "import timers = require('timers/promises');\nvoid timers;\n",
+  "export { setTimeout } from 'node:timers/promises';\n",
+  "export * from 'timers';\n",
+  "import { scheduler } from 'node:timers/promises';\nvoid scheduler;\n",
+  "import * as t from 'node:timers';\nvoid t.promises.setInterval;\n",
+  "import { setInterval as every } from 'timers/promises';\nvoid every;\n",
+];
+
+const flat = (rec: Record<string, string[]>) => Object.entries(rec).flatMap(([c, xs]) => xs.map(x => [c, x] as const));
+
 // The rule follows the reads of a variable and skips its writes with
 // `ref.isWriteOnly()` alone, no `ref.init` check. That is only right while every
 // initializing write (`let a = 1`, a default value, a loop binding) is write-only.
@@ -415,5 +610,189 @@ describe('local/no-sleep-promise and the timers/promises ban', () => {
   });
   it.each(ALLOWED)('allows: %s', async code => {
     expect(await banned(code)).toEqual([]);
+  });
+  it.each(flat(BYPASS_BANNED))('[%s] flags the bypass: %s', async (_c, code) => {
+    expect((await banned(code)).length).toBeGreaterThan(0);
+  });
+  it.each(BYPASS_STATIC)('[c3] flags the static form: %s', async code => {
+    expect((await bannedFile(code)).length).toBeGreaterThan(0);
+  });
+  it.each(flat(BYPASS_ALLOWED))('[%s] allows: %s', async (_c, code) => {
+    expect(await banned(code)).toEqual([]);
+  });
+});
+
+// Spec table (~/.claude/reference/no-sleep-rule-spec.md): one row per bypass, linted at the top level of a
+// tests/*.ts file with the repo's real config. Columns: class, the rule id that must report it, a fragment
+// of its message, the snippet. Classes 1 to 14 each need a row, and each rule id is muted once below to
+// prove its rows depend on it.
+const SPEC_BANNED: Array<[number, string, string, string]> = [
+  [1, "local/no-sleep-promise", "sleep promises", "await new Promise<void>((r) => { const id = setInterval(() => { clearInterval(id); r(); }, 50); });"],
+  [2, "local/no-sleep-promise", "sleep promises", "await new Promise((r) => setTimeout.call(globalThis, r, 50));"],
+  [2, "local/no-sleep-promise", "sleep promises", "await new Promise((r) => setTimeout.apply(globalThis, [r, 50]));"],
+  [2, "local/no-sleep-promise", "sleep promises", "await new Promise((r) => setTimeout.bind(globalThis)(r, 50));"],
+  [2, "local/no-sleep-promise", "sleep promises", "await new Promise((r) => (0, setTimeout)(r, 50));"],
+  [3, "no-restricted-imports", "imports of the timers module", "import { setTimeout as wait } from 'node:timers/promises'; await wait(50);"],
+  [3, "no-restricted-imports", "imports of the timers module", "import timers from 'timers'; void timers;"],
+  [3, "no-restricted-imports", "imports of the timers module", "import { setTimeout as st } from 'node:timers'; st(() => undefined, 50);"],
+  [3, "no-restricted-syntax", "imports of the timers module", "const t = require('node:timers'); void t;"],
+  [3, "no-restricted-syntax", "imports of the timers module", "const t = await import('timers/promises'); void t;"],
+  [3, "no-restricted-syntax", "imports of the timers module", "const t = process.getBuiltinModule('node:timers'); void t;"],
+  [3, "no-restricted-imports", "imports of the timers module", "import { scheduler } from 'node:timers/promises'; await scheduler.wait(50);"],
+  [3, "no-restricted-syntax", "scheduler.wait", "await (globalThis as any).scheduler.wait(50);"],
+  [3, "no-restricted-syntax", "scheduler.wait", "await scheduler.wait(50);"],
+  [3, "local/no-sleep-promise", "promisified timers", "import { promisify } from 'node:util'; await promisify(setTimeout)(50);"],
+  [4, "local/no-sleep-promise", "sleep promises", "const P = Promise; await new P((r) => setTimeout(r, 50));"],
+  [4, "local/no-sleep-promise", "sleep promises", "await new globalThis.Promise((r) => setTimeout(r, 50));"],
+  [4, "local/no-sleep-promise", "sleep promises", "await new (Promise as any)((r: () => void) => setTimeout(r, 50));"],
+  [4, "local/no-sleep-promise", "sleep promises", "class P extends Promise<void> {} await new P((r) => setTimeout(r, 50));"],
+  [4, "local/no-sleep-promise", "sleep promises", "const { Promise: P } = globalThis; await new P((r) => setTimeout(r, 50));"],
+  [5, "local/no-sleep-promise", "sleep promises", "const after = (f: () => void) => setTimeout(f, 50); await new Promise<void>((r) => after(r));"],
+  [5, "local/no-sleep-promise", "sleep promises", "function after(f: () => void) { setTimeout(f, 50); } await new Promise<void>((r) => { after(r); });"],
+  [6, "local/no-sleep-promise", "sleep promises", "await new Promise((r, rej) => { const ok = r; setTimeout(() => { ok(); void rej; }, 50); });"],
+  [7, "local/no-sleep-promise", "sleep promises", "await new Promise((r = () => undefined) => setTimeout(r, 50));"],
+  [7, "local/no-sleep-promise", "sleep promises", "await new Promise((r = () => undefined, rej) => setTimeout(() => { r(); void rej; }, 50));"],
+  [7, "local/no-sleep-promise", "sleep promises", "function ex(r = () => undefined) { setTimeout(r, 50); } await new Promise(ex);"],
+  [8, "local/no-sleep-promise", "sleep promises", "const { setTimeout: wait } = globalThis; await new Promise((r) => wait(r, 50));"],
+  [8, "local/no-sleep-promise", "sleep promises", "const { 'setTimeout': wait } = window; await new Promise((r) => wait(r, 50));"],
+  [8, "local/no-sleep-promise", "sleep promises", "const { ['setTimeout']: wait } = self; await new Promise((r) => wait(r, 50));"],
+  [8, "local/no-sleep-promise", "sleep promises", "const k = 'setTimeout'; const { [k]: wait } = globalThis; await new Promise((r) => wait(r, 50));"],
+  [8, "local/no-sleep-promise", "sleep promises", "const { setTimeout: wait = fallback } = globalThis; await new Promise((r) => wait(r, 50));"],
+  [8, "local/no-sleep-promise", "sleep promises", "const { setInterval: wait } = global; await new Promise((r) => wait(r, 50));"],
+  [9, "local/no-sleep-promise", "sleep promises", "const box = { wait: setTimeout }; await new Promise((r) => box.wait(r, 50));"],
+  [9, "local/no-sleep-promise", "sleep promises", "const box = { setTimeout }; await new Promise((r) => box.setTimeout(r, 50));"],
+  [9, "local/no-sleep-promise", "sleep promises", "const fns = [setTimeout]; await new Promise((r) => fns[0](r, 50));"],
+  [9, "local/no-sleep-promise", "sleep promises", "const [wait] = [setTimeout]; await new Promise((r) => wait(r, 50));"],
+  [9, "local/no-sleep-promise", "sleep promises", "async function run(wait = setTimeout) { await new Promise((r) => wait(r, 50)); } await run();"],
+  [9, "local/no-sleep-promise", "sleep promises", "const run = async (wait = globalThis.setTimeout) => new Promise((r) => wait(r, 50)); await run();"],
+  [9, "local/no-sleep-promise", "sleep promises", "async function run({ wait = setTimeout } = {}) { await new Promise((r) => wait(r, 50)); } await run();"],
+  [9, "local/no-sleep-promise", "sleep promises", "const w = setTimeout; await new Promise((r) => w(r, 50));"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); setTimeout(() => d.resolve(), 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const { promise, resolve } = Promise.withResolvers<void>(); setTimeout(resolve, 50); await promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "let d; d = Promise.withResolvers<void>(); setTimeout(d.resolve, 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "let resolve: () => void; ({ resolve } = Promise.withResolvers<void>()); setTimeout(resolve, 50);"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = globalThis.Promise.withResolvers<void>(); setTimeout(d.resolve, 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = (Promise as any).withResolvers(); setTimeout(() => d.resolve(), 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); setTimeout((0, d.resolve), 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); setTimeout((d as any).resolve, 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); setTimeout(() => d?.resolve(), 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); setTimeout(d?.resolve, 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); setTimeout(() => d.resolve?.(), 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); setTimeout(d['resolve'], 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); setTimeout(d[`resolve`], 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const q: Array<() => void> = []; const d = Promise.withResolvers<void>(); q.push(d.resolve); setTimeout(() => q[0](), 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); const q = [d.resolve]; setTimeout(q[0], 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); const { resolve } = d; setTimeout(resolve, 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); const e = d; setTimeout(e.resolve, 50); await d.promise;"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "await page.waitForTimeout(500);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "await tab.waitForTimeout(500);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "await getTab().waitForTimeout(500);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "await page['waitForTimeout'](500);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "const k = 'waitForTimeout'; await (page as any)[k](500);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "await page.waitForTimeout.call(page, 500);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "await page.waitForTimeout.apply(page, [500]);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "const w = page.waitForTimeout.bind(page); await w(500);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "const { waitForTimeout } = page; await waitForTimeout(500);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "const { waitForTimeout: w } = page; await w(500);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "run(page.waitForTimeout);"],
+  [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "const w = page.waitForTimeout; await w.call(page, 500);"],
+  [12, "local/no-fixed-wait", "timers in a script string (i", "await page.evaluate('new Promise((r) => setTimeout(r, 500))');"],
+  [12, "local/no-fixed-wait", "timers in a script string (i", "await page.waitForFunction(`new Promise((r) => setInterval(r, 5))`);"],
+  [12, "local/no-fixed-wait", "timers in a script string (i", "await context.addInitScript('setTimeout(() => undefined, 5)');"],
+  [12, "local/no-fixed-wait", "timers in a script string (i", "await tab.evaluate('new Promise((r) => setTimeout(r, 500))');"],
+  [12, "local/no-fixed-wait", "timers in a script string (i", "await page.evaluate('(ms) => new Promise((r) => setTimeout(r, ms))', 500);"],
+  [12, "local/no-fixed-wait", "timers in a script string (i", "await page.addInitScript({ content: 'setTimeout(() => undefined, 5)' });"],
+  [12, "local/no-fixed-wait", "timers in a script string (i", "await page.evaluate(`new Promise((r) => setTimeout(r, ${ms}))`);"],
+  [13, "no-restricted-syntax", "Atomics.wait (it blocks for ", "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);"],
+  [13, "no-restricted-syntax", "Atomics.wait (it blocks for ", "await Atomics.waitAsync(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500).value;"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; while (Date.now() < end) {}"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; do {} while (Date.now() < end);"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = performance.now() + 500; for (; performance.now() < end; );"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; let n = 0; while (Date.now() < end) { n++; }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; while (end > Date.now());"],
+];
+
+const SPEC_ALLOWED: string[] = [
+  "await new Promise((r, rej) => { setTimeout(() => rej(new Error('late')), 50); });",
+  "await new Promise((r, rej) => setTimeout(rej, 50));",
+  "function fail(j: (e: Error) => void) { j(new Error('late')); } await new Promise((r, rej) => setTimeout(() => fail(rej), 50));",
+  "await new Promise((r, rej) => { const fail = rej; setTimeout(() => fail(new Error('late')), 50); });",
+  "await new Promise((r, rej) => { setInterval(() => rej(new Error('late')), 50); });",
+  "const orig = globalThis.setTimeout; globalThis.setTimeout = (() => 0) as never; globalThis.setTimeout = orig;",
+  "const orig = setTimeout; setTimeout = (() => 0) as never; setTimeout = orig;",
+  "const orig = setInterval; setInterval = (() => 0) as never; setInterval = orig;",
+  "const orig = setTimeout; vi.stubGlobal('setTimeout', () => 0); vi.stubGlobal('setTimeout', orig);",
+  "vi.useFakeTimers({ toFake: ['setTimeout'] }); vi.advanceTimersByTime(50); vi.useRealTimers();",
+  "const ms = opts.setTimeout ?? 5000; if (ms) use(ms);",
+  "const t = opts.setTimeout; use(t);",
+  "const t = opts['setTimeout']; use(t);",
+  "expect(opts.setTimeout).toBe(5000);",
+  "server.setTimeout(5000);",
+  "await new Promise((r) => { server.setTimeout(r, 50); });",
+  "await new Promise((r, rej) => setTimeout(rej as never, 50));",
+  "await new Promise((r, rej) => setTimeout((() => rej(new Error('late'))) as never, 50));",
+  "const P = lib.Promise; use(P);",
+  "const all = Promise.all([]); await all;",
+  "const id = setTimeout(() => undefined, 50); clearTimeout(id);",
+  "expect(setTimeout).toBeDefined(); expect(globalThis.setTimeout).toBeTypeOf('function');",
+  "vi.mocked(setTimeout).mockClear();",
+  "await expect(page.locator('#x')).toBeVisible();",
+  "await page.evaluate('document.title');",
+  "await page.evaluate(() => document.title);",
+  "const end = Date.now() + 500; while (Date.now() < end) { await check(); }",
+  "const d = Promise.withResolvers<void>(); setTimeout(() => d.reject(new Error('late')), 50); await d.promise.catch(() => undefined);",
+  "const d = Promise.withResolvers<void>(); queueMicrotask(() => d.resolve()); await d.promise;",
+  "await new Promise((r) => { globalThis['queueMicrotask'](r); });",
+  "await mySched.wait(50);",
+];
+
+
+const SPEC_IDS = ['local/no-sleep-promise', 'local/no-fixed-wait', 'no-restricted-syntax', 'no-restricted-imports'];
+async function specLint(code: string, opts: { file?: string; off?: string } = {}) {
+  const lint = opts.off
+    ? new ESLint({ cwd: REPO, overrideConfig: [{ files: ['tests/**/*.ts'], rules: { [opts.off]: 'off' } }] })
+    : eslint;
+  const [res] = await lint.lintText(code, { filePath: path.join(REPO, opts.file ?? 'tests/snippet.test.ts') });
+  // a snippet that does not parse reports nothing, so an allowed row would pass for the wrong reason
+  expect(res.messages.filter(m => m.fatal), 'parse').toEqual([]);
+  return res.messages.filter(m => m.ruleId && SPEC_IDS.includes(m.ruleId));
+}
+
+describe('sleep rule spec table', () => {
+  it.each(SPEC_BANNED)('class %i is reported by %s (%s): %s', async (_c, id, frag, code) => {
+    const hits = await specLint(code);
+    expect(hits.map(m => m.ruleId)).toContain(id);
+    expect(hits.find(m => m.ruleId === id)!.message).toContain(frag);
+  });
+  it.each(SPEC_ALLOWED)('allows: %s', async code => {
+    expect((await specLint(code)).map(m => `${m.ruleId}: ${m.message}`)).toEqual([]);
+  });
+  it('has a row for every class 1 to 14', () => {
+    const have = new Set(SPEC_BANNED.map(r => r[0]));
+    for (let c = 1; c <= 14; c++) expect(have.has(c), `class ${c}`).toBe(true);
+  });
+  it('reports a plain sleep in a test file at any depth and none outside the glob', async () => {
+    const sleep = 'await new Promise((r) => setTimeout(r, 50));';
+    for (const file of ['tests/a.test.ts', 'tests/a/b/c.ts']) {
+      expect((await specLint(sleep, { file })).length, file).toBeGreaterThan(0);
+    }
+    for (const file of ['src/lib/wait.ts', 'scripts/wait.ts']) expect(await specLint(sleep, { file }), file).toEqual([]);
+  });
+  // The planted violation: a row whose only report is one rule id goes quiet when that rule is off, so
+  // deleting the rule from the config fails the suite instead of passing quietly.
+  it.each(SPEC_IDS)('muting %s silences a row only it reports', async id => {
+    const rows: string[] = [];
+    for (const r of SPEC_BANNED) {
+      if (r[1] === id && (await specLint(r[3])).every(m => m.ruleId === id)) rows.push(r[3]);
+    }
+    expect(rows.length, 'a row that only this rule reports').toBeGreaterThan(0);
+    expect(await specLint(rows[0], { off: id })).toEqual([]);
+  });
+  // The race fallback is the one exemption: the resolver is also handed to something else.
+  // `noop(r)` is the edge of it, any call that takes the resolver counts as the handoff.
+  it('keeps the race-fallback exemption and names its edge', async () => {
+    expect(await specLint('new Promise((r) => { noop(r); setTimeout(r, 50); });')).toEqual([]);
+    expect(await specLint("new Promise((r) => { server.on('x', r); setTimeout(r, 5000); });")).toEqual([]);
+    expect((await specLint('new Promise((r) => { setTimeout(r, 50); });')).length).toBeGreaterThan(0);
   });
 });
