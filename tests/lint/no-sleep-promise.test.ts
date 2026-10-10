@@ -1,0 +1,82 @@
+import { describe, it, expect } from 'vitest';
+import { ESLint } from 'eslint';
+import path from 'path';
+import { fileURLToPath } from 'node:url';
+
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const eslint = new ESLint({ cwd: REPO });
+
+// Lints the snippet as a test file with the repo's real config and returns the
+// ids of the sleep-ban rules that fired.
+async function banned(code: string): Promise<string[]> {
+  const [res] = await eslint.lintText(`async function t() {\n${code}\n}\nvoid t;\n`, { filePath: path.join(REPO, 'tests/snippet.test.ts') });
+  const ids = ['local/no-sleep-promise', 'no-restricted-syntax', 'no-restricted-imports'];
+  return res.messages.filter(m => m.ruleId && ids.includes(m.ruleId)).map(m => m.ruleId!);
+}
+
+const SLEEPS = [
+  'await new Promise(r => setTimeout(r, 5));',
+  'await new Promise((r, j) => setTimeout(r, 5));',
+  'await new Promise((r, _j) => { setTimeout(() => { r(1); }, 5); });',
+  'await new Promise(function (resolve) { setTimeout(resolve, 5); });',
+  'await new Promise(r => globalThis.setTimeout(r, 5));',
+  'await new Promise(r => globalThis.setTimeout(() => r(undefined), 5));',
+  'await new Promise(r => setInterval(r, 5));',
+  'const P = Promise; await new P(r => setTimeout(r, 5));',
+  'await new Promise(r => setTimeout(r.bind(null), 5));',
+  'await new Promise(r => { const t = setTimeout(r, 5); void t; });',
+  // the resolver is only read, or sits in a callback nobody gets: still a pure sleep
+  'await new Promise(r => { if (r) setTimeout(r, 5); });',
+  'await new Promise(r => { void typeof r; setTimeout(r, 5); });',
+  'await new Promise(r => { const unused = () => r(); setTimeout(r, 5); });',
+  'await new Promise(r => { [1].forEach(r => console.log(r)); setTimeout(r, 5); });',
+  'await new Promise(r => { r.length; setTimeout(r, 5); });',
+  'await new Promise(r => { r(); setTimeout(r, 5); });',
+];
+
+const IMPORTS = [
+  "await import('node:timers/promises');",
+  "await import('timers/promises');",
+  "const x = require('node:timers/promises'); void x;",
+  "const s = promisify(setTimeout); void s;",
+];
+
+const ALLOWED = [
+  // deadline guards: the timer throws or rejects
+  "await new Promise(r => { server.on('x', r); setTimeout(() => { throw new Error('deadline'); }, 5000); });",
+  "await new Promise((r, j) => { server.on('x', r); setTimeout(() => j(new Error('deadline')), 5000); });",
+  "await new Promise(r => { setTimeout(() => { throw new Error('d'); }, 5); setTimeout(() => console.log('hi'), 5); r(1); });",
+  // resolve-style guard, resolver also handed to something else
+  "await new Promise(resolve => { const t = setTimeout(() => resolve('none'), 5); onEvent(resolve); clearTimeout(t); });",
+  "await new Promise(r => { server.on('x', r); setTimeout(r, 5000); });",
+  "await new Promise(r => { server.on('x', () => r(1)); setTimeout(() => r(2), 5000); });",
+  "let saved: unknown; await new Promise(r => { saved = r; setTimeout(() => r(1), 5); }); void saved;",
+  "await new Promise(r => { const keep = r; onEvent(keep); setTimeout(r, 5); });",
+  "await new Promise(r => { handlers.push(r); setTimeout(r, 5); });",
+  "const fn = await new Promise(r => { setTimeout(r, 5); return r; });",
+  // .bind is the resolver
+  "await new Promise(r => { ee.once('x', r.bind(null)); setTimeout(r, 5); });",
+  "await new Promise(r => { setTimeout(() => r(), 5); ee.once('x', r.bind(null, 1)); });",
+  // a listener that calls it, given away
+  "await new Promise(r => { ee.once('x', () => { r(); }); setTimeout(() => r(), 5); });",
+  "await new Promise(r => { handlers.x = () => r(); setTimeout(r, 5); });",
+  // not a promise executor, or a plain timer
+  "const t = setTimeout(() => {}, 5); clearTimeout(t);",
+  "await new Promise(r => { r(1); });",
+];
+
+describe('local/no-sleep-promise and the timers/promises ban', () => {
+  it.each(SLEEPS)('flags the sleep: %s', async code => {
+    expect(await banned(code)).toContain('local/no-sleep-promise');
+  });
+  it.each(IMPORTS)('flags the import: %s', async code => {
+    expect((await banned(code)).length).toBeGreaterThan(0);
+  });
+  it('flags a static timers/promises import', async () => {
+    const [res] = await eslint.lintText("import { setTimeout as sleep } from 'node:timers/promises';\nvoid sleep;\n", { filePath: path.join(REPO, 'tests/snippet.test.ts') });
+    expect(res.messages.map(m => m.ruleId)).toContain('no-restricted-imports');
+  });
+  it.each(ALLOWED)('allows: %s', async code => {
+    expect(await banned(code)).toEqual([]);
+  });
+});
