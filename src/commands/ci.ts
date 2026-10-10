@@ -1,6 +1,6 @@
 import { runScan } from './scan.js';
 import { printJsonReport } from '../utils/json-reporter.js';
-import { SEVERITY_ORDER, Severity } from '../types/severity.js';
+import { SEVERITY_ORDER, Severity, isSeverity } from '../types/severity.js';
 import { EXIT_OK, EXIT_FINDINGS } from '../utils/exit-codes.js';
 import fs from 'fs';
 import { proHint } from '../utils/pro-hint.js';
@@ -14,7 +14,7 @@ export async function runCi(options: {
   offline?: boolean,
 }) {
   const maxSeverityStr = (options.maxSeverity || 'high').toUpperCase() as Severity;
-  if (!(maxSeverityStr in SEVERITY_ORDER)) {
+  if (!isSeverity(maxSeverityStr)) {
     console.error(`Invalid max severity '${options.maxSeverity}'. Valid values: ${Object.keys(SEVERITY_ORDER).join(', ').toLowerCase()}`);
     process.exitCode = 1;
     return;

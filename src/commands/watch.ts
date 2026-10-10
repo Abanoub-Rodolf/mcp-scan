@@ -9,6 +9,8 @@ import { detectTools } from '../config/detector.js';
 import { ScanReport, Finding, ServerScanResult } from '../types/scan-result.js';
 import chalk from 'chalk';
 import { sendWebhook, sendSlackWebhook } from '../utils/webhook.js';
+import { PolicyError } from '../utils/policy-file.js';
+import { EXIT_POLICY_ERROR } from '../utils/exit-codes.js';
 
 export async function runWatch(options: { webhook?: string, slackWebhook?: string } = {}) {
   logger.brand('Starting enhanced watch mode...');
@@ -26,7 +28,6 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   let lastReport: ScanReport | null = null;
   let debounceTimeout: NodeJS.Timeout;
   const watchedDirs = new Set<string>();
-  let keyBroken = false;
 
   const performScan = async (changedPath?: string) => {
     process.stdout.write('\x1b[2J\x1b[0;0H');
@@ -40,19 +41,25 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
     try {
       currentReport = await runScan({ silent: true });
     } catch (e) {
-      // Rescans run from a timer, where a rejection would be unhandled and
-      // dump a stack. Say it once, keep watching: fixing the key path and
-      // touching a config recovers without a restart.
-      if (!(e instanceof BaselineKeyError)) throw e;
+      if (e instanceof BaselineKeyError) {
+        // Rescans run from a timer, where a rejection would be unhandled and
+        // dump a stack. Say it once, keep watching: fixing the key path and
+        // touching a config recovers without a restart.
+        logger.error(e.message);
+        process.exitCode = EXIT_ERROR;
+        return;
+      }
+      if (!(e instanceof PolicyError)) throw e;
       logger.error(e.message);
-      process.exitCode = EXIT_ERROR;
-      keyBroken = true;
+      // First scan: nothing to watch without a trustworthy policy. Later
+      // scans: keep watching, but never report "all clear" for a scan that
+      // did not run.
+      if (!lastReport) process.exit(EXIT_POLICY_ERROR);
+      process.exitCode = EXIT_POLICY_ERROR;
+      logger.log(chalk.dim('Scan skipped. Saving the fixed policy file rescans.'));
       return;
     }
-    if (keyBroken) {
-      keyBroken = false;
-      process.exitCode = 0;
-    }
+    process.exitCode = undefined;
     
     if (lastReport) {
       const { newFindings, resolvedFindings } = diffReports(lastReport, currentReport);
@@ -89,7 +96,15 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
 
   await performScan();
 
-  for (const configPath of validPaths) {
+  // A broken policy skips every scan until it is fixed, so saving it must rescan too.
+  const triggers = [
+    ...validPaths,
+    path.join(process.cwd(), '.mcp-scan.json'),
+    path.join(process.cwd(), '.mcp-scan-policy.yml'),
+    path.join(os.homedir(), '.mcp-scan-policy.yml'),
+  ];
+
+  for (const configPath of triggers) {
     const dir = path.dirname(configPath);
     if (watchedDirs.has(dir)) continue;
     watchedDirs.add(dir);
@@ -97,7 +112,7 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
     try {
       fs.watch(dir, (eventType, filename) => {
         const changedPath = filename ? path.join(dir, filename) : null;
-        if (changedPath && validPaths.includes(changedPath)) {
+        if (changedPath && triggers.includes(changedPath)) {
           clearTimeout(debounceTimeout);
           debounceTimeout = setTimeout(() => performScan(changedPath), 500);
         }
@@ -109,6 +124,7 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   
   const onExit = () => {
     logger.info('Stopping watch mode.');
+    // A broken policy or baseline key set exitCode; Ctrl+C must not erase it.
     process.exit(process.exitCode ?? 0);
   };
   process.on('SIGINT', onExit);

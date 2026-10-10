@@ -2,6 +2,20 @@ import { validatePolicy, loadYamlPolicy } from '../policy/engine.js';
 import chalk from 'chalk';
 import { proHint } from '../utils/pro-hint.js';
 import fs from 'fs';
+import { PolicyError, policyFileExists } from '../utils/policy-file.js';
+
+// show and list take the file as a plain argument, so a missing one is a
+// message here, not the scan-time error loadYamlPolicy throws for --policy.
+function loadForDisplay(file: string) {
+    try {
+        return policyFileExists(file) ? loadYamlPolicy(file) : null;
+    } catch (e) {
+        if (!(e instanceof PolicyError)) throw e;
+        console.error(chalk.red(`Error: ${e.message}`));
+        process.exitCode = 1;
+        return undefined;
+    }
+}
 
 export async function runPolicyAction(action: string, file: string = '.mcp-scan-policy.yml') {
     if (action === 'validate') {
@@ -36,7 +50,8 @@ rules:
         fs.writeFileSync(file, yamlContent);
         console.log(chalk.green(`policy created: ${file}`));
     } else if (action === 'show') {
-        const policy = loadYamlPolicy(file);
+        const policy = loadForDisplay(file);
+        if (policy === undefined) return;
         if (!policy) {
             console.error(chalk.red(`Error: Could not load policy from ${file}`));
             process.exitCode = 1;
@@ -54,7 +69,8 @@ rules:
         }
         proHint();
     } else if (action === 'list') {
-        const policy = loadYamlPolicy(file);
+        const policy = loadForDisplay(file);
+        if (policy === undefined) return;
         if (!policy) {
             console.log(chalk.dim(`No policy file found at ${file}.`));
             return;

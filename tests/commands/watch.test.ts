@@ -43,8 +43,9 @@ describe('watch mode and an unusable baseline key', () => {
     process.on('unhandledRejection', onUnhandled);
     process.exitCode = undefined;
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    vi.spyOn(fs, 'watch').mockImplementation(((_dir: string, cb: (e: string, f: string) => void) => {
-      onChange = cb;
+    vi.spyOn(fs, 'watch').mockImplementation(((dir: string, cb: (e: string, f: string) => void) => {
+      // watch also registers the policy file dirs; only the config's dir matters here
+      if (dir === path.dirname(CONFIG)) onChange = cb;
       return {} as fs.FSWatcher;
     }) as unknown as typeof fs.watch);
   });
@@ -82,6 +83,7 @@ describe('watch mode and an unusable baseline key', () => {
     runScanMock.mockResolvedValueOnce(emptyReport);
     await rescan();
     expect(runScanMock).toHaveBeenCalledTimes(3);
-    expect(process.exitCode).toBe(0);
+    // undefined is exit 0; watch clears the code after any good scan
+    expect(process.exitCode).toBeUndefined();
   });
 });

@@ -5,8 +5,9 @@ import chalk from 'chalk';
 import { runScan } from './commands/scan.js';
 import { runAudit } from './commands/audit.js';
 import { runFix } from './commands/fix.js';
-import { EXIT_FINDINGS, EXIT_ERROR } from './utils/exit-codes.js';
+import { EXIT_FINDINGS, EXIT_ERROR, EXIT_POLICY_ERROR } from './utils/exit-codes.js';
 import { BaselineKeyError } from './utils/audit-logger.js';
+import { PolicyError } from './utils/policy-file.js';
 import { logger } from './utils/logger.js';
 import { runWatch } from './commands/watch.js';
 import { runLs } from './commands/ls.js';
@@ -293,10 +294,16 @@ program
     runBadge(packageName, options);
   });
 
-// A refusal to run is a message and exit 1, not a stack trace. Any other
-// rejection is rethrown and behaves as before.
-program.parseAsync().catch((e) => {
-  if (!(e instanceof BaselineKeyError)) throw e;
-  logger.error(e.message);
-  process.exitCode = EXIT_ERROR;
+// A refusal to run (unusable baseline key or policy) is a message and a
+// nonzero exit, not a stack trace. Any other rejection is rethrown and
+// behaves as before.
+program.parseAsync().catch((err) => {
+  if (err instanceof BaselineKeyError) {
+    logger.error(err.message);
+    process.exitCode = EXIT_ERROR;
+    return;
+  }
+  if (!(err instanceof PolicyError)) throw err;
+  console.error(chalk.red.bold('✖ ERROR:'), err.message);
+  process.exitCode = EXIT_POLICY_ERROR;
 });

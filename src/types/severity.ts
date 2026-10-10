@@ -16,6 +16,15 @@ export const SEVERITY_ORDER: Record<Severity, number> = {
   INFO: 1,
 };
 
+/**
+ * Exact, uppercase match on the five levels. Own keys only, so 'constructor'
+ * and 'toString' are not severities. Callers that accept other casing say so
+ * by uppercasing first (YAML policy, .mcp-scan.json); custom rules do not.
+ */
+export function isSeverity(v: unknown): v is Severity {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(SEVERITY_ORDER, v);
+}
+
 // Canonical severity palette. Every surface (CLI, HTML, dashboard, spinner)
 // derives its colors from here so a finding renders the same hue everywhere.
 export const BRAND_COLOR = '#339DFF';

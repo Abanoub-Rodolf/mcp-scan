@@ -9,6 +9,7 @@ import { printReport } from '../utils/reporter.js';
 import { generateHtmlReport } from '../utils/html-reporter.js';
 import { recalcSeverityCounts } from '../utils/severity-tally.js';
 import { assertBaselineKeyUsable, BaselineKeyError } from '../utils/audit-logger.js';
+import { PolicyError } from '../utils/policy-file.js';
 
 /**
  * Scans all config files in a directory and aggregates them into one report.
@@ -88,6 +89,8 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
         }
     } catch (err) {
       if (err instanceof BaselineKeyError) throw err;
+      // A broken policy would fail every file the same way; stop, don't skip.
+      if (err instanceof PolicyError) throw err;
       // Silently swallowed per-file failures made configs vanish from the
       // aggregated report with no way to know they were skipped.
       failedFileCount++;

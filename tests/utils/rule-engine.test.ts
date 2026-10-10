@@ -13,6 +13,9 @@ describe('Rule Engine', () => {
     it('should load JSON rules from the rules directory', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readdirSync).mockReturnValue(['rule1.json', 'not-a-rule.txt'] as any);
+      // Rule files are opened once and read from the fd (see readPolicyFile).
+      vi.mocked(fs.openSync).mockReturnValue(3);
+      vi.mocked(fs.fstatSync).mockReturnValue({ isFile: () => true } as any);
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify([
         {
           id: 'custom-rule-1',
