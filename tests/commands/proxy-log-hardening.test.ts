@@ -56,20 +56,23 @@ describe('proxy log hardening', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  const send = async (line: string) => {
-    process.stdin.emit('data', Buffer.from(line + '\n'));
-    await new Promise(r => setTimeout(r, 50));
-  };
+  const send = (line: string) => { process.stdin.emit('data', Buffer.from(line + '\n')); };
+  // Every wait is on the thing the test asserts about, with one 10s deadline,
+  // so host load can only slow a test down, never flake it.
+  const until = (check: () => void) => vi.waitFor(check, { timeout: 10000, interval: 5 });
   const readLog = () => {
     const files = fs.readdirSync(logDir);
     expect(files.length).toBe(1);
     return { file: path.join(logDir, files[0]), text: fs.readFileSync(path.join(logDir, files[0]), 'utf8') };
   };
+  // log writes are async, so a line is in the file only once this passes
+  const logged = (needle: string) => until(() => expect(readLog().text).toContain(needle));
 
   it('creates the log file 0600 and the log dir 0700', async () => {
     vi.mocked(loadPolicy).mockReturnValue({});
     await runProxy({ command: 'node', args: '-v' });
-    await send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call' }));
+    send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call' }));
+    await logged('tools/call');
 
     const { file } = readLog();
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
@@ -81,7 +84,10 @@ describe('proxy log hardening', () => {
     let forwarded = '';
     childStdin.on('data', c => { forwarded += c.toString(); });
     await runProxy({ command: 'node', args: '-v' });
-    await send('token=sk-live-not-json-0123456789');
+    send('token=sk-live-not-json-0123456789');
+    // the line was forwarded and the log got its placeholder note: both done
+    await until(() => expect(forwarded).toContain('sk-live-not-json-0123456789'));
+    await logged('<unparsed line');
 
     expect(readLog().text).not.toContain('sk-live-not-json-0123456789');
     expect(forwarded).toContain('sk-live-not-json-0123456789');
@@ -93,7 +99,8 @@ describe('proxy log hardening', () => {
     let forwarded = '';
     childStdin.on('data', c => { forwarded += c.toString(); });
     await runProxy({ command: 'node', args: '-v' });
-    await send(JSON.stringify({ params: { email: 'secret@corp.example' } }));
+    send(JSON.stringify({ params: { email: 'secret@corp.example' } }));
+    await logged('<message dropped, masking failed>');
 
     expect(readLog().text).not.toContain('secret@corp.example');
     expect(forwarded).not.toContain('secret@corp.example');
@@ -119,7 +126,10 @@ describe('proxy log hardening', () => {
       errSpy.mockRestore();
     });
     const replies = () => out.filter(l => l.includes('"jsonrpc"')).map(l => JSON.parse(l));
-    const noLeak = () => {
+    // The drop note is written for every case below, so once it is in the log
+    // the proxy has finished handling the message.
+    const noLeak = async () => {
+      await logged('<message dropped, masking failed>');
       expect([...out, ...errOut].join('')).not.toContain(secret);
       expect(readLog().text).not.toContain(secret);
     };
@@ -128,42 +138,46 @@ describe('proxy log hardening', () => {
       let forwarded = '';
       childStdin.on('data', c => { forwarded += c.toString(); });
       await runProxy({ command: 'node', args: '-v' });
-      await send(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { email: secret } }));
+      send(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { email: secret } }));
+      await until(() => expect(replies()).toHaveLength(1));
+      await logged('<message dropped, masking failed>');
 
       expect(replies()).toEqual([{ jsonrpc: '2.0', id: 7, error: { code: -32603, message: expect.any(String) } }]);
       expect(forwarded).toBe('');
-      noLeak();
+      await noLeak();
     });
 
     it('answers every request in a dropped batch', async () => {
       await runProxy({ command: 'node', args: '-v' });
-      await send(JSON.stringify([
+      send(JSON.stringify([
         { jsonrpc: '2.0', id: 'a', method: 'tools/call', params: { email: secret } },
         { jsonrpc: '2.0', method: 'notifications/x' },
         { jsonrpc: '2.0', id: 2, method: 'ping' },
       ]));
+      await until(() => expect(replies()).toHaveLength(1));
 
       const [batch] = replies();
       expect(batch.map((r: any) => r.id)).toEqual(['a', 2]);
-      noLeak();
+      await noLeak();
     });
 
     it('warns on stderr for a client notification, with no reply', async () => {
       await runProxy({ command: 'node', args: '-v' });
-      await send(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/x', params: { email: secret } }));
+      send(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/x', params: { email: secret } }));
+      await until(() => expect(errOut.join('')).toMatch(/dropped a CLIENT -> SERVER message/));
 
       expect(replies()).toEqual([]);
       expect(errOut.join('')).toMatch(/dropped a CLIENT -> SERVER message/);
-      noLeak();
+      await noLeak();
     });
 
     it('replaces an unmaskable server response with an error for the same id, so the client does not hang', async () => {
       await runProxy({ command: 'node', args: '-v' });
       childStdout.write(JSON.stringify({ jsonrpc: '2.0', id: 3, result: { email: secret } }) + '\n');
-      await new Promise(r => setTimeout(r, 50));
+      await until(() => expect(replies()).toHaveLength(1));
 
       expect(replies()).toEqual([{ jsonrpc: '2.0', id: 3, error: { code: -32603, message: expect.any(String) } }]);
-      noLeak();
+      await noLeak();
     });
 
     it('answers an unmaskable server request to the server, not the client', async () => {
@@ -171,32 +185,33 @@ describe('proxy log hardening', () => {
       childStdin.on('data', c => { toServer += c.toString(); });
       await runProxy({ command: 'node', args: '-v' });
       childStdout.write(JSON.stringify({ jsonrpc: '2.0', id: 'srv-1', method: 'sampling/createMessage', params: { email: secret } }) + '\n');
-      await new Promise(r => setTimeout(r, 50));
+      await until(() => expect(toServer).toMatch(/\n$/));
 
       expect(replies()).toEqual([]);
       expect(JSON.parse(toServer)).toMatchObject({ id: 'srv-1', error: { code: -32603 } });
-      noLeak();
+      await noLeak();
     });
 
     it('settles a server request whose client response cannot be masked', async () => {
       let toServer = '';
       childStdin.on('data', c => { toServer += c.toString(); });
       await runProxy({ command: 'node', args: '-v' });
-      await send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-2', result: { email: secret } }));
+      send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-2', result: { email: secret } }));
+      await until(() => expect(toServer).toMatch(/\n$/));
 
       expect(replies()).toEqual([]);
       expect(JSON.parse(toServer)).toMatchObject({ id: 'srv-2', error: { code: -32603 } });
-      noLeak();
+      await noLeak();
     });
 
     it('warns on stderr for a server notification, with no reply', async () => {
       await runProxy({ command: 'node', args: '-v' });
       childStdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/x', params: { email: secret } }) + '\n');
-      await new Promise(r => setTimeout(r, 50));
+      await until(() => expect(errOut.join('')).toMatch(/dropped a SERVER -> CLIENT message/));
 
       expect(replies()).toEqual([]);
       expect(errOut.join('')).toMatch(/dropped a SERVER -> CLIENT message/);
-      noLeak();
+      await noLeak();
     });
   });
 
@@ -225,8 +240,9 @@ describe('proxy log hardening', () => {
     const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       await runProxy({ command: 'node', args: '-v' });
-      await send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call' }));
+      send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call' }));
       const dir = path.join(root, '.mcp-scan', 'logs');
+      await until(() => expect(fs.readdirSync(dir).map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('')).toContain('tools/call'));
       const files = fs.readdirSync(dir);
       expect(files).toHaveLength(1);
       expect(fs.readFileSync(path.join(dir, files[0]), 'utf8')).toContain('tools/call');
