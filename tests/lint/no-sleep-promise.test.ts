@@ -110,6 +110,7 @@ const SLEEPS = [
   'const w = Promise.withResolvers(); setTimeout(w.resolve, 5); await w.promise;',
   'const w = Promise.withResolvers(); setTimeout(() => w.resolve(), 5);',
   'const w = Promise.withResolvers(); setTimeout(w["resolve"], 5);',
+  'const w = Promise.withResolvers(); setTimeout(w[`resolve`], 5);',
   'const w = Promise.withResolvers(); setTimeout(() => { w.resolve(); }, 5); void w.reject;',
   'const P = Promise; const { resolve } = P.withResolvers(); setInterval(resolve, 5);',
   // a shadowing binding is a different variable, whatever it is used for
@@ -250,6 +251,13 @@ const ALLOWED = [
   "const w = Promise.withResolvers(); ee.on('x', w.resolve); setTimeout(() => w.resolve(), 5);",
   "const w = Promise.withResolvers(); setTimeout(() => w.reject(new Error('deadline')), 5000); ee.on('x', () => w.resolve());",
   "const w = Promise.withResolvers(); setTimeout(w.reject, 5000); w.resolve(1);",
+  // any other read of the object hands the resolver off
+  "const w = Promise.withResolvers(); const { resolve } = w; ee.on('x', resolve); setTimeout(w.resolve, 5);",
+  "const w = Promise.withResolvers(); const { resolve } = w; setTimeout(resolve, 5);",
+  "const w = Promise.withResolvers(); ee.on('x', w[`resolve`]); setTimeout(w.resolve, 5);",
+  "const w = Promise.withResolvers(); ee.on('x', w?.resolve); setTimeout(w.resolve, 5);",
+  "const w = Promise.withResolvers(); ee.on('x', w[k]); setTimeout(w.resolve, 5);",
+  "const w = Promise.withResolvers(); ee.on('x', w.other); setTimeout(w.resolve, 5);",
   "const { resolve } = Promise.withResolvers(); resolve(1);",
   "Promise.withResolvers();",
   // not a promise executor, or a plain timer

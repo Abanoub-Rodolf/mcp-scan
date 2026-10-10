@@ -59,7 +59,8 @@ const noSleepPromise = {
 
     // Where does the executor's resolver end up: on a timer, handed off, or both?
     // `obj`: the variable holds a `Promise.withResolvers()` result, so only
-    // `.resolve` of it is the resolver, and the object itself going anywhere hands it off.
+    // `.resolve` of it is the resolver. `.reject` and `.promise` are ignored; any
+    // other read (the object itself, a destructure, an unreadable key, `w?.resolve`) hands it off.
     const analyze = (exec, resolver, obj = false) => {
       const inside = n => n.range[0] >= exec.range[0] && n.range[1] <= exec.range[1];
       const fnsOf = site => {
@@ -72,6 +73,14 @@ const noSleepPromise = {
       const stack = new Set();
       const memo = new Map();
 
+      // the member name when it is a plain or literal key: w.resolve, w["resolve"], w[`resolve`]
+      const keyOf = m => {
+        const k = m.property;
+        if (!m.computed) return k.name;
+        if (k.type === "Literal") return k.value;
+        if (k.type === "TemplateLiteral" && !k.expressions.length) return k.quasis[0].value.cooked;
+        return undefined;
+      };
       // A variable stands for the value it holds: follow every read of it.
       const follow = v => {
         const out = none();
@@ -79,9 +88,19 @@ const noSleepPromise = {
         stack.add(v);
         for (const ref of v.references) {
           if (ref.isWriteOnly()) continue;
-          const m = ref.identifier.parent;
-          if (!obj || m.type !== "MemberExpression" || m.object !== ref.identifier) merge(out, trace(ref.identifier));
-          else if ((m.computed ? m.property.value : m.property.name) === "resolve") merge(out, trace(m));
+          const id = ref.identifier;
+          const m = id.parent;
+          if (!obj || m.type !== "MemberExpression" || m.object !== id) {
+            merge(out, trace(id));
+            // `const { resolve } = w` takes the resolver out of sight
+            if (obj && m.type === "VariableDeclarator" && m.init === id && m.id.type !== "Identifier") out.given = true;
+            continue;
+          }
+          const k = keyOf(m);
+          if (k === "reject" || k === "promise") continue;
+          // `w?.resolve` and a key we cannot read are a handoff, not a timer
+          if (k === "resolve" && m.parent.type !== "ChainExpression") merge(out, trace(m));
+          else out.given = true;
         }
         stack.delete(v);
         return out;
@@ -230,6 +249,7 @@ export default [
     // Known gaps: only a const alias of the timer is followed, not a `let`, a
     // function wrapper, or a timer reached through another object. A resolver
     // run as `r['call']()` or handed over as `setTimeout(r.call, 5)` is not seen.
+    // A timer given `w?.resolve` from Promise.withResolvers() is read as a handoff, so it is not flagged.
     // The timers module is banned by name in import, import(), require() and
     // getBuiltinModule(), but not through `createRequire(...)('timers')` or `module.require('timers')`.
     files: ["tests/**/*.ts"],
