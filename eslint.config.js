@@ -94,10 +94,4 @@ export default [
       ],
     },
   },
-  {
-    // TODO: proxy-lifecycle.test.ts still sleeps (a 300ms wait and
-    // a 10ms poll interval). Convert them to signal waits, then drop this override.
-    files: ["tests/commands/proxy-lifecycle.test.ts"],
-    rules: { "no-restricted-syntax": "off", "local/no-sleep-promise": "off" },
-  },
 ];
