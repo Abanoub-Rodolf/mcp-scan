@@ -1,7 +1,8 @@
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
-const NO_TIMERS_PROMISES = "No timers/promises sleeps in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.";
+const ban = what => `No ${what} in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.`;
+const NO_TIMERS_PROMISES = ban("timers/promises sleeps");
 const TIMERS = new Set(["setTimeout", "setInterval"]);
 const GLOBALS = new Set(["globalThis", "global", "window", "self"]);
 const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression", "FunctionDeclaration"]);
@@ -27,7 +28,7 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 const noSleepPromise = {
   meta: { type: "problem", schema: [] },
   create(context) {
-    const message = "No sleep promises in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.";
+    const message = ban("sleep promises");
     const src = context.sourceCode;
 
     // Where does the executor's resolver end up: on a timer, handed off, or both?
@@ -181,7 +182,7 @@ export default [
         },
         {
           selector: "CallExpression:matches([callee.name='promisify'], [callee.property.name='promisify']) > Identifier[name='setTimeout']",
-          message: "No promisified setTimeout in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.",
+          message: ban("promisified setTimeout"),
         },
       ],
     },
