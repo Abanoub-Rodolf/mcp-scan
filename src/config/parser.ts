@@ -182,9 +182,12 @@ export function loadIgnoreList(cwd: string = process.cwd(), opts: { silent?: boo
     // Skipped, not fatal: the list only suppresses findings, so dropping it
     // can add findings but never hide one. stderr, because this runs before
     // --json silences the logger and stdout must stay parseable.
-    if (error instanceof NotRegularFileError && !opts.silent && !noticed.has(ignorePath)) {
+    // Anything but a plain absence: a socket that fails to open (ENXIO), a
+    // permission error, EISDIR on Windows all drop the list too.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !opts.silent && !noticed.has(ignorePath)) {
       noticed.add(ignorePath);
-      process.stderr.write(`mcp-scan: ignoring ${ignorePath}: ${error.message}\n`);
+      const why = error instanceof NotRegularFileError ? error.message : `${(error as NodeJS.ErrnoException).code ?? 'error'}: ${error instanceof Error ? error.message : String(error)}`;
+      process.stderr.write(`mcp-scan: ignoring ${ignorePath}: ${why}\n`);
     }
   }
   return [];

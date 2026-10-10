@@ -85,6 +85,33 @@ describe('.mcp-scan-ignore that is not a regular file', () => {
       expect(notices()).toHaveLength(1);
     });
 
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('says so for an unreadable file, not only for a non-regular one', () => {
+      const f = path.join(dir, '.mcp-scan-ignore');
+      fs.writeFileSync(f, 'a-rule\n');
+      fs.chmodSync(f, 0o000);
+      try {
+        expect(loadIgnoreList(dir)).toEqual([]);
+      } finally {
+        fs.chmodSync(f, 0o600);
+      }
+      expect(notices()).toHaveLength(1);
+      expect(String(notices()[0][0])).toMatch(/EACCES/);
+    });
+
+    it('says so when the open itself fails (a socket gives ENXIO)', () => {
+      fs.writeFileSync(path.join(dir, '.mcp-scan-ignore'), 'a-rule\n');
+      const open = vi.spyOn(fs, 'openSync').mockImplementation(() => {
+        throw Object.assign(new Error('no such device or address'), { code: 'ENXIO' });
+      });
+      try {
+        expect(loadIgnoreList(dir)).toEqual([]);
+      } finally {
+        open.mockRestore();
+      }
+      expect(notices()).toHaveLength(1);
+      expect(String(notices()[0][0])).toMatch(/ENXIO|no such device/);
+    });
+
     it('says nothing when the file simply does not exist', () => {
       expect(loadIgnoreList(dir)).toEqual([]);
       expect(notices()).toHaveLength(0);
