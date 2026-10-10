@@ -27,6 +27,11 @@ jobs:
         cache: 'npm'
     - run: npm ci
     - run: npm run build
+    - name: Shipped action bundle is current
+      run: |
+        npm run build:action
+        git diff --exit-code action/dist
+        test -z "$(git status --porcelain action/dist)"
     - run: npm test
     - run: npm run lint
     - name: Dependency audit (runtime dependencies only, --omit=dev; blocks on high)

@@ -20,4 +20,20 @@ describe('publish workflow', () => {
     expect(test).toContain('npm run build:action');
     expect(test).toContain('git diff --exit-code action/dist');
   });
+
+  it('release also fails on an untracked or modified bundle', () => {
+    const test = yml.slice(yml.indexOf('  test:'), yml.indexOf('  publish:'));
+    expect(test).toContain('test -z "$(git status --porcelain action/dist)"');
+  });
+
+  // the same check has to fail the MR, not only the release
+  it.each([
+    ['.github/workflows/ci.yml'],
+    ['.gitlab-ci.yml'],
+  ])('%s fails a stale or untracked action bundle', (file) => {
+    const text = fs.readFileSync(file, 'utf8');
+    expect(text).toContain('npm run build:action');
+    expect(text).toContain('git diff --exit-code action/dist');
+    expect(text).toContain('test -z "$(git status --porcelain action/dist)"');
+  });
 });

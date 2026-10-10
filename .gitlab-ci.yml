@@ -82,6 +82,24 @@ test:
   script:
     - npm test
 
+# The shipped action bundle is committed, so a source change without a
+# rebuild (or a bundle that was never added) fails the MR, not the release.
+action-bundle:
+  stage: test
+  image: node:20
+  rules: *mr-and-branch
+  needs:
+    - build
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-20"
+    paths:
+      - node_modules/
+    policy: pull
+  script:
+    - npm run build:action
+    - git diff --exit-code action/dist
+    - test -z "$(git status --porcelain action/dist)"
+
 audit:
   stage: audit
   image: node:20
