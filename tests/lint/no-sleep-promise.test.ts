@@ -230,6 +230,11 @@ const ALLOWED = [
   // a binding that can be reassigned is not known to be the timer
   "let t = setTimeout; t = fake; await new Promise(r => { t(r, 5); });",
   "const t = obj.setTimeout; await new Promise(r => { t(r, 5); });",
+  // a cycle of aliases never reaches a timer, and must not recurse forever
+  "const a = b; const b = a; await new Promise(r => { a(r, 5); });",
+  "const a = a; await new Promise(r => { a(r, 5); });",
+  // a computed key names the value of setTimeout, not the property
+  "await new Promise(r => { globalThis[setTimeout](r, 5); });",
   "const { setTimeout: st } = obj; await new Promise(r => st(r, 5));",
   "const { other: st } = globalThis; await new Promise(r => st(r, 5));",
   "const st = other(setTimeout); await new Promise(r => st(r, 5));",
