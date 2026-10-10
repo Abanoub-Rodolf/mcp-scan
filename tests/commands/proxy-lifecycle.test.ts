@@ -159,6 +159,25 @@ describe('proxy lifecycle', () => {
     expect(reported).toBeLessThanOrEqual(fs.statSync(file).size);
   }, 40000);
 
+  it('stops a still-running server whose client never reads, whatever the Node stream defaults', async () => {
+    // 4 MB is past what any Node version buffers, so the server blocks on its own write
+    const pidFile = path.join(dir, 'pid');
+    const server = serverFile(`
+      require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+      const line = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { pad: 'x'.repeat(9000) } }) + '\\n';
+      for (let i = 0; i < 450; i++) require('fs').writeSync(1, line);
+      setTimeout(() => process.exit(0), 30000);`);
+    const stamp = path.join(dir, 'stamp');
+    const started = Date.now();
+    const res = await execa('sh', ['-c', `(node "${CLI}" proxy --command node --args "${server}" </dev/null; node -e "require('fs').writeFileSync('${stamp}', String(Date.now()))") | sleep 14`], {
+      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir, MCP_SCAN_STALL_MS: '5000' },
+    });
+    expect(Number(fs.readFileSync(stamp, 'utf8')) - started).toBeLessThan(8500);
+    expect(res.stderr).toMatch(/client stopped reading for 5s: stopping the server/);
+    await new Promise(r => setTimeout(r, 300));
+    expect(alive(Number(fs.readFileSync(pidFile, 'utf8')))).toBe(false);
+  }, 40000);
+
   it('a slow reader of one huge line is not mistaken for a stalled one', async () => {
     const big = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { pad: 'x'.repeat(4 * 1024 * 1024) } }) + '\n';
     const file = path.join(dir, 'big.txt');
