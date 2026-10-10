@@ -112,6 +112,23 @@ const SLEEPS = [
   'const w = Promise.withResolvers(); setTimeout(() => w.resolve(), 5);',
   'const w = Promise.withResolvers(); setTimeout(w["resolve"], 5);',
   'const w = Promise.withResolvers(); setTimeout(w[`resolve`], 5);',
+  // optional chaining to resolve is still a read of resolve
+  'const w = Promise.withResolvers(); setTimeout(w?.resolve, 5);',
+  'const w = Promise.withResolvers(); setTimeout(() => w?.resolve(), 5);',
+  'const w = Promise.withResolvers(); setTimeout(() => w.resolve?.(), 5);',
+  // a destructure of w follows the variable bound to resolve; promise and reject are not it
+  'const w = Promise.withResolvers(); const { promise } = w; setTimeout(w.resolve, 5); await promise;',
+  'const w = Promise.withResolvers(); const { reject } = w; setTimeout(w.resolve, 5); void reject;',
+  'const w = Promise.withResolvers(); const { promise, reject } = w; setTimeout(w.resolve, 5); void reject; await promise;',
+  'const w = Promise.withResolvers(); const { resolve } = w; setTimeout(resolve, 5);',
+  'const w = Promise.withResolvers(); const { resolve: done } = w; setTimeout(done, 5);',
+  'const w = Promise.withResolvers(); const { resolve = noop } = w; setTimeout(resolve, 5);',
+  "const w = Promise.withResolvers(); const { 'resolve': done } = w; setTimeout(done, 5);",
+  'const w = Promise.withResolvers(); const { promise, resolve } = w; setTimeout(() => resolve(), 5); await promise;',
+  // an alias of w is w, and an alias of w.resolve is the resolver
+  'const w = Promise.withResolvers(); const v = w; setTimeout(v.resolve, 5);',
+  'const w = Promise.withResolvers(); const { resolve } = w; const f = resolve.bind(null); setTimeout(f, 5);',
+  'const w = Promise.withResolvers(); const f = w.resolve; setTimeout(f.bind(null), 5);',
   'const w = Promise.withResolvers(); setTimeout(() => { w.resolve(); }, 5); void w.reject;',
   'const P = Promise; const { resolve } = P.withResolvers(); setInterval(resolve, 5);',
   // a shadowing binding is a different variable, whatever it is used for
@@ -254,7 +271,11 @@ const ALLOWED = [
   "const w = Promise.withResolvers(); setTimeout(w.reject, 5000); w.resolve(1);",
   // any other read of the object hands the resolver off
   "const w = Promise.withResolvers(); const { resolve } = w; ee.on('x', resolve); setTimeout(w.resolve, 5);",
-  "const w = Promise.withResolvers(); const { resolve } = w; setTimeout(resolve, 5);",
+  "const w = Promise.withResolvers(); const { ...rest } = w; setTimeout(w.resolve, 5); void rest;",
+  "const w = Promise.withResolvers(); const { [k]: x } = w; setTimeout(w.resolve, 5); void x;",
+  "const w = Promise.withResolvers(); const { resolve: { a } } = w; setTimeout(w.resolve, 5); void a;",
+  "const w = Promise.withResolvers(); const [x] = w; setTimeout(w.resolve, 5); void x;",
+  "const w = Promise.withResolvers(); const { resolve: f } = w; ee.on('x', f.bind(null)); setTimeout(w.resolve, 5);",
   "const w = Promise.withResolvers(); ee.on('x', w[`resolve`]); setTimeout(w.resolve, 5);",
   "const w = Promise.withResolvers(); ee.on('x', w?.resolve); setTimeout(w.resolve, 5);",
   "const w = Promise.withResolvers(); ee.on('x', w[k]); setTimeout(w.resolve, 5);",
