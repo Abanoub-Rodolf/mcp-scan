@@ -79,6 +79,10 @@ const SLEEPS = [
   'const exec = function (r) { setTimeout(r, 5); }; await new Promise(exec);',
   'function exec(r) { function later() { r(); } setTimeout(later, 5); } await new Promise(exec);',
   'await new Promise(function exec(r) { setTimeout(r, 5); });',
+  // a spread timer argument still carries the resolver
+  'await new Promise(r => { setTimeout(go, 5, ...[r]); });',
+  'await new Promise(r => { const args = [r]; setTimeout(go, 5, ...args); });',
+  'await new Promise(r => { setTimeout(go, 5, ...[1, r]); });',
   // an alias of the timer is the timer
   'const t = setTimeout; await new Promise(r => { t(r, 5); });',
   'const t = setTimeout; await new Promise(r => t(() => r(), 5));',
@@ -191,6 +195,10 @@ const ALLOWED = [
   "function exec(r) { r(1); } await new Promise(exec);",
   "const exec = (r) => { handlers.push(r); setTimeout(() => r(), 5); }; await new Promise(exec);",
   "await new Promise(unknownExecutor);",
+  // spread arguments that are not the resolver, or a handed-off resolver
+  "await new Promise(r => { setTimeout(go, 5, ...[1, 2]); r(1); });",
+  "await new Promise(r => { setTimeout(go, 5, ...rest); r(1); });",
+  "await new Promise(r => { ee.on('x', r); setTimeout(go, 5, ...[r]); });",
   // aliases that are not the timer, or whose resolver is handed off
   "const t = setTimeout; await new Promise(r => { ee.on('x', r); t(r, 5); });",
   "const t = foo; await new Promise(r => { t(r, 5); });",

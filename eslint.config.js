@@ -9,7 +9,7 @@ const TIMERS = new Set(["setTimeout", "setInterval"]);
 const GLOBALS = new Set(["globalThis", "global", "window", "self"]);
 const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression", "FunctionDeclaration"]);
 // expressions whose value is the value of one operand
-const PASSES = new Set(["LogicalExpression", "TSAsExpression", "TSNonNullExpression", "TSSatisfiesExpression", "ArrayExpression"]);
+const PASSES = new Set(["LogicalExpression", "TSAsExpression", "TSNonNullExpression", "TSSatisfiesExpression", "ArrayExpression", "SpreadElement"]);
 
 // Logging a value does not take ownership of it.
 const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.name === "console";
