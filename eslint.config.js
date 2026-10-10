@@ -24,31 +24,54 @@ const noSleepPromise = {
     const message = "No sleep promises in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.";
     const executors = anc => anc.filter(a => FNS.has(a.type) && a.parent?.type === "NewExpression" &&
       a.parent.arguments[0] === a && a.params[0]?.type === "Identifier");
-    // Does the executor use its resolver anywhere except as a timer's callback?
+    // Does the executor give its resolver to something else? Only these count:
+    // an argument of a non-timer call, the right side of an assignment or a
+    // declarator, a returned value, or a call of it inside a function that is
+    // itself given away. Reading it (`if (r)`, `typeof r`), a shadowing
+    // parameter, or a callback that only sits in a local does not.
     const handsOff = (exec, name) => {
       const keys = context.sourceCode.visitorKeys;
+      const isCall = n => n.type === "CallExpression" || n.type === "NewExpression";
+      const isTimerCb = f => f.parent?.type === "CallExpression" && f.parent.arguments[0] === f && isTimer(f.parent);
+      const redeclares = f => f.params.some(q => (q.type === "AssignmentPattern" ? q.left : q).name === name) ||
+        f.body.body?.some(st => st.type === "VariableDeclaration" && st.declarations.some(d => d.id.name === name));
+      const given = e => {
+        const p = e.parent;
+        return (isCall(p) && p.arguments.includes(e) && !isTimer(p)) ||
+          (p.type === "AssignmentExpression" && p.right === e) ||
+          p.type === "ReturnStatement" || (p.type === "ArrowFunctionExpression" && p.body === e);
+      };
       let found = false;
-      const walk = (n, inTimerCb) => {
+      const walk = (n, fns) => {
         if (found || !n || typeof n.type !== "string") return;
+        if (FNS.has(n.type)) {
+          if (redeclares(n)) return;
+          fns = [...fns, n];
+        }
         const p = n.parent;
-        if (n.type === "Identifier" && n.name === name && n !== exec.params[0] &&
+        if (n.type === "Identifier" && n.name === name &&
             !(p.type === "MemberExpression" && p.property === n && !p.computed) &&
-            !(p.type === "Property" && p.key === n && !p.computed && !p.shorthand)) {
-          const direct = isTimer(p) && p.arguments[0] === n;
-          // `r.length` is no handoff; a bare `r()` in the executor body itself only resolves at once
-          const called = p.type === "CallExpression" && p.callee === n;
-          if (!direct && !inTimerCb && p.type !== "MemberExpression" && !(called && nearestFn(n) === exec)) found = true;
+            !(p.type === "Property" && p.key === n && !p.computed && !p.shorthand) &&
+            !(p.type === "VariableDeclarator" && p.id === n)) {
+          // `r.bind(...)` stands for the resolver
+          const bound = p.type === "MemberExpression" && p.object === n && !p.computed && p.property.name === "bind" &&
+            p.parent.type === "CallExpression" && p.parent.callee === p;
+          const e = bound ? p.parent : n;
+          const q = e.parent;
+          if (!bound && p.type === "MemberExpression") return;
+          if (fns.some(isTimerCb) || (isTimer(q) && q.arguments[0] === e)) return;
+          const stored = q.type === "VariableDeclarator" && q.init === e;
+          const called = q.type === "CallExpression" && q.callee === e;
+          found = given(e) || stored || (called && fns.some(f => given(f)));
           return;
         }
-        const timerCb = FNS.has(n.type) && n.parent?.type === "CallExpression" && n.parent.arguments[0] === n && isTimer(n.parent);
         for (const k of keys[n.type] ?? []) {
-          for (const c of [].concat(n[k] ?? [])) walk(c, inTimerCb || timerCb);
+          for (const c of [].concat(n[k] ?? [])) walk(c, fns);
         }
       };
-      walk(exec.body, false);
+      walk(exec.body, []);
       return found;
     };
-    const nearestFn = n => { let a = n.parent; while (a && !FNS.has(a.type)) a = a.parent; return a; };
     const flag = (exec, name, node) => { if (!handsOff(exec, name)) context.report({ node, message }); };
     return {
       CallExpression(node) {
