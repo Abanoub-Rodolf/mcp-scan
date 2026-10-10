@@ -8,6 +8,7 @@ import { printJsonReport } from '../utils/json-reporter.js';
 import { printReport } from '../utils/reporter.js';
 import { generateHtmlReport } from '../utils/html-reporter.js';
 import { recalcSeverityCounts } from '../utils/severity-tally.js';
+import { assertBaselineKeyUsable, BaselineKeyError } from '../utils/audit-logger.js';
 
 /**
  * Scans all config files in a directory and aggregates them into one report.
@@ -57,6 +58,9 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
     totalDurationMs: 0
   };
 
+  // Every file would fail the same way; one clear line beats one per file.
+  assertBaselineKeyUsable();
+
   const startTime = Date.now();
   const seenServers = new Set<string>();
   let notMcpConfigCount = 0;
@@ -83,6 +87,7 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
         }
         }
     } catch (err) {
+      if (err instanceof BaselineKeyError) throw err;
       // Silently swallowed per-file failures made configs vanish from the
       // aggregated report with no way to know they were skipped.
       failedFileCount++;
