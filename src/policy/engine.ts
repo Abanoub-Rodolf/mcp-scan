@@ -152,7 +152,7 @@ function ruleMatches(rule: PolicyRule, result: ServerScanResult, finding: Findin
     // Exact (case-insensitive) so 'GPL' does not also cover 'LGPL'/'AGPL' by accident.
     if (m.license_type) {
       const license = result.metadata?.license;
-      if (!license || !toArray(m.license_type).some(l => String(l).toLowerCase() === license.toLowerCase())) return false;
+      if (typeof license !== 'string' || !toArray(m.license_type).some(l => String(l).toLowerCase() === license.toLowerCase())) return false;
     }
     if (m.category && !toArray(m.category).some(c => finding.description.toLowerCase().includes(String(c).toLowerCase()))) return false;
   }

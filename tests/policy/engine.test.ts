@@ -105,4 +105,15 @@ describe('Policy Engine', () => {
         expect(out.find(r => r.serverName === 'mit-server')!.findings).toHaveLength(1);
         expect(out.find(r => r.serverName === 'unknown-server')!.findings).toHaveLength(1);
     });
+
+    it('10. a non-string license on a result does not crash the matcher or match', () => {
+        const results: ServerScanResult[] = [{
+            serverName: 's', toolName: 't', configPath: '', scanDurationMs: 0,
+            findings: [{ id: 'permission-risk', severity: 'HIGH', description: 'x' }],
+            metadata: { license: { type: 'MIT' } as any },
+        }];
+        const policy: SecurityPolicy = { version: 1, rules: [{ id: 'skip-mit', action: 'skip', match: { license_type: 'MIT' } }] };
+        expect(() => applyPolicy(results, policy)).not.toThrow();
+        expect(results[0].findings).toHaveLength(1);
+    });
 });

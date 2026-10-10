@@ -5,11 +5,25 @@ import { loadCveSnapshot } from '../utils/cve-snapshot.js';
 
 interface NpmPackageData {
   'dist-tags'?: { latest?: string };
-  license?: string;
-  licenses?: Array<{ type?: string }>;
+  // Legacy package.json shapes put an object here ({"type":"MIT"}), or an array.
+  license?: unknown;
+  licenses?: Array<{ type?: unknown }>;
   author?: { name?: string } | string;
   repository?: { url?: string } | string;
   maintainers?: Array<{ name: string }>;
+}
+
+// Downstream code (license scanner, policy license_type match) calls string
+// methods on metadata.license, so only a non-empty string may be stored.
+export function normalizeLicense(...candidates: unknown[]): string | undefined {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c;
+    if (typeof c === 'object' && c !== null) {
+      const t = (c as { type?: unknown }).type;
+      if (typeof t === 'string' && t.trim()) return t;
+    }
+  }
+  return undefined;
 }
 
 interface GitHubRepoData {
@@ -82,7 +96,7 @@ export async function scanSupplyChain(server: ResolvedServer, offline: boolean =
     
     metadata.version = npmData['dist-tags']?.latest;
     metadata.versionSource = 'registry';
-    metadata.license = npmData.license || npmData.licenses?.[0]?.type;
+    metadata.license = normalizeLicense(npmData.license, npmData.licenses?.[0]);
     // A successful, parsed registry response is authoritative for license
     // presence/absence, regardless of what happens next (no repo URL, dead
     // GitHub link, etc. below still return this metadata).
@@ -170,7 +184,7 @@ function scanSupplyChainOffline(packageName: string, lookupName: string = packag
     if (pkgData) {
       result.metadata!.version = pkgData.version;
       result.metadata!.versionSource = 'snapshot';
-      result.metadata!.license = pkgData.license;
+      result.metadata!.license = normalizeLicense(pkgData.license);
       const hasKnownCves = Array.isArray(pkgData.vulns) && pkgData.vulns.length > 0;
       result.trustScore = hasKnownCves ? 40 : 100;
     }

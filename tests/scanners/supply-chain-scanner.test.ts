@@ -128,6 +128,23 @@ describe('Supply Chain Scanner', () => {
     expect(result.metadata?.licenseVerified).toBe(true);
   });
 
+  // npm still serves old packages with {"license":{"type":"MIT"}} or a
+  // licenses array. A non-string here crashed the license scanner and the
+  // policy license_type matcher with "toUpperCase/toLowerCase is not a function".
+  it.each([
+    ['a legacy object license', { license: { type: 'MIT', url: 'x' }, repository: null }, 'MIT'],
+    ['a licenses array', { licenses: [{ type: 'Apache-2.0' }], repository: null }, 'Apache-2.0'],
+    ['a license that is a number', { license: 7, repository: null }, undefined],
+    ['an object without a type', { license: {}, repository: null }, undefined],
+  ])('stores only a string license: %s', async (_n, body, expected) => {
+    mockFetch.mockImplementation(async (url) => {
+      if (url.includes('registry.npmjs.org')) return createMockFetchResponse(true, body);
+      return createMockFetchResponse(false, {});
+    });
+    const result = await scanSupplyChain(mockServer('odd-license-pkg'));
+    expect(result.metadata?.license).toBe(expected);
+  });
+
   it('should NOT mark license as verified when the registry fetch fails and it falls back offline', async () => {
     mockFetch.mockResolvedValue(createMockFetchResponse(false, {}));
 
