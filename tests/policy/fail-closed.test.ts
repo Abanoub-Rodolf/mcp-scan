@@ -62,6 +62,11 @@ describe('policy loading fails closed', () => {
       expect(() => loadPolicy(dir)).toThrow(PolicyError);
     });
 
+    it('a dangling symlink says the target was not found', () => {
+      fs.symlinkSync(path.join(dir, 'gone.json'), path.join(dir, '.mcp-scan.json'));
+      expect(() => loadPolicy(dir)).toThrow(/symlink target not found.*gone\.json/);
+    });
+
     it('a directory in its place throws', () => {
       fs.mkdirSync(path.join(dir, '.mcp-scan.json'));
       expect(() => loadPolicy(dir)).toThrow(/not a regular file/);
@@ -128,6 +133,12 @@ describe('policy loading fails closed', () => {
       const missing = path.join(dir, 'nope.yml');
       expect(() => loadYamlPolicy(missing)).toThrow(PolicyError);
       expect(() => loadYamlPolicy(missing)).toThrow(/not found.*nope\.yml/);
+    });
+
+    it('an explicit --policy path that is a dangling symlink says the target was not found', () => {
+      const link = path.join(dir, 'p.yml');
+      fs.symlinkSync(path.join(dir, 'gone.yml'), link);
+      expect(() => loadYamlPolicy(link)).toThrow(/symlink target not found.*gone\.yml/);
     });
 
     it('an explicit path wins over a good cwd file and still loads', () => {

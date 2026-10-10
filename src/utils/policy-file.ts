@@ -26,7 +26,18 @@ export function policyFileExists(p: string): boolean {
 // return at once; the type check then rejects it before any read. A directory
 // or device is rejected the same way.
 export function readPolicyFile(p: string): string {
-  const fd = fs.openSync(p, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0));
+  let fd: number;
+  try {
+    fd = fs.openSync(p, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0));
+  } catch (e: any) {
+    // ENOENT on a path that lstat sees means a dangling link; say so, not "no such file".
+    if (e.code === 'ENOENT') {
+      let target: string | undefined;
+      try { target = fs.readlinkSync(p); } catch (_e) { /* not a symlink */ }
+      if (target !== undefined) throw new Error(`symlink target not found: ${target}`);
+    }
+    throw e;
+  }
   try {
     if (!fs.fstatSync(fd).isFile()) throw new Error('not a regular file');
     return fs.readFileSync(fd, 'utf8');
