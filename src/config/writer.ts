@@ -65,20 +65,24 @@ export function atomicWriteConfig(
   // the oldest backup is the pre-fix original.
   if (opts.keepBackups !== undefined) {
     try {
-      pruneBackups(targetPath, opts.keepBackups);
+      pruneBackups(targetPath, backupPath, opts.keepBackups);
     } catch (_err) {
       // A failed prune must never fail the write.
     }
   }
 }
 
-function pruneBackups(targetPath: string, keep: number): void {
+function pruneBackups(targetPath: string, backupPath: string, keep: number): void {
   const dir = path.dirname(targetPath);
   const prefix = `${path.basename(targetPath)}.backup-`;
-  const stale = fs.readdirSync(dir)
+  const sorted = fs.readdirSync(dir)
     .filter(f => f.startsWith(prefix) && /^\d+$/.test(f.slice(prefix.length)))
-    .sort((a, b) => Number(b.slice(prefix.length)) - Number(a.slice(prefix.length)))
-    .slice(Math.max(keep, 0));
+    .sort((a, b) => Number(b.slice(prefix.length)) - Number(a.slice(prefix.length)));
+  // A clock that stepped back leaves older backups with later stamps; the one
+  // this write just made must never be the one cut.
+  const own = sorted.indexOf(path.basename(backupPath));
+  if (own > 0) sorted.unshift(...sorted.splice(own, 1));
+  const stale = sorted.slice(Math.max(keep, 0));
   for (const f of stale) {
     try { fs.unlinkSync(path.join(dir, f)); } catch (_err) {}
   }

@@ -54,6 +54,22 @@ describe('config/writer', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('keeps the backup it just made even when older ones carry later stamps', () => {
+    const file = tmpFile('known-servers.json');
+    const dir = path.dirname(file);
+    fs.writeFileSync(file, '{"v":0}');
+    // A clock that stepped back leaves stamps newer than Date.now().
+    const ahead = Date.now() + 86_400_000;
+    for (let i = 1; i <= 3; i++) fs.writeFileSync(`${file}.backup-${ahead + i}`, `{"v":${i}}`);
+
+    atomicWriteConfig(file, '{"v":9}', { keepBackups: 2 });
+
+    const left = fs.readdirSync(dir).filter(f => /^known-servers\.json\.backup-\d+$/.test(f));
+    expect(left.length).toBe(2);
+    expect(left.map(f => fs.readFileSync(path.join(dir, f), 'utf8'))).toContain('{"v":0}');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('never prunes backups unless asked', () => {
     const file = tmpFile('cfg.json');
     fs.writeFileSync(file, '{}');
