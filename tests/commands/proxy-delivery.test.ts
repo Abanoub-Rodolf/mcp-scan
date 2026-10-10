@@ -40,6 +40,20 @@ describe('JsonRpcInterceptor delivery tracking', () => {
     expect(replies).toEqual([]);
   });
 
+  it('drops a non-JSON line once refusing: nothing is forwarded and no reply is sent', async () => {
+    const replies: string[] = [];
+    const ic = new JsonRpcInterceptor('CLIENT -> SERVER', null, undefined, undefined, l => replies.push(l));
+    const chunks: Buffer[] = [];
+    ic.on('data', d => chunks.push(d));
+    ic.refuseFurther();
+    // 'end' only fires once everything the interceptor pushed has been read
+    const ended = new Promise<void>(resolve => ic.on('end', () => resolve()));
+    ic.end('token=sk-live-not-json-0123456789\n');
+    await ended;
+    expect(chunks).toEqual([]);
+    expect(replies).toEqual([]);
+  });
+
   it('keeps no entries for an interceptor nobody reports back to', () => {
     const { ic, chunks } = run(false);
     expect(chunks.length).toBeGreaterThan(0);
