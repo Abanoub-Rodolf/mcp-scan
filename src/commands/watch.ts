@@ -28,8 +28,34 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   let lastReport: ScanReport | null = null;
   let debounceTimeout: NodeJS.Timeout;
   const watchedDirs = new Set<string>();
+  const keyPath = keyFile();
+  let scanning = false;
+  let keyTimeout: NodeJS.Timeout;
+
+  // A scan can create or remove baseline.key itself (loadOrCreateKey, and the
+  // cleanup after a failed store write). Compare against the state the last
+  // scan left behind so only outside edits count as triggers, not our own.
+  const keyState = () => {
+    try {
+      const st = fs.statSync(keyPath);
+      return `${st.mtimeMs}:${st.size}:${st.isFile()}`;
+    } catch {
+      return 'missing';
+    }
+  };
+  let keySnapshot = keyState();
 
   const performScan = async (changedPath?: string) => {
+    scanning = true;
+    try {
+      await scan(changedPath);
+    } finally {
+      keySnapshot = keyState();
+      scanning = false;
+    }
+  };
+
+  const scan = async (changedPath?: string) => {
     process.stdout.write('\x1b[2J\x1b[0;0H');
     
     logger.brand('mcp-scan DASHBOARD (Watch Mode)');
@@ -99,7 +125,6 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
 
   // A broken policy or baseline key skips every scan until it is fixed, so
   // saving either must rescan too.
-  const keyPath = keyFile();
   const triggers = [
     ...validPaths,
     path.join(process.cwd(), '.mcp-scan.json'),
@@ -111,13 +136,22 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   for (const configPath of triggers) {
     const dir = path.dirname(configPath);
     if (watchedDirs.has(dir)) continue;
-    // The audit dir may not exist yet (fresh install); nothing to fix there.
+    // The audit dir can still be missing after the first scan; skip it. One
+    // created later is not picked up until watch restarts.
     if (configPath === keyPath && !fs.existsSync(dir)) continue;
     watchedDirs.add(dir);
 
     try {
       fs.watch(dir, (eventType, filename) => {
         const changedPath = filename ? path.join(dir, filename) : null;
+        if (changedPath === keyPath) {
+          if (scanning) return;
+          clearTimeout(keyTimeout);
+          keyTimeout = setTimeout(() => {
+            if (!scanning && keyState() !== keySnapshot) performScan(changedPath);
+          }, 500);
+          return;
+        }
         if (changedPath && triggers.includes(changedPath)) {
           clearTimeout(debounceTimeout);
           debounceTimeout = setTimeout(() => performScan(changedPath), 500);
