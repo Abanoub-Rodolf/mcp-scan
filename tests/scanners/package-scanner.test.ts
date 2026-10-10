@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { scanPackageDeep, validatePackageName } from '../../src/scanners/package-scanner.js';
 import { ResolvedServer } from '../../src/types/config.js';
-import { FindingId } from '../../src/types/scan-result.js';
 import { logger } from '../../src/utils/logger.js';
 
 // Mocking global fetch for OSV.dev and npm registry tests
