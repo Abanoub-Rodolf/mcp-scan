@@ -59,8 +59,11 @@ export function logScan(report: ScanReport) {
     // read-only home means there is no audit trail, and nobody would know.
     // stderr, once per distinct failure: stdout may be --json, and watch mode
     // calls this every rescan.
-    const msg = `could not write the audit log (${auditDir()}): ${error instanceof Error ? error.message : String(error)}`;
+    const why = error instanceof Error ? error.message : String(error);
+    // fs errors usually name the path already; print it once
+    const msg = why.includes(auditDir()) ? `could not write the audit log: ${why}` : `could not write the audit log (${auditDir()}): ${why}`;
     if (!warnedAuditFailures.has(msg)) {
+      if (warnedAuditFailures.size >= 50) warnedAuditFailures.clear();
       warnedAuditFailures.add(msg);
       process.stderr.write(`mcp-scan: ${msg}\n`);
     }
