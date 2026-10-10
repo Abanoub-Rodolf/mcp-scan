@@ -107,6 +107,27 @@ describe('CLI fails closed on an unusable policy', () => {
     expect(res.stdout).not.toMatch(/No policy file found/);
   }, 30000);
 
+  // These commands detect configs from HOME, so give HOME a Cursor config.
+  // watch is covered in watch-policy.test.ts (it needs fs.watch).
+  it.each([
+    ['audit sqlite'],
+    ['sbom --offline --output sbom.json'],
+    ['compliance'],
+    ['fix'],
+    ['submit --dry-run'],
+  ])('%s stops on a broken policy', async (argline) => {
+    fs.mkdirSync(path.join(home, '.cursor'));
+    fs.copyFileSync(CONFIG, path.join(home, '.cursor', 'mcp.json'));
+    fs.writeFileSync(path.join(dir, '.mcp-scan.json'), '{ "blockedPackages": ');
+    const res = await execa('node', [CLI, ...argline.split(' ')], {
+      cwd: dir, reject: false, stdin: 'ignore',
+      env: { HOME: home, MCP_SCAN_HOME: path.join(home, '.mcp-scan') },
+    });
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain(path.join(dir, '.mcp-scan.json'));
+    expect(fs.existsSync(path.join(dir, 'sbom.json'))).toBe(false);
+  }, 30000);
+
   it('absent policy files still scan and exit 0', async () => {
     const res = await run(['scan', '--ci']);
     expect(res.exitCode).toBe(0);
