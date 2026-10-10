@@ -11,11 +11,6 @@ const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression", "FunctionD
 // expressions whose value is the value of one operand
 const PASSES = new Set(["LogicalExpression", "TSAsExpression", "TSNonNullExpression", "TSSatisfiesExpression", "ArrayExpression"]);
 
-const isTimer = n => n.type === "CallExpression" && (
-  (n.callee.type === "Identifier" && TIMERS.has(n.callee.name)) ||
-  (n.callee.type === "MemberExpression" && !n.callee.computed && n.callee.object.type === "Identifier" &&
-    GLOBALS.has(n.callee.object.name) && n.callee.property.type === "Identifier" && TIMERS.has(n.callee.property.name)));
-
 // Logging a value does not take ownership of it.
 const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.name === "console";
 
@@ -33,6 +28,29 @@ const noSleepPromise = {
     const message = ban("sleep promises");
     const src = context.sourceCode;
     const declared = (node, pick) => src.getDeclaredVariables(node).find(pick);
+    const lookup = node => {
+      for (let s = src.getScope(node); s; s = s.upper) if (s.set.has(node.name)) return s.set.get(node.name);
+      return null;
+    };
+    // Is this callee a timer: `setTimeout`, `globalThis.setTimeout`, or a name that
+    // is only ever a const bound to one (`const t = setTimeout`, `const { setTimeout: t } = globalThis`)?
+    const isTimerFn = (c, seen = new Set()) => {
+      if (seen.has(c)) return false;
+      seen.add(c);
+      if (c.type === "MemberExpression") {
+        return !c.computed && c.object.type === "Identifier" && GLOBALS.has(c.object.name) && c.property.type === "Identifier" && TIMERS.has(c.property.name);
+      }
+      if (c.type !== "Identifier") return false;
+      if (TIMERS.has(c.name)) return true;
+      const def = lookup(c)?.defs;
+      if (def?.length !== 1 || def[0].type !== "Variable" || def[0].parent.kind !== "const") return false;
+      const { id, init } = def[0].node;
+      if (id.type === "Identifier") return !!init && isTimerFn(init, seen);
+      if (id.type !== "ObjectPattern" || init?.type !== "Identifier" || !GLOBALS.has(init.name)) return false;
+      const prop = id.properties.find(x => x.type === "Property" && (x.value === def[0].name || x.value.left === def[0].name));
+      return !!prop && !prop.computed && prop.key.type === "Identifier" && TIMERS.has(prop.key.name);
+    };
+    const isTimer = n => n.type === "CallExpression" && isTimerFn(n.callee);
 
     // Where does the executor's resolver end up: on a timer, handed off, or both?
     // `obj`: the variable holds a `Promise.withResolvers()` result, so only
@@ -107,10 +125,7 @@ const noSleepPromise = {
             break;
           case "AssignmentExpression": {
             if (p.right !== e) break;
-            let v = null;
-            if (p.left.type === "Identifier") {
-              for (let s = src.getScope(p); s && !v; s = s.upper) v = s.set.get(p.left.name);
-            }
+            const v = p.left.type === "Identifier" ? lookup(p.left) : null;
             if (v?.defs[0] && inside(v.defs[0].name)) merge(out, follow(v));
             else hit("given", p);
             break;
@@ -144,8 +159,7 @@ const noSleepPromise = {
     // the executor: inline, a function declaration, or a const holding a function
     const executor = arg => {
       if (arg?.type !== "Identifier") return arg;
-      let v = null;
-      for (let s = src.getScope(arg); s && !v; s = s.upper) v = s.set.get(arg.name);
+      const v = lookup(arg);
       const def = v?.defs.length === 1 ? v.defs[0] : null;
       if (def?.type === "FunctionName") return def.node;
       return def?.type === "Variable" && def.node.id.type === "Identifier" ? def.node.init : null;
@@ -205,8 +219,8 @@ export default [
     // A fixed sleep as synchronization is what made proxy tests flake under
     // load (2026-10-10). Wait on the real signal instead: vi.waitFor, a marker
     // file, a log or stderr line, a reply, or fake timers.
-    // Known gap: aliasing the timer first (`const t = setTimeout; t(r, 5)`) is not
-    // followed. Reviewers catch that one.
+    // Known gap: only a const alias of the timer is followed, not a `let`, a
+    // function wrapper, or a timer reached through another object.
     files: ["tests/**/*.ts"],
     plugins: { local: { rules: { "no-sleep-promise": noSleepPromise } } },
     rules: {

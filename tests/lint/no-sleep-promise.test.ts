@@ -79,6 +79,16 @@ const SLEEPS = [
   'const exec = function (r) { setTimeout(r, 5); }; await new Promise(exec);',
   'function exec(r) { function later() { r(); } setTimeout(later, 5); } await new Promise(exec);',
   'await new Promise(function exec(r) { setTimeout(r, 5); });',
+  // an alias of the timer is the timer
+  'const t = setTimeout; await new Promise(r => { t(r, 5); });',
+  'const t = setTimeout; await new Promise(r => t(() => r(), 5));',
+  'const t = globalThis.setTimeout; await new Promise(r => t(r, 5));',
+  'const a = setTimeout; const b = a; await new Promise(r => b(r, 5));',
+  'const s = setInterval; await new Promise(r => s(r, 5));',
+  'const { setTimeout: st } = globalThis; await new Promise(r => st(r, 5));',
+  'const { setInterval: si, setTimeout: st } = window; await new Promise(r => si(r, 5)); void st;',
+  'const { setTimeout: st = fallback } = globalThis; await new Promise(r => st(r, 5));',
+  'const t = setTimeout; const { resolve } = Promise.withResolvers(); t(resolve, 5);',
   // Promise.withResolvers has no executor, the resolver is a destructured name or w.resolve
   'const { promise, resolve } = Promise.withResolvers<void>(); setTimeout(resolve, 5); await promise;',
   'const { resolve } = Promise.withResolvers(); setTimeout(() => resolve(), 5);',
@@ -181,6 +191,16 @@ const ALLOWED = [
   "function exec(r) { r(1); } await new Promise(exec);",
   "const exec = (r) => { handlers.push(r); setTimeout(() => r(), 5); }; await new Promise(exec);",
   "await new Promise(unknownExecutor);",
+  // aliases that are not the timer, or whose resolver is handed off
+  "const t = setTimeout; await new Promise(r => { ee.on('x', r); t(r, 5); });",
+  "const t = foo; await new Promise(r => { t(r, 5); });",
+  // a binding that can be reassigned is not known to be the timer
+  "let t = setTimeout; t = fake; await new Promise(r => { t(r, 5); });",
+  "const t = obj.setTimeout; await new Promise(r => { t(r, 5); });",
+  "const { setTimeout: st } = obj; await new Promise(r => st(r, 5));",
+  "const { other: st } = globalThis; await new Promise(r => st(r, 5));",
+  "const st = other(setTimeout); await new Promise(r => st(r, 5));",
+  "const t = setTimeout; await new Promise(r => { t(() => { throw new Error('d'); }, 5); r(1); });",
   // withResolvers: the resolver also handed off, or only reject on the timer
   "const { resolve } = Promise.withResolvers(); ee.on('x', resolve); setTimeout(resolve, 5);",
   "const { resolve } = Promise.withResolvers(); ee.on('x', () => resolve()); setTimeout(() => resolve(2), 5);",
