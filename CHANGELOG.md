@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - YAML policy `match.license_type` now works: it matches findings on servers whose package license equals the value (case-insensitive, exact). It was accepted before but ignored, so a `skip` rule using it matched every finding. `match.pii_types` is removed from the accepted keys because findings carry no PII field to match on, so a policy using it now fails to load; use `category` (a substring of the finding text) instead. The README example is updated.
 - Custom rule files are read through the same non-blocking path as policy files, so a FIFO in `~/.mcp-scan/rules` is rejected instead of hanging the scan. A custom rule `severity` such as `constructor` is no longer accepted by accident.
 - A policy path that is a dangling symlink reports the missing link target.
+- A package whose registry entry has a legacy object license (`"license": {"type": "MIT"}`) or another non-string shape no longer crashes the scan; the license is stored as a string (the object's `type`, or the first `licenses[].type`) or left unset.
+- YAML policy rules are stricter: an unknown top-level rule key (`matcher`, `scaner`), an empty or whitespace-only `scanner`, and empty strings in `match` values (alone or in a list) are errors. Before, they were ignored and the rule matched every finding.
 - The policy file is opened once and its type checked on the open file, so a FIFO swapped in after the check can no longer hang the read.
 
 ## [2.1.0] - 2026-10-09
