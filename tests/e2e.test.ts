@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { runScan } from '../src/commands/scan.js';
 import path from 'path';
 import fs from 'fs';
@@ -18,14 +18,20 @@ describe('E2E Scan', () => {
     process.env.MCP_SCAN_HOME = tmpHome;
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   afterAll(() => {
     delete process.env.MCP_SCAN_HOME;
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
+  // offline: the assertions below only need local checks. Live registry/OSV
+  // calls made this test time out on a slow runner (2026-09-06 main).
   it('should run a full scan on a vulnerable fixture and find issues', async () => {
     const fixturePath = path.join(__dirname, 'fixtures/vulnerable-config.json');
-    const report = await runScan({ config: fixturePath, silent: true });
+    const report = await runScan({ config: fixturePath, silent: true, offline: true });
 
     expect(report.totalScanned).toBeGreaterThan(0);
     // vulnerable-config.json has a ghp_ token and a dangerous path '/'
@@ -43,7 +49,7 @@ describe('E2E Scan', () => {
 
   it('should run a full scan on a malicious fixture', async () => {
     const fixturePath = path.join(__dirname, 'fixtures/malicious-config.json');
-    const report = await runScan({ config: fixturePath, silent: true });
+    const report = await runScan({ config: fixturePath, silent: true, offline: true });
 
     expect(report.totalScanned).toBeGreaterThan(0);
     // malicious-config.json has known malicious packages
@@ -52,6 +58,72 @@ describe('E2E Scan', () => {
     const elonResult = report.results.find(r => r.serverName === 'what-would-elon-do');
     expect(elonResult).toBeDefined();
     expect(elonResult?.findings.some(f => f.id === 'known-malicious')).toBe(true);
+  });
+
+  // The online branch (package, supply-chain, registry provenance) is the
+  // part of runScan the offline tests above never reach. Canned responses
+  // stand in for npm and OSV so it runs end to end without a network.
+  it('runs the online path end to end against mocked npm and OSV responses', async () => {
+    const pkg = 'online-e2e-pkg';
+    const configPath = path.join(tmpHome, 'online-config.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      mcpServers: { online: { command: 'npx', args: ['-y', pkg] } },
+    }));
+
+    const json = (body: unknown, status = 200) =>
+      ({ ok: status === 200, status, json: async () => body }) as unknown as Response;
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => {
+      const u = String(url);
+      calls.push(u);
+      // version doc, fetched for the provenance check on an unpinned spec
+      if (u === `https://registry.npmjs.org/${pkg}/latest`) {
+        return json({ version: '1.0.0', dist: { attestations: { provenance: { predicateType: 'https://slsa.dev/provenance/v1' } } } });
+      }
+      // packument, read by the package and supply-chain scanners (no repo URL on purpose)
+      if (u === `https://registry.npmjs.org/${pkg}`) {
+        return json({
+          'dist-tags': { latest: '1.0.0' },
+          versions: { '1.0.0': {} },
+          time: { modified: new Date().toISOString() },
+          license: 'MIT',
+        });
+      }
+      if (u === 'https://api.osv.dev/v1/query') {
+        return json({
+          vulns: [{
+            id: 'GHSA-test-0000-0000',
+            summary: 'canned advisory for the e2e online path',
+            database_specific: { severity: 'HIGH' },
+            affected: [{
+              package: { name: pkg, ecosystem: 'npm' },
+              ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.0.1' }] }],
+            }],
+          }],
+        });
+      }
+      return json({}, 404);
+    }));
+
+    const report = await runScan({ config: configPath, silent: true, severity: 'info' });
+    const findings = report.results.find(r => r.serverName === 'online')?.findings ?? [];
+    const ids = findings.map(f => f.id);
+
+    // package scanner: OSV advisory matched against the resolved 1.0.0
+    expect(findings.find(f => f.id === 'known-vulnerability-high')?.description).toContain('GHSA-test-0000-0000');
+    // registry scanner: provenance lookup succeeded, so no unverified-source
+    expect(ids).toContain('provenance-verified');
+    expect(ids).not.toContain('unverified-source');
+    // supply-chain scanner: packument has no repository URL
+    expect(ids).toContain('supply-chain-low-trust');
+    // a throwing scanner is swallowed into a LOW scanner-error finding
+    expect(ids).not.toContain('scanner-error');
+    expect(report.highCount).toBeGreaterThan(0);
+
+    expect(calls).toContain(`https://registry.npmjs.org/${pkg}/latest`);
+    expect(calls).toContain('https://api.osv.dev/v1/query');
+    // nothing but the mocked registries was contacted
+    expect(calls.every(c => c.startsWith('https://registry.npmjs.org/') || c.startsWith('https://api.osv.dev/'))).toBe(true);
   });
 
   it('does not write to the real ~/.mcp-scan during scans', () => {

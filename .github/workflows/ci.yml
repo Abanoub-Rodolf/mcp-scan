@@ -26,6 +26,9 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
     - run: npm ci
+    # Same commands and order as .gitlab-ci.yml (canonical). Change both.
+    - run: npm run lint
+    - run: npm run typecheck
     - run: npm run build
     - name: Shipped action bundle is current
       run: |
@@ -33,6 +36,5 @@ jobs:
         git diff --exit-code action/dist
         test -z "$(git status --porcelain action/dist)"
     - run: npm test
-    - run: npm run lint
     - name: Dependency audit (runtime dependencies only, --omit=dev; blocks on high)
       run: node scripts/audit-gate.mjs
