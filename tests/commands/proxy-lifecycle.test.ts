@@ -154,6 +154,9 @@ describe('proxy lifecycle', () => {
     expect(res.stderr).toMatch(/gave up on a client that stopped reading: dropped \d+ bytes/);
     // and when the exit then cuts off output already queued on stdout
     expect(res.stderr).toMatch(/client stopped reading: dropped \d+ bytes of queued output/);
+    const reported = Number(res.stderr.match(/client stopped reading: dropped (\d+) bytes of queued output/)![1]);
+    // the two queue measures overlap; the figure must not double count
+    expect(reported).toBeLessThanOrEqual(fs.statSync(file).size);
   }, 40000);
 
   it('a slow reader of one huge line is not mistaken for a stalled one', async () => {
@@ -168,4 +171,9 @@ describe('proxy lifecycle', () => {
     });
     expect(Number(res.stdout.trim())).toBe(Buffer.byteLength(big));
   }, 60000);
+
+  it('the stdout stream handle still exposes writeQueueSize as a number on a pipe (the stall net reads it)', async () => {
+    const res = await execa('node', ['-e', 'console.log(typeof process.stdout._handle.writeQueueSize)']);
+    expect(res.stdout).toBe('number');
+  });
 });

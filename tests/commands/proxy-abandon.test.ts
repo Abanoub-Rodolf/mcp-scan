@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { JsonRpcInterceptor } from '../../src/commands/proxy.js';
+import { JsonRpcInterceptor, queuedBytes } from '../../src/commands/proxy.js';
 
 // When the proxy gives up on a stalled client, input still queued behind a
 // half-read line must go with it: delivering its back half later would send a
@@ -48,5 +48,13 @@ describe('JsonRpcInterceptor.abandon', () => {
     expect(ic.abandon()).toEqual({ queued: 0, fragment: true });
     ic.end();
     expect(await drain(ic)).toEqual([]);
+  });
+
+  it('counts bytes owed to the client once, and never lets a odd value through', () => {
+    expect(queuedBytes(30000043, 30000043)).toBe(30000043); // overlap, not double
+    expect(queuedBytes(4096, 100)).toBe(4096);
+    expect(queuedBytes(0, 0)).toBe(0);
+    for (const bad of [undefined, null, NaN, Infinity, -5, '7', {}]) expect(queuedBytes(bad, bad)).toBe(0);
+    expect(queuedBytes(undefined, 12)).toBe(12);
   });
 });
