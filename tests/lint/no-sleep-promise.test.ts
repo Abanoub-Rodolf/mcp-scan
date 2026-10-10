@@ -8,11 +8,12 @@ const eslint = new ESLint({ cwd: REPO });
 
 // Lints the snippet as a test file with the repo's real config and returns the
 // ids of the sleep-ban rules that fired.
-async function banned(code: string): Promise<string[]> {
-  const [res] = await eslint.lintText(`async function t() {\n${code}\n}\nvoid t;\n`, { filePath: path.join(REPO, 'tests/snippet.test.ts') });
+async function bannedFile(source: string): Promise<string[]> {
+  const [res] = await eslint.lintText(source, { filePath: path.join(REPO, 'tests/snippet.test.ts') });
   const ids = ['local/no-sleep-promise', 'no-restricted-syntax', 'no-restricted-imports'];
   return res.messages.filter(m => m.ruleId && ids.includes(m.ruleId)).map(m => m.ruleId!);
 }
+const banned = (code: string) => bannedFile(`async function t() {\n${code}\n}\nvoid t;\n`);
 
 const SLEEPS = [
   'await new Promise(r => setTimeout(r, 5));',
@@ -82,6 +83,23 @@ const IMPORTS = [
   "await import('timers/promises');",
   "const x = require('node:timers/promises'); void x;",
   "const s = promisify(setTimeout); void s;",
+  // the timers module hands out the same sleep as timers.promises
+  "await import('node:timers');",
+  "await import('timers');",
+  "const { promises } = require('node:timers'); void promises;",
+  "const timers = require('timers'); void timers;",
+  "const timers = process.getBuiltinModule('node:timers'); void timers;",
+  "const timers = process.getBuiltinModule('timers/promises'); void timers;",
+];
+
+const STATIC_IMPORTS = [
+  "import timers from 'node:timers';\nvoid timers;\n",
+  "import timers from 'timers';\nvoid timers;\n",
+  "import * as timers from 'node:timers';\nvoid timers;\n",
+  "import { promises } from 'timers';\nvoid promises;\n",
+  "import { promises as p } from 'node:timers';\nvoid p;\n",
+  "import { setTimeout as sleep } from 'node:timers/promises';\nvoid sleep;\n",
+  "import * as tp from 'timers/promises';\nvoid tp;\n",
 ];
 
 const ALLOWED = [
@@ -153,9 +171,8 @@ describe('local/no-sleep-promise and the timers/promises ban', () => {
   it.each(IMPORTS)('flags the import: %s', async code => {
     expect((await banned(code)).length).toBeGreaterThan(0);
   });
-  it('flags a static timers/promises import', async () => {
-    const [res] = await eslint.lintText("import { setTimeout as sleep } from 'node:timers/promises';\nvoid sleep;\n", { filePath: path.join(REPO, 'tests/snippet.test.ts') });
-    expect(res.messages.map(m => m.ruleId)).toContain('no-restricted-imports');
+  it.each(STATIC_IMPORTS)('flags the static import: %s', async code => {
+    expect(await bannedFile(code)).toContain('no-restricted-imports');
   });
   it.each(ALLOWED)('allows: %s', async code => {
     expect(await banned(code)).toEqual([]);

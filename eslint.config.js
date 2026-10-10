@@ -2,7 +2,9 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 const ban = what => `No ${what} in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.`;
-const NO_TIMERS_PROMISES = ban("timers/promises sleeps");
+const NO_TIMERS = ban("node:timers imports (timers.promises is a sleep)");
+// every way to name the module: static, dynamic, require, getBuiltinModule
+const TIMERS_MODULE = "/^(node:)?timers(\\/promises)?$/";
 const TIMERS = new Set(["setTimeout", "setInterval"]);
 const GLOBALS = new Set(["globalThis", "global", "window", "self"]);
 const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression", "FunctionDeclaration"]);
@@ -174,16 +176,16 @@ export default [
     rules: {
       "local/no-sleep-promise": "error",
       "no-restricted-imports": ["error", {
-        paths: ["timers/promises", "node:timers/promises"].map(name => ({ name, message: NO_TIMERS_PROMISES })),
+        paths: ["timers", "node:timers", "timers/promises", "node:timers/promises"].map(name => ({ name, message: NO_TIMERS })),
       }],
       "no-restricted-syntax": ["error",
         {
-          selector: "ImportExpression[source.value=/^(node:)?timers\\/promises$/]",
-          message: NO_TIMERS_PROMISES,
+          selector: `ImportExpression[source.value=${TIMERS_MODULE}]`,
+          message: NO_TIMERS,
         },
         {
-          selector: "CallExpression[callee.name='require'][arguments.0.value=/^(node:)?timers\\/promises$/]",
-          message: NO_TIMERS_PROMISES,
+          selector: `CallExpression:matches([callee.name='require'], [callee.property.name='getBuiltinModule'])[arguments.0.value=${TIMERS_MODULE}]`,
+          message: NO_TIMERS,
         },
         {
           selector: "CallExpression:matches([callee.name='promisify'], [callee.property.name='promisify']) > Identifier[name='setTimeout']",
