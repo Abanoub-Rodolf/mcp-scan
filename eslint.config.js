@@ -84,7 +84,24 @@ const noSleepPromise = {
       };
       // variables that hold the withResolvers object itself, not one of its functions
       const objs = new Set(obj ? [resolver] : []);
-      const sameObj = (e, v) => { if (e.type === "Identifier" && objs.has(lookup(e))) objs.add(v); return v; };
+      // a type assertion, `!` or a comma expression still evaluates to its operand
+      const WRAPS = new Set(["TSAsExpression", "TSNonNullExpression", "TSSatisfiesExpression"]);
+      const inner = e => {
+        for (;;) {
+          if (WRAPS.has(e.type)) e = e.expression;
+          else if (e.type === "SequenceExpression") e = e.expressions.at(-1);
+          else return e;
+        }
+      };
+      const sameObj = (e, v) => { const u = inner(e); if (u.type === "Identifier" && objs.has(lookup(u))) objs.add(v); return v; };
+      // the outermost wrapper around a read: `w as any`, `w!`, `(0, w)`
+      const outer = n => {
+        for (let p = n.parent; p && (WRAPS.has(p.type) || (p.type === "SequenceExpression" && p.expressions.at(-1) === n)); p = n.parent) n = p;
+        return n;
+      };
+      // `w || o`, `c ? w : o`, `{ w }`, `[w]`, `{ ...w }` hold w without being w: treat as a handoff
+      const holds = (n, p) => p.type === "LogicalExpression" || p.type === "ArrayExpression" || p.type === "SpreadElement"
+        || (p.type === "ConditionalExpression" && p.test !== n) || (p.type === "Property" && p.parent.type === "ObjectExpression");
       // `const { resolve: r, promise } = w`: r is the resolver, promise and reject are not
       // it, and a rest element or a key we cannot read could be anything.
       const unpack = (decl, out) => {
@@ -104,13 +121,15 @@ const noSleepPromise = {
         for (const ref of v.references) {
           if (ref.isWriteOnly()) continue;
           const id = ref.identifier;
-          const m = id.parent;
-          if (!objs.has(v)) merge(out, trace(id));
-          else if (m.type === "VariableDeclarator" && m.init === id && m.id.type === "ObjectPattern") unpack(m, out);
-          else if (m.type !== "MemberExpression" || m.object !== id) {
+          if (!objs.has(v)) { merge(out, trace(id)); continue; }
+          const n = outer(id);
+          const m = n.parent;
+          if (m.type === "VariableDeclarator" && m.init === n && m.id.type === "ObjectPattern") unpack(m, out);
+          else if (holds(n, m)) out.given = true;
+          else if (m.type !== "MemberExpression" || m.object !== n) {
             merge(out, trace(id));
             // `const [x] = w` and the like take the object out of sight
-            if (m.type === "VariableDeclarator" && m.init === id && m.id.type !== "Identifier") out.given = true;
+            if (m.type === "VariableDeclarator" && m.init === n && m.id.type !== "Identifier") out.given = true;
           } else {
             const k = nameOf(m.computed, m.property);
             if (k === "reject" || k === "promise") continue;
