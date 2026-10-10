@@ -249,6 +249,57 @@ const ALLOWED = [
   "await new Promise(r => { r(1); });",
 ];
 
+// The rule follows the reads of a variable and skips its writes with
+// `ref.isWriteOnly()` alone, no `ref.init` check. That is only right while every
+// initializing write (`let a = 1`, a default value, a loop binding) is write-only.
+// This probes the real scope manager for exactly that.
+type Ref = { name: string; init: boolean; writeOnly: boolean; write: boolean };
+async function refsOf(source: string): Promise<Ref[]> {
+  const seen: Ref[] = [];
+  const probe = new ESLint({
+    cwd: REPO,
+    overrideConfig: [{
+      files: ['tests/**/*.ts'],
+      plugins: { probe: { rules: { refs: { create: (ctx: any) => ({
+        'Program:exit'() {
+          for (const scope of ctx.sourceCode.scopeManager.scopes) {
+            for (const r of scope.references) seen.push({ name: r.identifier.name, init: !!r.init, writeOnly: r.isWriteOnly(), write: r.isWrite() });
+          }
+        },
+      }) } } } },
+      rules: { 'probe/refs': 'error' },
+    }],
+  });
+  await probe.lintText(source, { filePath: path.join(REPO, 'tests/snippet.test.ts') });
+  return seen;
+}
+
+describe('ref.init is redundant next to isWriteOnly', () => {
+  const SRC = [
+    'let a = 1;', // initializing write
+    'a = 2;', // plain write
+    'a += 1;', // read and write
+    'a++;', // read and write
+    'use(a);', // read
+    'const { b = 5 } = obj;', // default value inside a pattern
+    'function f(c = 1) { return c; }', // parameter default
+    'for (const d of list) use(d);', // loop binding
+    'void f;',
+  ].join('\n') + '\n';
+
+  it('every initializing write is write-only', async () => {
+    const refs = (await refsOf(SRC)).filter(r => r.name !== 'use' && r.name !== 'obj' && r.name !== 'list');
+    const inits = refs.filter(r => r.init);
+    expect(inits.map(r => r.name).sort()).toEqual(['a', 'b', 'b', 'c', 'd']);
+    expect(inits.every(r => r.writeOnly)).toBe(true);
+  });
+  it('a plain write is write-only without init, a read-write is neither', async () => {
+    const as = (await refsOf(SRC)).filter(r => r.name === 'a');
+    expect(as.filter(r => !r.init && r.writeOnly)).toHaveLength(1);
+    expect(as.filter(r => r.write && !r.writeOnly)).toHaveLength(2);
+  });
+});
+
 // every spelling of the module against every way to load it
 const MODULE_FORMS = [
   (m: string) => `await import('${m}');`,
