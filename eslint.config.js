@@ -74,11 +74,15 @@ const noSleepPromise = {
           if (kind === "given" ? !fns.length || owned : kind === "call" && owned) out.given = true;
         };
         let p = e.parent;
-        // `r.bind(...)` stands for the resolver
-        if (p.type === "MemberExpression" && p.object === e && !p.computed && p.property.name === "bind" &&
-            p.parent.type === "CallExpression" && p.parent.callee === p) {
-          e = p.parent;
-          p = e.parent;
+        if (p.type === "MemberExpression" && p.object === e && !p.computed && p.parent.type === "CallExpression" && p.parent.callee === p) {
+          const how = p.property.name;
+          // `r.call(...)` and `r.apply(...)` run the resolver, like `r()`
+          if (how === "call" || how === "apply") { hit("call", p.parent); return out; }
+          // `r.bind(...)` stands for the resolver
+          if (how === "bind") {
+            e = p.parent;
+            p = e.parent;
+          }
         }
         switch (p.type) {
           case "CallExpression":

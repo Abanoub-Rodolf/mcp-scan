@@ -63,6 +63,12 @@ const SLEEPS = [
   'await new Promise(r => { globalThis.setTimeout(go, 5, r); });',
   'await new Promise(r => { setInterval(go, 5, 1, r); });',
   'await new Promise(r => { const a = r; setTimeout(go, 5, a); });',
+  // .call and .apply run the resolver, like r()
+  'await new Promise(r => { setTimeout(() => r.call(null), 5); });',
+  'await new Promise(r => { setTimeout(() => { r.call(null, 1); }, 5); });',
+  'await new Promise(r => { setTimeout(() => { r.apply(null, []); }, 5); });',
+  'await new Promise(r => { setTimeout(() => { r.apply(null, [1]); }, 5); });',
+  'await new Promise(r => { const f = () => r.call(null); setTimeout(f, 5); });',
   // a comma expression is the last operand
   'await new Promise(r => { setTimeout((0, r), 5); });',
   'await new Promise(r => { function h(r) { use(r); } h(1); setTimeout(r, 5); });',
@@ -128,6 +134,10 @@ const ALLOWED = [
   "await new Promise((r, j) => { setTimeout((e) => j(e), 5000, new Error('deadline')); void r; });",
   "await new Promise(r => { ee.on('x', r); setTimeout((x) => x(), 5, r); });",
   "await new Promise(r => { ee.on('x', r); setTimeout(go, 5, r); });",
+  // .call and .apply with the resolver given away elsewhere
+  "await new Promise(r => { ee.on('x', r); setTimeout(() => r.call(null), 5); });",
+  "await new Promise(r => { ee.on('x', () => { r.apply(null, []); }); setTimeout(() => r.call(null), 5); });",
+  "await new Promise(r => { const h = () => r.call(null); ee.on('x', h); setTimeout(r, 5); });",
   // a comma expression whose last operand is not the resolver
   "await new Promise(r => { setTimeout((r, 0), 5); void r; });",
   "await new Promise(r => { ee.on('x', (0, r)); setTimeout((0, r), 5); });",
