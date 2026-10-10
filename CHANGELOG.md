@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - YAML policy rules are stricter: an unknown top-level rule key (`matcher`, `scaner`), an empty or whitespace-only `scanner`, and empty strings in `match` values (alone or in a list) are errors. Before, they were ignored and the rule matched every finding.
 - The policy file is opened once and its type checked on the open file, so a FIFO swapped in after the check can no longer hang the read.
 - `runScan` (the library entry) now rejects with `BaselineKeyError` when `baseline.key` is a directory or any other non-regular file, before it does any work. The class is exported from the package root so callers can `instanceof` it; the CLI already turns it into a one-line error and exit 1.
+- Test lint (`local/no-sleep-promise`) closes more ways to write a fixed sleep: a resolver passed as a later timer argument (`setTimeout(go, 5, r)`), `r.call(...)` and `r.apply(...)` in a timer callback, a named executor (`new Promise(exec)`), and any import of `node:timers` or `timers` (`timers.promises` is a sleep). Dev tooling only; nothing in the shipped package changes.
 
 ### Fixed
 - A scan that cannot append to `~/.mcp-scan/audit.log` (full disk, read-only home, a directory in the way) now prints one line to stderr naming the log and the error. It was silent, so a missing audit trail went unnoticed. The scan still completes.
