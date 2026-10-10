@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -49,5 +49,45 @@ describe('.mcp-scan-ignore that is not a regular file', () => {
     expect(res.status).toBe(0);
     expect(() => JSON.parse(res.stdout)).not.toThrow();
     expect(res.stderr).toMatch(/\.mcp-scan-ignore.*not a regular file/);
+  });
+
+  it('ci runs silent, so no ignore-list notice reaches its stderr', () => {
+    fs.mkdirSync(path.join(dir, '.mcp-scan-ignore'));
+    const home = path.join(dir, 'home');
+    fs.mkdirSync(home);
+    const res = spawnSync(process.execPath, [CLI, 'ci', '--config', FIXTURE, '--offline'], {
+      cwd: dir,
+      env: { ...process.env, MCP_SCAN_HOME: home },
+      timeout: 20000,
+      encoding: 'utf8',
+    });
+    expect(res.error).toBeUndefined();
+    expect(res.stderr).not.toMatch(/ignoring/);
+  });
+
+  describe('skip notice', () => {
+    let err: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => { err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true); });
+    afterEach(() => { err.mockRestore(); });
+    const notices = () => err.mock.calls.filter(c => String(c[0]).includes('.mcp-scan-ignore'));
+
+    it('stays quiet when the caller asked for silent', () => {
+      fs.mkdirSync(path.join(dir, '.mcp-scan-ignore'));
+      expect(loadIgnoreList(dir, { silent: true })).toEqual([]);
+      expect(notices()).toHaveLength(0);
+    });
+
+    it('prints once per process for the same path, not on every rescan', () => {
+      fs.mkdirSync(path.join(dir, '.mcp-scan-ignore'));
+      loadIgnoreList(dir);
+      loadIgnoreList(dir);
+      loadIgnoreList(dir, { silent: true });
+      expect(notices()).toHaveLength(1);
+    });
+
+    it('says nothing when the file simply does not exist', () => {
+      expect(loadIgnoreList(dir)).toEqual([]);
+      expect(notices()).toHaveLength(0);
+    });
   });
 });

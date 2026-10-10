@@ -41,7 +41,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   assertBaselineKeyUsable();
   
   const policy = loadPolicy();
-  const ignoreList = loadIgnoreList();
+  const ignoreList = loadIgnoreList(undefined, { silent: options.silent });
   const customRules = loadCustomRules();
   if (policy && !options.silent) {
     logger.detail(`Applied security policy from .mcp-scan.json`);

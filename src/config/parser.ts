@@ -168,7 +168,11 @@ export function loadPolicy(cwd: string = process.cwd()): McpScanPolicy | null {
   return null;
 }
 
-export function loadIgnoreList(cwd: string = process.cwd()): string[] {
+// Once per path per process: watch mode rescans on every config edit and
+// would repeat the same line each time.
+const noticed = new Set<string>();
+
+export function loadIgnoreList(cwd: string = process.cwd(), opts: { silent?: boolean } = {}): string[] {
   const ignorePath = path.join(cwd, '.mcp-scan-ignore');
   try {
     return readRegularFile(ignorePath).split('\n')
@@ -178,7 +182,8 @@ export function loadIgnoreList(cwd: string = process.cwd()): string[] {
     // Skipped, not fatal: the list only suppresses findings, so dropping it
     // can add findings but never hide one. stderr, because this runs before
     // --json silences the logger and stdout must stay parseable.
-    if (error instanceof NotRegularFileError) {
+    if (error instanceof NotRegularFileError && !opts.silent && !noticed.has(ignorePath)) {
+      noticed.add(ignorePath);
       process.stderr.write(`mcp-scan: ignoring ${ignorePath}: ${error.message}\n`);
     }
   }
