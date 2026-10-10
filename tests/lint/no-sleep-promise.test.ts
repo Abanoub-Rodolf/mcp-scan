@@ -78,6 +78,9 @@ const SLEEPS = [
   'const exec = function (r) { setTimeout(r, 5); }; await new Promise(exec);',
   'function exec(r) { function later() { r(); } setTimeout(later, 5); } await new Promise(exec);',
   'await new Promise(function exec(r) { setTimeout(r, 5); });',
+  // the executor is looked up through the outer scopes
+  'function exec(r) { setTimeout(r, 5); } const go = () => new Promise(exec); await go();',
+  'const exec = (r) => { setTimeout(r, 5); }; async function inner() { { await new Promise(exec); } } await inner();',
   // a defaulted resolver parameter is still the resolver
   'await new Promise((r = noop) => { setTimeout(r, 5); });',
   'await new Promise(function (resolve = noop, _j) { setTimeout(() => resolve(1), 5); });',
@@ -199,6 +202,10 @@ const ALLOWED = [
   "function exec(r) { r(1); } await new Promise(exec);",
   "const exec = (r) => { handlers.push(r); setTimeout(() => r(), 5); }; await new Promise(exec);",
   "await new Promise(unknownExecutor);",
+  // an inner executor shadows a sleeping outer one
+  "function exec(r) { setTimeout(r, 5); } { function exec(r) { r(); } await new Promise(exec); }",
+  "const exec = (r) => { setTimeout(r, 5); }; const go = (exec) => new Promise(exec); void go;",
+  "function exec(r) { setTimeout(r, 5); } function wrap() { const exec = (r) => { r(1); }; return new Promise(exec); } void wrap;",
   // defaulted resolver parameter, handed off
   "await new Promise((r = noop) => { ee.on('x', r); setTimeout(r, 5); });",
   "await new Promise((r = noop) => { setTimeout(() => { throw new Error('d'); }, 5); r(1); });",
