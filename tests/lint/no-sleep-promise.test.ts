@@ -202,6 +202,8 @@ const ALLOWED = [
   "function exec(r) { r(1); } await new Promise(exec);",
   "const exec = (r) => { handlers.push(r); setTimeout(() => r(), 5); }; await new Promise(exec);",
   "await new Promise(unknownExecutor);",
+  // two declarations of one name: which one runs is not knowable, so no verdict
+  "function exec(r) { setTimeout(r, 5); } function exec(r) { r(); } await new Promise(exec);",
   // an inner executor shadows a sleeping outer one
   "function exec(r) { setTimeout(r, 5); } { function exec(r) { r(); } await new Promise(exec); }",
   "const exec = (r) => { setTimeout(r, 5); }; const go = (exec) => new Promise(exec); void go;",
