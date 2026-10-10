@@ -63,7 +63,8 @@ describe('proxy lifecycle', () => {
       const fs = require('fs');
       fs.closeSync(0);
       fs.writeFileSync(${JSON.stringify(closed)}, '1');
-      setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) process.exit(0); }, 20);
+      // a vanished test dir counts as release too, so a failed run never leaves it waiting
+      setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}) || !fs.existsSync(${JSON.stringify(dir)})) process.exit(0); }, 20);
       setTimeout(() => process.exit(0), 40000);`);
     const proc = execa('node', [CLI, 'proxy', '--command', 'node', '--args', server], {
       cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir }, stdin: 'pipe',
@@ -72,8 +73,11 @@ describe('proxy lifecycle', () => {
     let err = '';
     proc.stdout!.on('data', d => { out += d; });
     proc.stderr!.on('data', d => { err += d; });
+    // an early proxy death should fail on the waits below, not as an unhandled EPIPE
+    proc.stdin!.on('error', () => {});
+    // one deadline for every wait, well inside the test timeout
+    const stop = Date.now() + 25000;
     const until = async (what: string, ok: () => boolean) => {
-      const stop = Date.now() + 20000;
       while (!ok()) {
         if (Date.now() > stop) throw new Error(`timed out waiting for ${what}`);
         await new Promise(r => setTimeout(r, 10));
@@ -82,6 +86,7 @@ describe('proxy lifecycle', () => {
     const send = (m: object) => proc.stdin!.write(JSON.stringify(m) + '\n');
     const ids = () => out.split('\n').slice(0, -1).filter(Boolean).map(l => JSON.parse(l)).flat().map((r: any) => r.id);
 
+    let res;
     try {
       await until('the server to close its stdin', () => fs.existsSync(closed));
       send({ jsonrpc: '2.0', id: 1, method: 'x' }); // meets the broken pipe
@@ -97,8 +102,8 @@ describe('proxy lifecycle', () => {
       // also on a failed wait, so no proxy outlives the test
       proc.stdin!.end();
       fs.writeFileSync(release, '1');
+      res = await proc;
     }
-    const res = await proc;
     const replies = res.stdout.split('\n').filter(Boolean).map(l => JSON.parse(l));
     const flat = replies.flat();
     expect(flat.map((r: any) => r.id).sort()).toEqual([2, 4, 'three']);
