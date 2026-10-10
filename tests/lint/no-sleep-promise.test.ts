@@ -253,6 +253,11 @@ describe('local/no-sleep-promise and the timers/promises ban', () => {
   it.each(MODULE_NAMES)('bans the static import of %s', async m => {
     expect(await bannedFile(`import x from '${m}';\nvoid x;\n`)).toContain('no-restricted-imports');
   });
+  it('explains the ban and points at the global setImmediate', async () => {
+    const [res] = await eslint.lintText("import { setImmediate } from 'node:timers';\nvoid setImmediate;\n", { filePath: path.join(REPO, 'tests/snippet.test.ts') });
+    const msg = res.messages.find(m => m.ruleId === 'no-restricted-imports')?.message ?? '';
+    expect(msg).toMatch(/global .*setImmediate/);
+  });
   it('lets an unrelated module through', async () => {
     expect(await banned("await import('node:path'); require('timersx'); require('xtimers');")).toEqual([]);
   });

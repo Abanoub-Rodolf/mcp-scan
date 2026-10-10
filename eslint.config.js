@@ -2,7 +2,9 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 const ban = what => `No ${what} in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.`;
-const NO_TIMERS = ban("node:timers imports (timers.promises is a sleep)");
+// Whole module, not just promises: nothing here needs it, and the globals
+// setTimeout, setInterval and setImmediate are the same functions without an import.
+const NO_TIMERS = ban("imports of the timers module (timers.promises is a sleep, and the global setTimeout, setInterval and setImmediate need no import)");
 // one list feeds the static-import paths and the selector regex for the dynamic forms
 const TIMERS_MODULES = ["timers", "timers/promises"].flatMap(m => [m, `node:${m}`]);
 const TIMERS_MODULE = `/^(${TIMERS_MODULES.map(m => m.replace("/", "\\/")).join("|")})$/`;
