@@ -31,6 +31,12 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   const keyPath = keyFile();
   let scanning = false;
   let keyDirty = false;
+  // scan() clears the screen, so a watcher that died must be re-announced in
+  // every footer or it stays invisible.
+  const deadDirs = new Set<string>();
+  const deadNote = () => {
+    if (deadDirs.size > 0) logger.warn(`Not watching: ${[...deadDirs].join(', ')} (restart watch)`);
+  };
   let keyTimeout: NodeJS.Timeout;
 
   // A scan can create or remove baseline.key itself (loadOrCreateKey, and the
@@ -57,6 +63,9 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
       // An outside edit that landed mid-scan was not seen by it. Our own
       // write also differs from the start state, but the rescan then ends on
       // the state it started from, so this converges after one extra scan.
+      // Gap: an edit made late in the scan whose event is delivered after
+      // this snapshot is taken sees an equal state and is dropped; the next
+      // config or key change picks it up.
       if (keyDirty) {
         keyDirty = false;
         if (keySnapshot !== keyAtStart) enqueue(keyPath);
@@ -78,11 +87,11 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
       queued = false;
       try {
         await performScan(queuedPath);
-      } catch (e: any) {
-        logger.error(e.message);
+      } catch (e) {
+        logger.error(e instanceof Error ? e.message : String(e));
         process.exitCode = EXIT_ERROR;
       }
-    });
+    }).catch(() => {}); // backstop: a rejected link would stop every later scan
   };
 
   const scan = async (changedPath?: string) => {
@@ -104,6 +113,7 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
         logger.error(e.message);
         process.exitCode = EXIT_ERROR;
         logger.log(chalk.dim('Scan skipped. Fixing baseline.key rescans.'));
+        deadNote();
         return;
       }
       if (!(e instanceof PolicyError)) throw e;
@@ -114,6 +124,7 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
       if (!lastReport) process.exit(EXIT_POLICY_ERROR);
       process.exitCode = EXIT_POLICY_ERROR;
       logger.log(chalk.dim('Scan skipped. Saving the fixed policy file rescans.'));
+      deadNote();
       return;
     }
     process.exitCode = undefined;
@@ -148,6 +159,7 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
 
     logger.emptyLine();
     logger.log(chalk.dim('Watching for changes... (Press Ctrl+C to stop)'));
+    deadNote();
     lastReport = currentReport;
   };
 
@@ -188,7 +200,10 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
           debounceTimeout = setTimeout(() => enqueue(changedPath), 500);
         }
       });
-      watcher.on('error', (e: Error) => logger.error(`Watch on ${dir} stopped: ${e.message}`));
+      watcher.on('error', (e: Error) => {
+        deadDirs.add(dir);
+        logger.error(`Watch on ${dir} stopped: ${e.message}`);
+      });
     } catch (error: any) {
       logger.error(`Failed to watch directory ${dir}: ${error.message}`);
     }
