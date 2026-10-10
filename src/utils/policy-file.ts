@@ -10,14 +10,16 @@ export class PolicyError extends Error {
   }
 }
 
-// existsSync is false for a dangling symlink, but that is still a policy
-// the user put there and we failed to read, not an absent one.
+// existsSync is false for a dangling symlink or a file behind a directory we
+// can't search, but those are still policies the user put there and we failed
+// to read. Only a path that is really not there counts as absent.
 export function policyFileExists(p: string): boolean {
   if (fs.existsSync(p)) return true;
   try {
-    return fs.lstatSync(p)?.isSymbolicLink() === true;
-  } catch (_e) {
-    return false;
+    fs.lstatSync(p);
+    return true;
+  } catch (e: any) {
+    return e.code !== 'ENOENT' && e.code !== 'ENOTDIR';
   }
 }
 
