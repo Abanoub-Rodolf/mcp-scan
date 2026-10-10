@@ -21,7 +21,8 @@ export async function runDoctor() {
       logger.log(`${chalk.green('✓')} ${chalk.bold(name)}`);
     } else {
       logger.log(`${chalk.red('✗')} ${chalk.bold(name)}`);
-      if (detail) logger.detail(`  ${chalk.red('↳')} ${detail}`);
+      // always, not behind --verbose: doctor has no verbose flag, and a failed check without its reason is useless
+      if (detail) logger.log(`    ${chalk.red('↳')} ${detail}`);
       allPassed = false;
     }
   };
