@@ -12,7 +12,11 @@ import path from 'path';
  * were silently lost. This version copies the mode from the existing file,
  * resolves symlinks before replacing, and keeps a timestamped backup.
  */
-export function atomicWriteConfig(configPath: string, content: string): void {
+export function atomicWriteConfig(
+  configPath: string,
+  content: string,
+  opts: { keepBackups?: number } = {},
+): void {
   const dir = path.dirname(configPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -54,5 +58,32 @@ export function atomicWriteConfig(configPath: string, content: string): void {
       try { fs.unlinkSync(tempPath); } catch (_err) {}
     }
     throw error;
+  }
+
+  // Machine-written stores are rewritten on every scan, so their backups pile
+  // up (one real ~/.mcp-scan held 1,191). User configs never pass this: there
+  // the oldest backup is the pre-fix original.
+  if (opts.keepBackups !== undefined) {
+    try {
+      pruneBackups(targetPath, backupPath, opts.keepBackups);
+    } catch (_err) {
+      // A failed prune must never fail the write.
+    }
+  }
+}
+
+function pruneBackups(targetPath: string, backupPath: string, keep: number): void {
+  const dir = path.dirname(targetPath);
+  const prefix = `${path.basename(targetPath)}.backup-`;
+  const sorted = fs.readdirSync(dir)
+    .filter(f => f.startsWith(prefix) && /^\d+$/.test(f.slice(prefix.length)))
+    .sort((a, b) => Number(b.slice(prefix.length)) - Number(a.slice(prefix.length)));
+  // A clock that stepped back leaves older backups with later stamps; the one
+  // this write just made must never be the one cut.
+  const own = sorted.indexOf(path.basename(backupPath));
+  if (own > 0) sorted.unshift(...sorted.splice(own, 1));
+  const stale = sorted.slice(Math.max(keep, 0));
+  for (const f of stale) {
+    try { fs.unlinkSync(path.join(dir, f)); } catch (_err) {}
   }
 }

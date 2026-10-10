@@ -34,6 +34,54 @@ describe('config/writer', () => {
     fs.rmSync(path.dirname(file), { recursive: true, force: true });
   });
 
+  it('keeps only the newest backups when keepBackups is set', () => {
+    const file = tmpFile('known-servers.json');
+    const dir = path.dirname(file);
+    fs.writeFileSync(file, '{"v":0}');
+    for (let i = 1; i <= 8; i++) fs.writeFileSync(`${file}.backup-${1000 + i}`, `{"v":${i}}`);
+    fs.writeFileSync(path.join(dir, 'other.json.backup-1001'), 'x');
+    fs.writeFileSync(`${file}.backup-notes`, 'x');
+
+    atomicWriteConfig(file, '{"v":9}', { keepBackups: 5 });
+
+    const left = fs.readdirSync(dir).filter(f => /^known-servers\.json\.backup-\d+$/.test(f)).sort();
+    expect(left.length).toBe(5);
+    // The backup this write just made is the newest, so it survives the cut.
+    expect(left.map(f => fs.readFileSync(path.join(dir, f), 'utf8'))).toContain('{"v":0}');
+    expect(left).not.toContain('known-servers.json.backup-1004');
+    expect(fs.existsSync(path.join(dir, 'other.json.backup-1001'))).toBe(true);
+    expect(fs.existsSync(`${file}.backup-notes`)).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('keeps the backup it just made even when older ones carry later stamps', () => {
+    const file = tmpFile('known-servers.json');
+    const dir = path.dirname(file);
+    fs.writeFileSync(file, '{"v":0}');
+    // A clock that stepped back leaves stamps newer than Date.now().
+    const ahead = Date.now() + 86_400_000;
+    for (let i = 1; i <= 3; i++) fs.writeFileSync(`${file}.backup-${ahead + i}`, `{"v":${i}}`);
+
+    atomicWriteConfig(file, '{"v":9}', { keepBackups: 2 });
+
+    const left = fs.readdirSync(dir).filter(f => /^known-servers\.json\.backup-\d+$/.test(f));
+    expect(left.length).toBe(2);
+    expect(left.map(f => fs.readFileSync(path.join(dir, f), 'utf8'))).toContain('{"v":0}');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('never prunes backups unless asked', () => {
+    const file = tmpFile('cfg.json');
+    fs.writeFileSync(file, '{}');
+    for (let i = 1; i <= 8; i++) fs.writeFileSync(`${file}.backup-${1000 + i}`, '{}');
+
+    atomicWriteConfig(file, '{"a":1}');
+
+    const left = fs.readdirSync(path.dirname(file)).filter(f => f.startsWith('cfg.json.backup-'));
+    expect(left.length).toBe(9);
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  });
+
   it('replaces the symlink target, not the link itself', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-writer-'));
     const real = path.join(dir, 'real.json');

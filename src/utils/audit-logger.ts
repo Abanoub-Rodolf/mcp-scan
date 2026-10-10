@@ -341,7 +341,7 @@ function updateFingerprints(results: ServerScanResult[]): boolean {
     }
 
     fingerprints[SIG_KEY] = sign(fingerprints, hmacKey);
-    atomicWriteConfig(fingerprintFile(), JSON.stringify(fingerprints, null, 2));
+    atomicWriteConfig(fingerprintFile(), JSON.stringify(fingerprints, null, 2), { keepBackups: 5 });
     return true;
   } catch (_error) {
     // A key with no store behind it would read as a deleted baseline.

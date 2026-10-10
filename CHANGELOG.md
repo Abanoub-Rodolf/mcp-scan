@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Every scan left a new `known-servers.json.backup-<timestamp>` in
+  `~/.mcp-scan` and nothing removed them; one real install had over 1,100.
+  Scans now keep the 5 newest. Backups the `fix` command makes of your own
+  MCP client configs are never pruned.
+
 ## [2.1.0] - 2026-10-09
 
 ### Security
