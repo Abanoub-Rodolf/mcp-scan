@@ -17,6 +17,7 @@ import { scanEnvLeak } from './scanners/env-leak-scanner.js';
 import { scanNetworkEgress } from './scanners/network-egress-scanner.js';
 import { scanDataFlow } from './scanners/data-flow-scanner.js';
 import { scanDependencyCves } from './scanners/osv-scanner.js';
+import { PolicyError } from './utils/policy-file.js';
 
 export {
   runScan,
@@ -49,6 +50,8 @@ export {
   // single-package check scanPackageDeep already does against the
   // top-level package name.
   scanDependencyCves,
+  // runScan throws this for a policy it can't trust; catch it by type.
+  PolicyError,
 };
 
 export type {
