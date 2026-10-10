@@ -581,7 +581,7 @@ describe('audit log write failure', () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  const said = () => err.mock.calls.map(c => String(c[0])).filter(l => l.includes('could not write the audit log'));
+  const said = () => err.mock.calls.map((c: unknown[]) => String(c[0])).filter((l: string) => l.includes('could not write the audit log'));
 
   it('does not throw, but says the audit log could not be written, once', () => {
     // a directory where the log file should be makes the append fail
