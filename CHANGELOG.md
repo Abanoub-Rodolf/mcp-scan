@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- The proxy now stops a still-running server whose client has taken no bytes of queued output for the stall deadline (60 seconds, `MCP_SCAN_STALL_MS`), instead of waiting for the server to exit first. On Node 20 a server writing a few hundred KB to a client that never reads blocked on its own write and never exited, so the proxy never gave up; Node 22 buffers more and hid it.
+
 ## [2.1.0] - 2026-10-09
 
 ### Security
