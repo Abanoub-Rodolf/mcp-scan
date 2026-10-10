@@ -57,6 +57,12 @@ const SLEEPS = [
   'await new Promise(r => { const u = () => r; setTimeout(r, 5); void u; });',
   'await new Promise(r => { function u() { return r; } setTimeout(r, 5); });',
   // a shadowing binding is a different variable, whatever it is used for
+  // the resolver rides along as a later timer argument
+  'await new Promise(r => { setTimeout((x) => x(), 5, r); });',
+  'await new Promise(r => { setTimeout(go, 5, r); });',
+  'await new Promise(r => { globalThis.setTimeout(go, 5, r); });',
+  'await new Promise(r => { setInterval(go, 5, 1, r); });',
+  'await new Promise(r => { const a = r; setTimeout(go, 5, a); });',
   // a comma expression is the last operand
   'await new Promise(r => { setTimeout((0, r), 5); });',
   'await new Promise(r => { function h(r) { use(r); } h(1); setTimeout(r, 5); });',
@@ -118,6 +124,10 @@ const ALLOWED = [
   "await new Promise(r => { const u = () => { saved = r; }; ee.on('x', u); setTimeout(r, 5); });",
   "await new Promise(r => { handlers.x = () => r; setTimeout(r, 5); });",
   // extra timer arguments that are not the resolver
+  "await new Promise(r => { setTimeout(log, 5, 'x'); r(1); });",
+  "await new Promise((r, j) => { setTimeout((e) => j(e), 5000, new Error('deadline')); void r; });",
+  "await new Promise(r => { ee.on('x', r); setTimeout((x) => x(), 5, r); });",
+  "await new Promise(r => { ee.on('x', r); setTimeout(go, 5, r); });",
   // a comma expression whose last operand is not the resolver
   "await new Promise(r => { setTimeout((r, 0), 5); void r; });",
   "await new Promise(r => { ee.on('x', (0, r)); setTimeout((0, r), 5); });",
