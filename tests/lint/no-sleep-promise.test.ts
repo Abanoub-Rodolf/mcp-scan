@@ -79,6 +79,10 @@ const SLEEPS = [
   'const exec = function (r) { setTimeout(r, 5); }; await new Promise(exec);',
   'function exec(r) { function later() { r(); } setTimeout(later, 5); } await new Promise(exec);',
   'await new Promise(function exec(r) { setTimeout(r, 5); });',
+  // a defaulted resolver parameter is still the resolver
+  'await new Promise((r = noop) => { setTimeout(r, 5); });',
+  'await new Promise(function (resolve = noop, _j) { setTimeout(() => resolve(1), 5); });',
+  'function exec(r = noop) { setTimeout(r, 5); } await new Promise(exec);',
   // a spread timer argument still carries the resolver
   'await new Promise(r => { setTimeout(go, 5, ...[r]); });',
   'await new Promise(r => { const args = [r]; setTimeout(go, 5, ...args); });',
@@ -195,6 +199,12 @@ const ALLOWED = [
   "function exec(r) { r(1); } await new Promise(exec);",
   "const exec = (r) => { handlers.push(r); setTimeout(() => r(), 5); }; await new Promise(exec);",
   "await new Promise(unknownExecutor);",
+  // defaulted resolver parameter, handed off
+  "await new Promise((r = noop) => { ee.on('x', r); setTimeout(r, 5); });",
+  "await new Promise((r = noop) => { setTimeout(() => { throw new Error('d'); }, 5); r(1); });",
+  // not a plain parameter: no single resolver name to follow
+  "await new Promise(({ a }) => { setTimeout(a, 5); });",
+  "await new Promise((...args) => { setTimeout(args[0], 5); });",
   // spread arguments that are not the resolver, or a handed-off resolver
   "await new Promise(r => { setTimeout(go, 5, ...[1, 2]); r(1); });",
   "await new Promise(r => { setTimeout(go, 5, ...rest); r(1); });",

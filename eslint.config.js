@@ -167,8 +167,11 @@ const noSleepPromise = {
     return {
       NewExpression(node) {
         const exec = executor(node.arguments[0]);
-        if (!exec || !FNS.has(exec.type) || exec.params[0]?.type !== "Identifier") return;
-        const resolver = src.getDeclaredVariables(exec).find(v => v.defs.some(d => d.type === "Parameter" && d.name === exec.params[0]));
+        if (!exec || !FNS.has(exec.type)) return;
+        // `(r = noop) => ...` still has the resolver in `r`
+        const first = exec.params[0]?.type === "AssignmentPattern" ? exec.params[0].left : exec.params[0];
+        if (first?.type !== "Identifier") return;
+        const resolver = declared(exec, v => v.defs.some(d => d.type === "Parameter" && d.name === first));
         const { timer, given } = analyze(exec, resolver);
         if (timer && !given) context.report({ node, message });
       },
