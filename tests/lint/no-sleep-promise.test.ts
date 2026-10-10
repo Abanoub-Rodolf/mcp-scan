@@ -234,7 +234,24 @@ const ALLOWED = [
   "await new Promise(r => { r(1); });",
 ];
 
+// every spelling of the module against every way to load it
+const MODULE_FORMS = [
+  (m: string) => `await import('${m}');`,
+  (m: string) => `const x = require('${m}'); void x;`,
+  (m: string) => `const x = process.getBuiltinModule('${m}'); void x;`,
+];
+const MODULE_NAMES = ['timers', 'node:timers', 'timers/promises', 'node:timers/promises'];
+
 describe('local/no-sleep-promise and the timers/promises ban', () => {
+  it.each(MODULE_NAMES.flatMap(m => MODULE_FORMS.map(f => f(m))))('bans the module in every form: %s', async code => {
+    expect((await banned(code)).length).toBeGreaterThan(0);
+  });
+  it.each(MODULE_NAMES)('bans the static import of %s', async m => {
+    expect(await bannedFile(`import x from '${m}';\nvoid x;\n`)).toContain('no-restricted-imports');
+  });
+  it('lets an unrelated module through', async () => {
+    expect(await banned("await import('node:path'); require('timersx'); require('xtimers');")).toEqual([]);
+  });
   it.each(SLEEPS)('flags the sleep: %s', async code => {
     expect(await banned(code)).toContain('local/no-sleep-promise');
   });

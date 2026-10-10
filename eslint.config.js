@@ -3,8 +3,9 @@ import tseslint from "typescript-eslint";
 
 const ban = what => `No ${what} in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.`;
 const NO_TIMERS = ban("node:timers imports (timers.promises is a sleep)");
-// every way to name the module: static, dynamic, require, getBuiltinModule
-const TIMERS_MODULE = "/^(node:)?timers(\\/promises)?$/";
+// one list feeds the static-import paths and the selector regex for the dynamic forms
+const TIMERS_MODULES = ["timers", "timers/promises"].flatMap(m => [m, `node:${m}`]);
+const TIMERS_MODULE = `/^(${TIMERS_MODULES.map(m => m.replace("/", "\\/")).join("|")})$/`;
 const TIMERS = new Set(["setTimeout", "setInterval"]);
 const GLOBALS = new Set(["globalThis", "global", "window", "self"]);
 const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression", "FunctionDeclaration"]);
@@ -229,7 +230,7 @@ export default [
     rules: {
       "local/no-sleep-promise": "error",
       "no-restricted-imports": ["error", {
-        paths: ["timers", "node:timers", "timers/promises", "node:timers/promises"].map(name => ({ name, message: NO_TIMERS })),
+        paths: TIMERS_MODULES.map(name => ({ name, message: NO_TIMERS })),
       }],
       "no-restricted-syntax": ["error",
         {
