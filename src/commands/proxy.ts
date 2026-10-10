@@ -366,18 +366,17 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   // How long a client with output queued may stay silent before we give up
   // on it. One deadline: the exit poll and the post-settle net share it.
   const stallMs = Number(process.env.MCP_SCAN_STALL_MS) || 60000;
-  const note = (msg: string) => {
-    warnStderr(msg);
-    if (dashboardCallback) dashboardCallback('PROXY', msg, false);
-  };
-  let exited = false;
   const settle = (code: number | null, forced = false) => {
     if (settled) return;
     settled = true;
     const idleMs = Date.now() - lastActivity;
     if (exitPoll) clearInterval(exitPoll);
-    logger.info(exited ? `Server exited with code ${code}` : 'Stopping the server: its client stopped reading');
+    logger.info(`Server exited with code ${code}`);
     process.exitCode = code || 0;
+    const note = (msg: string) => {
+      warnStderr(msg);
+      if (dashboardCallback) dashboardCallback('PROXY', msg, false);
+    };
     if (forced) {
       const dropped = serverInterceptor.abandon(child.stdout.readableLength);
       if (dropped.queued > 0) {
@@ -433,35 +432,18 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
       }, 500).unref();
     }
   };
-  // The poll starts at spawn, not at 'exit'. A server blocked writing to a
-  // client that never reads cannot exit, so waiting for 'exit' never sees the
-  // stall. How much output we absorb before that blocks the server is a stream
-  // default (16 KiB on Node 20, 64 KiB on 22), so it must not decide this.
-  let exitCode: number | null = null;
-  let lastBacklog = 0;
   child.on('exit', (code) => {
-    exited = true;
-    exitCode = code;
     lastActivity = Date.now();
-    lastBacklog = backlog();
+    let lastBacklog = backlog();
+    exitPoll = setInterval(() => {
+      const now = backlog();
+      if (now !== lastBacklog) { lastBacklog = now; lastActivity = Date.now(); }
+      // Nothing queued: 2s of quiet is enough. Something queued for a client
+      // that has stopped reading: that client gets stallMs (60s), then we cut it off,
+      // or a descendant plus a dead reader would keep us up forever.
+      if (Date.now() - lastActivity >= (now > 0 ? stallMs : 2000)) settle(code, true);
+    }, 200);
   });
-  exitPoll = setInterval(() => {
-    const now = backlog();
-    if (now !== lastBacklog) { lastBacklog = now; lastActivity = Date.now(); }
-    const idle = Date.now() - lastActivity;
-    // Nothing queued: 2s of quiet is enough. Something queued for a client
-    // that has stopped reading: that client gets stallMs (60s), then we cut it off,
-    // or a descendant plus a dead reader would keep us up forever.
-    if (exited) {
-      if (idle >= (now > 0 ? stallMs : 2000)) settle(exitCode, true);
-    } else if (stdoutPending() > 0 && idle >= stallMs) {
-      // Server still running, client taking nothing: same as a client that is
-      // gone, so stop the server rather than leave both stuck.
-      note(`client stopped reading for ${Math.round(stallMs / 1000)}s: stopping the server`);
-      child.kill('SIGTERM');
-      settle(null, true);
-    }
-  }, 200).unref();
   child.on('close', (code) => settle(code));
 
   child.on('error', (err) => {
