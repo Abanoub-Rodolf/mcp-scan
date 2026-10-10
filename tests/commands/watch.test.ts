@@ -36,6 +36,7 @@ describe('watch mode and an unusable baseline key', () => {
   let onChange: (event: string, file: string) => void;
   let onKeyDirChange: ((event: string, file: string) => void) | undefined;
   let home: string;
+  let dirErrorHandler: ((e: Error) => void) | undefined;
   const unhandled: unknown[] = [];
   const onUnhandled = (e: unknown) => { unhandled.push(e); };
 
@@ -48,12 +49,15 @@ describe('watch mode and an unusable baseline key', () => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-watch-home-'));
     vi.stubEnv('MCP_SCAN_HOME', home);
     onKeyDirChange = undefined;
+    dirErrorHandler = undefined;
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     vi.spyOn(fs, 'watch').mockImplementation(((dir: string, cb: (e: string, f: string) => void) => {
       // watch also registers the policy file dirs; only the config's dir matters here
       if (dir === path.dirname(CONFIG)) onChange = cb;
       if (dir === home) onKeyDirChange = cb;
-      return {} as fs.FSWatcher;
+      return {
+        on: (ev: string, h: (e: Error) => void) => { if (ev === 'error' && dir === home) dirErrorHandler = h; },
+      } as unknown as fs.FSWatcher;
     }) as unknown as typeof fs.watch);
   });
 
@@ -173,15 +177,101 @@ describe('watch mode and an unusable baseline key', () => {
     onKeyDirChange!('rename', 'baseline.key');
     await vi.advanceTimersByTimeAsync(600);
     expect(runScanMock).toHaveBeenCalledTimes(2);
+  });
 
-    // and one that lands while the scan is still running
+  const keyFilePath = () => path.join(home, 'baseline.key');
+  const flush = async () => {
+    await vi.advanceTimersByTimeAsync(0);
+    await new Promise<void>(r => setImmediate(r));
+  };
+
+  it('rescans once, then settles, for an edit that lands mid-scan', async () => {
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+
+    // the key appears while the scan runs (an outside edit, or our own write)
     runScanMock.mockImplementationOnce(async () => {
-      fs.rmSync(path.join(home, 'baseline.key'), { force: true });
+      fs.writeFileSync(keyFilePath(), 'k');
       onKeyDirChange!('rename', 'baseline.key');
       return emptyReport;
     });
     await rescan();
-    await vi.advanceTimersByTimeAsync(600);
+    await flush();
     expect(runScanMock).toHaveBeenCalledTimes(3);
+
+    // the follow-up scan leaves the key alone, so it must not loop
+    await vi.advanceTimersByTimeAsync(5000);
+    await flush();
+    expect(runScanMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not rescan when a scan creates then removes the key (failed store write)', async () => {
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+
+    runScanMock.mockImplementationOnce(async () => {
+      fs.writeFileSync(keyFilePath(), 'k');
+      onKeyDirChange!('rename', 'baseline.key');
+      fs.rmSync(keyFilePath(), { force: true });
+      onKeyDirChange!('rename', 'baseline.key');
+      return emptyReport;
+    });
+    await rescan();
+    await vi.advanceTimersByTimeAsync(5000);
+    await flush();
+    expect(runScanMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('never runs two scans at once and queues at most one behind the running one', async () => {
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+
+    let release!: (r: typeof emptyReport) => void;
+    runScanMock.mockImplementationOnce(() => new Promise(r => { release = r; }));
+    // the queued scan fails: its exit code must survive the slow clean one finishing first
+    runScanMock.mockRejectedValueOnce(new BaselineKeyError('baseline key /k is a directory, move it'));
+
+    onChange('change', path.basename(CONFIG));
+    await vi.advanceTimersByTimeAsync(600);
+    expect(runScanMock).toHaveBeenCalledTimes(2);
+
+    for (let n = 0; n < 3; n++) {
+      onChange('change', path.basename(CONFIG));
+      await vi.advanceTimersByTimeAsync(600);
+    }
+    expect(runScanMock).toHaveBeenCalledTimes(2);
+
+    release(emptyReport);
+    await flush();
+    await flush();
+    expect(runScanMock).toHaveBeenCalledTimes(3);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('logs an unexpected scan error instead of leaving an unhandled rejection, and keeps watching', async () => {
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+    runScanMock.mockRejectedValueOnce(new Error('boom'));
+
+    await rescan();
+
+    expect(unhandled).toEqual([]);
+    expect(logger.error).toHaveBeenCalledWith('boom');
+    expect(process.exitCode).toBe(1);
+
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await rescan();
+    expect(runScanMock).toHaveBeenCalledTimes(3);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('reports a watcher error on the audit dir', async () => {
+    runScanMock.mockResolvedValueOnce(emptyReport);
+    await runWatch();
+    expect(dirErrorHandler).toBeDefined();
+
+    dirErrorHandler!(new Error('EMFILE'));
+
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('EMFILE'));
   });
 });
