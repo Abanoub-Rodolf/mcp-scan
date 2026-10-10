@@ -83,6 +83,13 @@ describe('CLI fails closed on an unusable policy', () => {
     expect(res.stderr).toContain('p.yml');
   }, 30000);
 
+  it('a rule that would write a bogus severity stops the run instead of dropping findings', async () => {
+    fs.writeFileSync(path.join(dir, 'p.yml'), 'version: 1\nrules:\n  - id: r\n    action: override-severity\n    severity: bogus\n');
+    const res = await run(['ci', '--policy', 'p.yml']);
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toMatch(/severity 'bogus'/);
+  }, 30000);
+
   it('absent policy files still scan and exit 0', async () => {
     const res = await run(['scan', '--ci']);
     expect(res.exitCode).toBe(0);

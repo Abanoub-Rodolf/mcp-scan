@@ -136,6 +136,29 @@ describe('policy loading fails closed', () => {
       expect(loadYamlPolicy(other)?.rules).toHaveLength(2);
     });
 
+    const rule = (extra: string) => `version: 1\nrules:\n  - id: r\n    action: block\n${extra}`;
+
+    it.each([
+      ['an override-severity target that is not a severity', 'version: 1\nrules:\n  - id: r\n    action: override-severity\n    severity: bogus\n', /severity 'bogus'/],
+      ['a severity on a warn rule that is not a severity', 'version: 1\nrules:\n  - id: r\n    action: warn\n    severity: urgent\n', /severity 'urgent'/],
+      ['a typo in a match key', rule('    match:\n      finding_ids: [exposed-secret]\n'), /unknown match key 'finding_ids'/],
+      ['a match that is a list', rule('    match: [exposed-secret]\n'), /'match' must be an object/],
+      ['a match value that is a number', rule('    match:\n      finding_id: 7\n'), /match\.finding_id/],
+      ['an empty match list', rule('    match:\n      server_name: []\n'), /match\.server_name/],
+      ['a match.severity that is not a severity', rule('    match:\n      severity: [critcal]\n'), /match\.severity/],
+    ])('a rule with %s throws', (_n, body, re) => {
+      yml(body);
+      expect(() => loadYamlPolicy()).toThrow(PolicyError);
+      expect(() => loadYamlPolicy()).toThrow(re);
+    });
+
+    it('every documented match key and severity case still loads', () => {
+      yml(rule('    match:\n      server_name: [a]\n      finding_id: x\n      severity: [CRITICAL, high]\n      category: c\n      license_type: GPL\n      pii_types: [SSN]\n'));
+      expect(loadYamlPolicy()?.rules).toHaveLength(1);
+      yml('version: 1\nrules:\n  - id: r\n    action: override-severity\n    severity: Critical\n');
+      expect(loadYamlPolicy()?.rules).toHaveLength(1);
+    });
+
     it.each([
       ['an empty file', ''],
       ['only comments', '# no rules yet\n'],

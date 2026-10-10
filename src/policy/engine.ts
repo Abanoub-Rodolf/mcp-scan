@@ -3,7 +3,7 @@ import path from 'path';
 import os from 'os';
 import { parse } from 'yaml';
 import { Finding, ServerScanResult } from '../types/scan-result.js';
-import { Severity } from '../types/severity.js';
+import { Severity, SEVERITY_ORDER } from '../types/severity.js';
 import chalk from 'chalk';
 import { PolicyError, policyFileExists, assertRegularFile } from '../utils/policy-file.js';
 
@@ -50,6 +50,35 @@ function schemaProblem(parsed: SecurityPolicy | null): string | null {
     }
     if (rule.action === 'override-severity' && !rule.severity) {
       return `Rule '${rule.id}' uses override-severity but is missing the 'severity' field.`;
+    }
+    const problem = ruleFieldProblem(rule);
+    if (problem) return `Rule '${rule.id}': ${problem}`;
+  }
+  return null;
+}
+
+const MATCH_KEYS = ['server_name', 'finding_id', 'severity', 'category', 'license_type', 'pii_types'];
+const isSeverity = (v: unknown) => typeof v === 'string' && v.toUpperCase() in SEVERITY_ORDER;
+const SEVERITY_LIST = Object.keys(SEVERITY_ORDER).join(', ').toLowerCase();
+
+// An unknown match key or severity does not error at scan time: the rule just
+// never matches, or writes a severity the tally drops, and a block rule
+// quietly stops blocking. So both are rejected when the file loads.
+function ruleFieldProblem(rule: PolicyRule): string | null {
+  if (rule.severity !== undefined && !isSeverity(rule.severity)) {
+    return `invalid severity '${rule.severity}'. Valid: ${SEVERITY_LIST}`;
+  }
+  if (rule.match === undefined) return null;
+  const m = rule.match as Record<string, unknown>;
+  if (typeof m !== 'object' || m === null || Array.isArray(m)) return `'match' must be an object`;
+  for (const [key, value] of Object.entries(m)) {
+    if (!MATCH_KEYS.includes(key)) return `unknown match key '${key}'. Valid: ${MATCH_KEYS.join(', ')}`;
+    const values = Array.isArray(value) ? value : [value];
+    if (values.length === 0 || !values.every(v => typeof v === 'string')) {
+      return `match.${key} must be a string or a non-empty list of strings`;
+    }
+    if (key === 'severity' && !values.every(isSeverity)) {
+      return `match.severity has an invalid severity. Valid: ${SEVERITY_LIST}`;
     }
   }
   return null;
