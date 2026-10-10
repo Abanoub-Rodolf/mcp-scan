@@ -40,6 +40,12 @@ const SLEEPS = [
   'await new Promise(r => { const a = r; setTimeout(a, 5); });',
   'await new Promise(r => { const a = r; const b = a; setTimeout(b, 5); });',
   'await new Promise(r => { const rec = { resolve: r }; setTimeout(r, 5); void rec; });',
+  // the timer reaches the resolver through a helper or a branch
+  'await new Promise(r => { setTimeout(() => process.nextTick(r), 5); });',
+  'await new Promise(r => { setTimeout(() => done(r), 5); });',
+  'await new Promise(r => { setTimeout(once(r), 5); });',
+  'await new Promise(r => { setTimeout(c ? r : r, 5); });',
+  'await new Promise(r => { const w = once(r); setTimeout(w, 5); });',
   // using it inside a function nobody gets, or logging it, hands nothing off
   'await new Promise(r => { console.log(r); setTimeout(r, 5); });',
   'await new Promise(r => { const u = () => { use(r); }; setTimeout(r, 5); });',
@@ -91,6 +97,10 @@ const ALLOWED = [
   // a named handler given to a listener
   "await new Promise(r => { const h = () => r(); ee.on('x', h); setTimeout(r, 5); });",
   "await new Promise(r => { function h() { r(); } ee.on('x', h); setTimeout(r, 5); });",
+  // ...unless the resolver is handed off some other way
+  "await new Promise(r => { setTimeout(() => done(r), 5); ee.on('x', r); });",
+  "await new Promise(r => { setTimeout(once(r), 5); ee.on('x', r); });",
+  "await new Promise(r => { ee.on('x', once(r)); setTimeout(r, 5); });",
   // the same uses inside a function that is given away
   "await new Promise(r => { ee.on('x', () => { use(r); }); setTimeout(r, 5); });",
   "await new Promise(r => { const u = () => { saved = r; }; ee.on('x', u); setTimeout(r, 5); });",
