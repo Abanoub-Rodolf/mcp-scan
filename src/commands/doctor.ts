@@ -21,7 +21,8 @@ export async function runDoctor() {
       logger.log(`${chalk.green('✓')} ${chalk.bold(name)}`);
     } else {
       logger.log(`${chalk.red('✗')} ${chalk.bold(name)}`);
-      if (detail) logger.detail(`  ${chalk.red('↳')} ${detail}`);
+      // always, not behind --verbose: doctor has no verbose flag, and a failed check without its reason is useless
+      if (detail) logger.log(`    ${chalk.red('↳')} ${detail}`);
       allPassed = false;
     }
   };
@@ -102,8 +103,12 @@ export async function runDoctor() {
         const latest = data.version;
         updateOk = true;
         updateDetail = `Latest version available on npm: ${latest}`;
+    } else {
+        updateDetail = `npm registry returned ${res.status}: ${res.statusText}`;
     }
-  } catch (_e) {}
+  } catch (e: any) {
+    updateDetail = `npm registry unreachable: ${e.message}`;
+  }
   check('Update check (npm)', updateOk, updateDetail);
 
   logger.divider();

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runDiff } from '../../src/commands/diff.js';
 import fs from 'fs';
 import { logger } from '../../src/utils/logger.js';

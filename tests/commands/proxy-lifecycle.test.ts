@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { execa } from 'execa';
 import fs from 'fs';
 import os from 'os';
@@ -15,7 +15,12 @@ describe('proxy lifecycle', () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-proxy-life-'));
     logDir = path.join(dir, 'logs');
   });
-  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+  const descPidFile = () => path.join(dir, 'descendant-pid');
+  afterEach(() => {
+    // a descendant that outlives the proxy on purpose must not outlive the test
+    try { process.kill(Number(fs.readFileSync(descPidFile(), 'utf8')), 'SIGKILL'); } catch { /* none, or already gone */ }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 
   const serverFile = (src: string) => {
     const p = path.join(dir, 'server.js');
@@ -23,17 +28,27 @@ describe('proxy lifecycle', () => {
     return p;
   };
   const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  // Polls ok() until it holds or the shared deadline `stop` passes.
+  const until = (stop: number, what: string, ok: () => boolean) =>
+    vi.waitFor(() => { if (!ok()) throw new Error(`timed out waiting for ${what}`); }, { timeout: Math.max(1, stop - Date.now()), interval: 10 });
+  // A server that exits while a descendant keeps its stdout open. The descendant
+  // outlives every deadline below, so a proxy that finished before its deadline
+  // did not wait for it, whatever the host's load.
+  const holder = (tail: string) => serverFile(`
+      const c = require('child_process').spawn('sleep', ['60'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true });
+      c.unref();
+      require('fs').writeFileSync(${JSON.stringify(descPidFile())}, String(c.pid));
+      ${tail}
+      process.exit(0);`);
 
   it('exits promptly when the server exits but a descendant keeps its stdout open', async () => {
-    const server = serverFile(`
-      require('child_process').spawn('sleep', ['9'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();
-      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ok: true } }) + '\\n');
-      process.exit(0);`);
-    const started = Date.now();
+    const server = holder(`process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ok: true } }) + '\\n');`);
     const res = await execa('node', [CLI, 'proxy', '--command', 'node', '--args', server], {
-      cwd: dir, reject: false, input: '', env: { MCP_SCAN_LOG_DIR: logDir },
+      cwd: dir, reject: false, input: '', env: { MCP_SCAN_LOG_DIR: logDir }, timeout: 25000,
     });
-    expect(Date.now() - started).toBeLessThan(6000);
+    expect(res.timedOut).toBe(false);
+    // the proxy is gone while the descendant still holds the pipe
+    expect(alive(Number(fs.readFileSync(descPidFile(), 'utf8')))).toBe(true);
     expect(res.exitCode).toBe(0);
     expect(JSON.parse(res.stdout.trim())).toMatchObject({ id: 1, result: { ok: true } });
   }, 30000);
@@ -42,17 +57,21 @@ describe('proxy lifecycle', () => {
     const pidFile = path.join(dir, 'pid');
     const server = serverFile(`
       require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
-      setInterval(() => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'tick', params: { pad: 'x'.repeat(2000) } }) + '\\n'), 20);
-      setTimeout(() => process.exit(0), 20000);`);
-    const started = Date.now();
-    await execa('sh', ['-c', `node "${CLI}" proxy --command node --args "${server}" </dev/null | head -c 10 >/dev/null`], {
-      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir },
+      // survive its own broken pipe, so only the proxy can end it
+      process.stdout.on('error', () => {});
+      setInterval(() => {
+        if (!require('fs').existsSync(${JSON.stringify(dir)})) process.exit(0);
+        process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'tick', params: { pad: 'x'.repeat(2000) } }) + '\\n');
+      }, 20);
+      setTimeout(() => process.exit(0), 60000);`);
+    const res = await execa('sh', ['-c', `node "${CLI}" proxy --command node --args "${server}" </dev/null | head -c 10 >/dev/null`], {
+      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir }, timeout: 25000,
     });
-    expect(Date.now() - started).toBeLessThan(10000);
+    expect(res.timedOut).toBe(false);
+    // the server's own exit is 60s out, so only the proxy can end it inside this deadline
     const pid = Number(fs.readFileSync(pidFile, 'utf8'));
-    await new Promise(r => setTimeout(r, 300));
-    expect(alive(pid)).toBe(false);
-  }, 40000);
+    await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 20000, interval: 25 });
+  }, 60000);
 
   it('answers every request in a pipelined burst that meets the broken pipe, not just the ones after it', async () => {
     const closed = path.join(dir, 'server-closed-stdin');
@@ -70,19 +89,13 @@ describe('proxy lifecycle', () => {
     proc.stdout!.on('data', d => { out += d; });
     proc.stdin!.on('error', () => {});
     const stop = Date.now() + 25000;
-    const until = async (what: string, ok: () => boolean) => {
-      while (!ok()) {
-        if (Date.now() > stop) throw new Error(`timed out waiting for ${what}`);
-        await new Promise(r => setTimeout(r, 10));
-      }
-    };
     const ids = () => out.split('\n').slice(0, -1).filter(Boolean).map(l => JSON.parse(l)).flat().map((r: any) => r.id);
     // backstop: a hung proxy fails the test here instead of at vitest's timeout
     const kill = setTimeout(() => proc.kill('SIGKILL'), 30000);
     kill.unref();
     let res;
     try {
-      await until('the server to close its stdin', () => fs.existsSync(closed));
+      await until(stop, 'the server to close its stdin', () => fs.existsSync(closed));
       // one write: every line is forwarded before the first EPIPE comes back
       proc.stdin!.write([
         { jsonrpc: '2.0', id: 1, method: 'x' },
@@ -90,7 +103,7 @@ describe('proxy lifecycle', () => {
         { jsonrpc: '2.0', id: 'two', method: 'x' },
         [{ jsonrpc: '2.0', id: 3, method: 'x' }, { jsonrpc: '2.0', method: 'n' }],
       ].map(m => JSON.stringify(m)).join('\n') + '\n');
-      await until('a reply to every request', () => ids().length >= 3);
+      await until(stop, 'a reply to every request', () => ids().length >= 3);
     } finally {
       proc.stdin!.end();
       fs.writeFileSync(release, '1');
@@ -128,27 +141,21 @@ describe('proxy lifecycle', () => {
     proc.stdin!.on('error', () => {});
     // one deadline for every wait, well inside the test timeout
     const stop = Date.now() + 25000;
-    const until = async (what: string, ok: () => boolean) => {
-      while (!ok()) {
-        if (Date.now() > stop) throw new Error(`timed out waiting for ${what}`);
-        await new Promise(r => setTimeout(r, 10));
-      }
-    };
     const send = (m: object) => proc.stdin!.write(JSON.stringify(m) + '\n');
     const ids = () => out.split('\n').slice(0, -1).filter(Boolean).map(l => JSON.parse(l)).flat().map((r: any) => r.id);
 
     let res;
     try {
-      await until('the server to close its stdin', () => fs.existsSync(closed));
+      await until(stop, 'the server to close its stdin', () => fs.existsSync(closed));
       send({ jsonrpc: '2.0', id: 1, method: 'x' }); // meets the broken pipe
-      await until('the proxy to hit the broken pipe', () => /server stdin is no longer writable/.test(err));
+      await until(stop, 'the proxy to hit the broken pipe', () => /server stdin is no longer writable/.test(err));
       send({ jsonrpc: '2.0', id: 2, method: 'x' });
       send({ jsonrpc: '2.0', method: 'notifications/ping' });
       send({ jsonrpc: '2.0', id: 'three', method: 'x' });
       send([{ jsonrpc: '2.0', id: 4, method: 'x' }, { jsonrpc: '2.0', method: 'n' }]);
       // The batch is the last line sent, and lines are handled in order, so its
       // reply means everything before it, the notification included, is done.
-      await until('the reply to the last request', () => ids().includes(4));
+      await until(stop, 'the reply to the last request', () => ids().includes(4));
     } finally {
       // also on a failed wait, so no proxy outlives the test
       proc.stdin!.end();
@@ -177,16 +184,13 @@ describe('proxy lifecycle', () => {
     expect(res.stdout.trim().split(/\s+/).map(Number)).toEqual([40, bytes]);
   }, 30000);
 
-  it('still exits within about 3s when only a descendant holds the stdout open', async () => {
-    const server = serverFile(`
-      require('child_process').spawn('sleep', ['9'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();
-      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ok: true } }) + '\\n' + '{"partial":');
-      process.exit(0);`);
-    const started = Date.now();
+  it('still exits, abandoning the fragment, when only a descendant holds the stdout open', async () => {
+    const server = holder(`process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ok: true } }) + '\\n' + '{"partial":');`);
     const res = await execa('node', [CLI, 'proxy', '--command', 'node', '--args', server], {
-      cwd: dir, reject: false, input: '', env: { MCP_SCAN_LOG_DIR: logDir },
+      cwd: dir, reject: false, input: '', env: { MCP_SCAN_LOG_DIR: logDir }, timeout: 25000,
     });
-    expect(Date.now() - started).toBeLessThan(4500);
+    expect(res.timedOut).toBe(false);
+    expect(alive(Number(fs.readFileSync(descPidFile(), 'utf8')))).toBe(true);
     // the unfinished fragment is abandoned with a warning, never forwarded as if it were a message
     expect(res.stdout.trim().split('\n')).toHaveLength(1);
     expect(res.stderr).toMatch(/abandon|unfinished/i);
@@ -231,14 +235,28 @@ describe('proxy lifecycle', () => {
       require('child_process').spawn('sleep', ['30'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();
       require('child_process').spawn('cat', [${JSON.stringify(file)}], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();
       process.exit(0);`);
-    const stamp = path.join(dir, 'stamp');
-    const started = Date.now();
-    // the reader holds the pipe open without reading for 14s
-    const res = await execa('sh', ['-c', `(node "${CLI}" proxy --command node --args "${server}" </dev/null; node -e "require('fs').writeFileSync('${stamp}', String(Date.now()))") | sleep 14`], {
-      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir, MCP_SCAN_STALL_MS: '5000' },
+    // The reader holds the pipe open without reading for 14s. Two notes mark the
+    // proxy's two stages: giving up on the unread server output (after the stall
+    // deadline), then cutting off what is queued on stdout. Both stages share one
+    // deadline, so the second note follows the first by about a flush (1s); a
+    // fresh deadline would put it a whole stall (5s) later. The gap between two
+    // lines of the same process, not the time since the test started, so a slow
+    // host moves both and leaves the gap alone.
+    const proc = execa('sh', ['-c', `node "${CLI}" proxy --command node --args "${server}" </dev/null | sleep 14`], {
+      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir, MCP_SCAN_STALL_MS: '5000' }, timeout: 35000,
     });
-    // 5s stall + about 1s to flush + startup; the old two-stage wait took about 11s
-    expect(Number(fs.readFileSync(stamp, 'utf8')) - started).toBeLessThan(8500);
+    let seen = '';
+    const at: Record<string, number> = {};
+    proc.stderr!.on('data', d => {
+      seen += d;
+      if (!at.gaveUp && /gave up on a client that stopped reading/.test(seen)) at.gaveUp = Date.now();
+      if (!at.cut && /client stopped reading: dropped \d+ bytes of queued output/.test(seen)) at.cut = Date.now();
+    });
+    const res = await proc;
+    expect(res.timedOut).toBe(false);
+    expect(at.gaveUp).toBeDefined();
+    expect(at.cut).toBeDefined();
+    expect(at.cut - at.gaveUp).toBeLessThan(3000);
     // and it says what it dropped
     expect(res.stderr).toMatch(/gave up on a client that stopped reading: dropped \d+ bytes/);
     // and when the exit then cuts off output already queued on stdout

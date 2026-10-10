@@ -54,8 +54,22 @@ export function logScan(report: ScanReport) {
     };
 
     fs.appendFileSync(logFile, JSON.stringify(logEntry) + '\n', 'utf8');
-  } catch (_error) {}
+  } catch (error) {
+    // The scan already ran, so this never throws. But a full disk or a
+    // read-only home means there is no audit trail, and nobody would know.
+    // stderr, once per distinct failure: stdout may be --json, and watch mode
+    // calls this every rescan.
+    const why = error instanceof Error ? error.message : String(error);
+    // fs errors usually name the path already; print it once
+    const msg = why.includes(auditDir()) ? `could not write the audit log: ${why}` : `could not write the audit log (${auditDir()}): ${why}`;
+    if (!warnedAuditFailures.has(msg)) {
+      if (warnedAuditFailures.size >= 50) warnedAuditFailures.clear();
+      warnedAuditFailures.add(msg);
+      process.stderr.write(`mcp-scan: ${msg}\n`);
+    }
+  }
 }
+const warnedAuditFailures = new Set<string>();
 
 // Bumped when the fingerprint recipe changes, so an old store is rebuilt
 // quietly instead of flagging every server once.

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { execa } from 'execa';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,10 +70,19 @@ function normalize(report: Record<string, unknown>): Record<string, unknown> {
 }
 
 async function runCli(fixture: string) {
-  return execa('node', [CLI_PATH, 'scan', '--ci', '--offline', '--config', fixture], {
-    reject: false,
-    stdin: 'ignore',
-  });
+  // A scratch home keeps the run off the real ~/.mcp-scan: its baseline and
+  // audit log must not change the output, and a home that can't be written
+  // must not put a warning on stderr.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-golden-'));
+  try {
+    return await execa('node', [CLI_PATH, 'scan', '--ci', '--offline', '--config', fixture], {
+      reject: false,
+      stdin: 'ignore',
+      env: { MCP_SCAN_HOME: home },
+    });
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 }
 
 function expectedExit(golden: { criticalCount?: number; highCount?: number }): number {

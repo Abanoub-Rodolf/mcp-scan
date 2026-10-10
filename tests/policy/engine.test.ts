@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { loadYamlPolicy, validatePolicy, applyPolicy, SecurityPolicy } from '../../src/policy/engine.js';
+import { validatePolicy, applyPolicy, SecurityPolicy } from '../../src/policy/engine.js';
 import { ServerScanResult } from '../../src/types/scan-result.js';
 import fs from 'fs';
 

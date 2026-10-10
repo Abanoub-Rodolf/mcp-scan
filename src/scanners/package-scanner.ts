@@ -456,6 +456,20 @@ function scanPackageOffline(packageName: string, versionSpec: string | null): Fi
         });
       }
     }
-  } catch (_error) {}
+  } catch (error) {
+    // A snapshot of an unexpected shape used to read as "no known
+    // vulnerabilities". Say the check did not finish.
+    // stderr, not logger.warn: --json and --ci silence the logger, and CI is where this must show.
+    // Once per message: a bad snapshot fails for every package, on every watch rescan.
+    // The name comes from the scanned config, so control characters never reach the terminal.
+    const name = packageName.replace(/[\x00-\x1f\x7f]/g, '?');
+    const msg = `Offline CVE check for '${name}' failed (${error instanceof Error ? error.message : String(error)}); its vulnerability results may be incomplete.`;
+    if (!warnedOffline.has(msg)) {
+      if (warnedOffline.size >= 200) warnedOffline.clear();
+      warnedOffline.add(msg);
+      process.stderr.write(`mcp-scan: ${msg}\n`);
+    }
+  }
   return findings;
 }
+const warnedOffline = new Set<string>();

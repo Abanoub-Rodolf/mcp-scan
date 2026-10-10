@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { generateHtmlReport, escapeHtml } from '../../src/utils/html-reporter.js';
 import { ScanReport } from '../../src/types/scan-result.js';
 

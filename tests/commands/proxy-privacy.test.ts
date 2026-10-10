@@ -77,9 +77,8 @@ describe('Proxy Privacy Engine', () => {
     // Write to process.stdin simulation (interceptor wraps it)
     process.stdin.emit('data', Buffer.from(sensitivePayload));
 
-    // Small delay to allow stream to flush
-    await new Promise(r => setTimeout(r, 50));
-    
+    // the masked payload reaching the child's stdin is the signal
+    await vi.waitFor(() => expect(capturedInput).toContain('[EMAIL_MASKED]'), { timeout: 10000, interval: 10 });
     expect(capturedInput).toContain('[EMAIL_MASKED]');
     expect(capturedInput).not.toContain('user@example.com');
   });
@@ -101,7 +100,9 @@ describe('Proxy Privacy Engine', () => {
     await runProxy({ command: 'node', args: '-v' });
 
     process.stdin.emit('data', Buffer.from(JSON.stringify({ params: { email: 'secret@corp.example' } }) + '\n'));
-    await new Promise(r => setTimeout(r, 50));
+    // the masked line landing in the log file is the signal
+    const logText = () => fs.readdirSync(tmpLogDir).map(f => fs.readFileSync(path.join(tmpLogDir, f), 'utf8')).join('');
+    await vi.waitFor(() => expect(logText()).toContain('[EMAIL_MASKED]'), { timeout: 10000, interval: 10 });
 
     const files = fs.readdirSync(tmpLogDir);
     expect(files.length).toBe(1);

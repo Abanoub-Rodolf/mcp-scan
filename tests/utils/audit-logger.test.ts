@@ -564,3 +564,36 @@ describe('signed baseline', () => {
     expect(quarantined()).toHaveLength(0);
   });
 });
+
+describe('audit log write failure', () => {
+  let home: string;
+  let err: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-audit-fail-'));
+    process.env.MCP_SCAN_HOME = home;
+    err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    err.mockRestore();
+    delete process.env.MCP_SCAN_HOME;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const said = () => err.mock.calls.map((c: unknown[]) => String(c[0])).filter((l: string) => l.includes('could not write the audit log'));
+
+  it('does not throw, but says the audit log could not be written, once', () => {
+    // a directory where the log file should be makes the append fail
+    fs.mkdirSync(path.join(home, 'audit.log'));
+    expect(() => logScan(report([server(['-y', 'pkg'])]))).not.toThrow();
+    expect(() => logScan(report([server(['-y', 'pkg'])]))).not.toThrow();
+    expect(said()).toHaveLength(1);
+    expect(said()[0]).toContain(home);
+  });
+
+  it('stays quiet when the log is written', () => {
+    logScan(report([server(['-y', 'pkg'])]));
+    expect(said()).toHaveLength(0);
+  });
+});
