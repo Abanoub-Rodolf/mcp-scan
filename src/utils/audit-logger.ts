@@ -110,7 +110,7 @@ function fingerprintFile(): string {
 
 // Per-install secret, kept next to but outside the store so that editing
 // the store alone cannot produce a valid signature.
-function keyFile(): string {
+export function keyFile(): string {
   return path.join(auditDir(), 'baseline.key');
 }
 

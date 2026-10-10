@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `runScan` (the library entry) now rejects with `BaselineKeyError` when `baseline.key` is a directory or any other non-regular file, before it does any work. The class is exported from the package root so callers can `instanceof` it; the CLI already turns it into a one-line error and exit 1.
 
 ### Fixed
+- `watch` now rescans when `baseline.key` is fixed. It used to watch only config and policy files, so after a `BaselineKeyError` recovery waited on an unrelated config edit. The error is now followed by a dim "Scan skipped. Fixing baseline.key rescans." line, like the policy error. If the `~/.mcp-scan` directory does not exist yet, it is simply not watched.
 - Every scan left a new `known-servers.json.backup-<timestamp>` in
   `~/.mcp-scan` and nothing removed them; one real install had over 1,100.
   Scans now keep the 5 newest. Backups the `fix` command makes of your own

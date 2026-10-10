@@ -55,28 +55,62 @@ describe('proxy lifecycle', () => {
   }, 40000);
 
   it('answers requests that arrive after the server closed its stdin, with their own id, and ignores notifications', async () => {
-    const server = serverFile(`require('fs').closeSync(0); setTimeout(() => process.exit(0), 3000);`);
+    // Every step waits on an observable event instead of a sleep: how long node
+    // takes to start the proxy and the server depends on the host's load.
+    const closed = path.join(dir, 'server-closed-stdin');
+    const release = path.join(dir, 'release');
+    const server = serverFile(`
+      const fs = require('fs');
+      fs.closeSync(0);
+      fs.writeFileSync(${JSON.stringify(closed)}, '1');
+      // a vanished test dir counts as release too, so a failed run never leaves it waiting
+      setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}) || !fs.existsSync(${JSON.stringify(dir)})) process.exit(0); }, 20);
+      setTimeout(() => process.exit(0), 40000);`);
     const proc = execa('node', [CLI, 'proxy', '--command', 'node', '--args', server], {
       cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir }, stdin: 'pipe',
     });
+    let out = '';
+    let err = '';
+    proc.stdout!.on('data', d => { out += d; });
+    proc.stderr!.on('data', d => { err += d; });
+    // an early proxy death should fail on the waits below, not as an unhandled EPIPE
+    proc.stdin!.on('error', () => {});
+    // one deadline for every wait, well inside the test timeout
+    const stop = Date.now() + 25000;
+    const until = async (what: string, ok: () => boolean) => {
+      while (!ok()) {
+        if (Date.now() > stop) throw new Error(`timed out waiting for ${what}`);
+        await new Promise(r => setTimeout(r, 10));
+      }
+    };
     const send = (m: object) => proc.stdin!.write(JSON.stringify(m) + '\n');
-    await new Promise(r => setTimeout(r, 500));
-    send({ jsonrpc: '2.0', id: 1, method: 'x' }); // meets the broken pipe
-    await new Promise(r => setTimeout(r, 400));
-    send({ jsonrpc: '2.0', id: 2, method: 'x' });
-    send({ jsonrpc: '2.0', method: 'notifications/ping' });
-    send({ jsonrpc: '2.0', id: 'three', method: 'x' });
-    send([{ jsonrpc: '2.0', id: 4, method: 'x' }, { jsonrpc: '2.0', method: 'n' }]);
-    await new Promise(r => setTimeout(r, 300));
-    proc.stdin!.end();
-    const res = await proc;
+    const ids = () => out.split('\n').slice(0, -1).filter(Boolean).map(l => JSON.parse(l)).flat().map((r: any) => r.id);
+
+    let res;
+    try {
+      await until('the server to close its stdin', () => fs.existsSync(closed));
+      send({ jsonrpc: '2.0', id: 1, method: 'x' }); // meets the broken pipe
+      await until('the proxy to hit the broken pipe', () => /server stdin is no longer writable/.test(err));
+      send({ jsonrpc: '2.0', id: 2, method: 'x' });
+      send({ jsonrpc: '2.0', method: 'notifications/ping' });
+      send({ jsonrpc: '2.0', id: 'three', method: 'x' });
+      send([{ jsonrpc: '2.0', id: 4, method: 'x' }, { jsonrpc: '2.0', method: 'n' }]);
+      // The batch is the last line sent, and lines are handled in order, so its
+      // reply means everything before it, the notification included, is done.
+      await until('the reply to the last request', () => ids().includes(4));
+    } finally {
+      // also on a failed wait, so no proxy outlives the test
+      proc.stdin!.end();
+      fs.writeFileSync(release, '1');
+      res = await proc;
+    }
     const replies = res.stdout.split('\n').filter(Boolean).map(l => JSON.parse(l));
     const flat = replies.flat();
     expect(flat.map((r: any) => r.id).sort()).toEqual([2, 4, 'three']);
     for (const r of flat) expect(r).toMatchObject({ jsonrpc: '2.0', error: { code: -32603 } });
     expect(Array.isArray(replies[replies.length - 1])).toBe(true);
     expect(res.stderr).not.toMatch(/Unhandled|node:events/);
-  }, 30000);
+  }, 60000);
 
   it('delivers every line when the server exits while a slow client has not read yet', async () => {
     const lines: string[] = [];

@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { runScan } from './scan.js';
 import { logger } from '../utils/logger.js';
-import { BaselineKeyError } from '../utils/audit-logger.js';
+import { BaselineKeyError, keyFile } from '../utils/audit-logger.js';
 import { EXIT_ERROR } from '../utils/exit-codes.js';
 import { detectTools } from '../config/detector.js';
 import { ScanReport, Finding, ServerScanResult } from '../types/scan-result.js';
@@ -28,8 +28,73 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   let lastReport: ScanReport | null = null;
   let debounceTimeout: NodeJS.Timeout;
   const watchedDirs = new Set<string>();
+  const keyPath = keyFile();
+  let scanning = false;
+  let keyDirty = false;
+  // scan() clears the screen, so a watcher that died must be re-announced in
+  // every footer or it stays invisible.
+  const deadDirs = new Set<string>();
+  const deadNote = () => {
+    if (deadDirs.size > 0) logger.warn(`Not watching: ${[...deadDirs].join(', ')} (restart watch)`);
+  };
+  let keyTimeout: NodeJS.Timeout;
+
+  // A scan can create or remove baseline.key itself (loadOrCreateKey, and the
+  // cleanup after a failed store write). Compare against the state the last
+  // scan left behind so only outside edits count as triggers, not our own.
+  const keyState = () => {
+    try {
+      const st = fs.statSync(keyPath);
+      return `${st.mtimeMs}:${st.size}:${st.isFile()}`;
+    } catch {
+      return 'missing';
+    }
+  };
+  let keySnapshot = keyState();
 
   const performScan = async (changedPath?: string) => {
+    scanning = true;
+    const keyAtStart = keyState();
+    try {
+      await scan(changedPath);
+    } finally {
+      keySnapshot = keyState();
+      scanning = false;
+      // An outside edit that landed mid-scan was not seen by it. Our own
+      // write also differs from the start state, but the rescan then ends on
+      // the state it started from, so this converges after one extra scan.
+      // Gap: an edit made late in the scan whose event is delivered after
+      // this snapshot is taken sees an equal state and is dropped; the next
+      // config or key change picks it up.
+      if (keyDirty) {
+        keyDirty = false;
+        if (keySnapshot !== keyAtStart) enqueue(keyPath);
+      }
+    }
+  };
+
+  // One scan at a time, at most one waiting: overlapping scans would race on
+  // exitCode, the key snapshot and the screen. Errors are caught here so a
+  // timer-fired scan can't become an unhandled rejection that kills watch.
+  let inflight: Promise<void> = Promise.resolve();
+  let queued = false;
+  let queuedPath: string | undefined;
+  const enqueue = (changedPath?: string) => {
+    queuedPath = changedPath;
+    if (queued) return;
+    queued = true;
+    inflight = inflight.then(async () => {
+      queued = false;
+      try {
+        await performScan(queuedPath);
+      } catch (e) {
+        logger.error(e instanceof Error ? e.message : String(e));
+        process.exitCode = EXIT_ERROR;
+      }
+    }).catch(() => {}); // backstop: a rejected link would stop every later scan
+  };
+
+  const scan = async (changedPath?: string) => {
     process.stdout.write('\x1b[2J\x1b[0;0H');
     
     logger.brand('mcp-scan DASHBOARD (Watch Mode)');
@@ -43,10 +108,12 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
     } catch (e) {
       if (e instanceof BaselineKeyError) {
         // Rescans run from a timer, where a rejection would be unhandled and
-        // dump a stack. Say it once, keep watching: fixing the key path and
-        // touching a config recovers without a restart.
+        // dump a stack. Say it once and keep watching: the key file is a
+        // trigger below, so fixing it rescans without a restart.
         logger.error(e.message);
         process.exitCode = EXIT_ERROR;
+        logger.log(chalk.dim('Scan skipped. Fixing baseline.key rescans.'));
+        deadNote();
         return;
       }
       if (!(e instanceof PolicyError)) throw e;
@@ -57,6 +124,7 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
       if (!lastReport) process.exit(EXIT_POLICY_ERROR);
       process.exitCode = EXIT_POLICY_ERROR;
       logger.log(chalk.dim('Scan skipped. Saving the fixed policy file rescans.'));
+      deadNote();
       return;
     }
     process.exitCode = undefined;
@@ -91,31 +159,50 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
 
     logger.emptyLine();
     logger.log(chalk.dim('Watching for changes... (Press Ctrl+C to stop)'));
+    deadNote();
     lastReport = currentReport;
   };
 
   await performScan();
 
-  // A broken policy skips every scan until it is fixed, so saving it must rescan too.
+  // A broken policy or baseline key skips every scan until it is fixed, so
+  // saving either must rescan too.
   const triggers = [
     ...validPaths,
     path.join(process.cwd(), '.mcp-scan.json'),
     path.join(process.cwd(), '.mcp-scan-policy.yml'),
     path.join(os.homedir(), '.mcp-scan-policy.yml'),
+    keyPath,
   ];
 
   for (const configPath of triggers) {
     const dir = path.dirname(configPath);
     if (watchedDirs.has(dir)) continue;
+    // The audit dir can still be missing after the first scan; skip it. One
+    // created later is not picked up until watch restarts.
+    if (configPath === keyPath && !fs.existsSync(dir)) continue;
     watchedDirs.add(dir);
 
     try {
-      fs.watch(dir, (eventType, filename) => {
+      const watcher = fs.watch(dir, (eventType, filename) => {
         const changedPath = filename ? path.join(dir, filename) : null;
+        if (changedPath === keyPath) {
+          if (scanning) { keyDirty = true; return; }
+          clearTimeout(keyTimeout);
+          keyTimeout = setTimeout(() => {
+            if (scanning) keyDirty = true;
+            else if (keyState() !== keySnapshot) enqueue(changedPath);
+          }, 500);
+          return;
+        }
         if (changedPath && triggers.includes(changedPath)) {
           clearTimeout(debounceTimeout);
-          debounceTimeout = setTimeout(() => performScan(changedPath), 500);
+          debounceTimeout = setTimeout(() => enqueue(changedPath), 500);
         }
+      });
+      watcher.on('error', (e: Error) => {
+        deadDirs.add(dir);
+        logger.error(`Watch on ${dir} stopped: ${e.message}`);
       });
     } catch (error: any) {
       logger.error(`Failed to watch directory ${dir}: ${error.message}`);

@@ -26,7 +26,7 @@ describe('watch with a policy that breaks mid-session', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
     watchers = {};
-    vi.spyOn(fs, 'watch').mockImplementation(((d: string, cb: any) => { watchers[d] = cb; return { close() {} }; }) as any);
+    vi.spyOn(fs, 'watch').mockImplementation(((d: string, cb: any) => { watchers[d] = cb; return { close() {}, on() {} }; }) as any);
     vi.spyOn(process, 'on').mockImplementation(((ev: string, fn: () => void) => { handlers[ev] = fn; return process; }) as any);
   });
   afterEach(() => {

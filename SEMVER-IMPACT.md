@@ -22,7 +22,7 @@ Source: `dist/lib.d.ts`
 
 | Symbol | Kind | Semver Risk |
 |--------|------|-------------|
-| `BaselineKeyError` | class (extends `Error`) | Added in 2.1.x. `runScan` now rejects with it when the `baseline.key` path is a directory or other non-regular file; it used to resolve with misleading MEDIUM findings. Callers that wrap `runScan` should handle the rejection. Removing or renaming the class = major. |
+| `BaselineKeyError` | class (extends `Error`) | Unreleased (see CHANGELOG). `runScan` now rejects with it when the `baseline.key` path is a directory or other non-regular file; it used to resolve with misleading MEDIUM findings. Callers that wrap `runScan` should handle the rejection. Removing or renaming the class = major. |
 
 ### Exported Types
 
