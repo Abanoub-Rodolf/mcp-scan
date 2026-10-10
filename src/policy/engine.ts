@@ -73,8 +73,9 @@ function ruleFieldProblem(rule: PolicyRule): string | null {
   for (const [key, value] of Object.entries(m)) {
     if (!MATCH_KEYS.includes(key)) return `unknown match key '${key}'. Valid: ${MATCH_KEYS.join(', ')}`;
     const values = Array.isArray(value) ? value : [value];
-    if (values.length === 0 || !values.every(v => typeof v === 'string')) {
-      return `match.${key} must be a string or a non-empty list of strings`;
+    // '' is falsy in ruleMatches, so it would skip the filter and match everything.
+    if (values.length === 0 || !values.every(v => typeof v === 'string' && v.trim() !== '')) {
+      return `match.${key} must be a non-empty string or a non-empty list of non-empty strings`;
     }
     if (key === 'severity' && !values.every(isSeverityAnyCase)) {
       return `match.severity has an invalid severity. Valid: ${SEVERITY_LIST}`;

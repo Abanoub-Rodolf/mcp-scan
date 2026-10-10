@@ -158,6 +158,9 @@ describe('policy loading fails closed', () => {
       ['a match value that is a number', rule('    match:\n      finding_id: 7\n'), /match\.finding_id/],
       ['an empty match list', rule('    match:\n      server_name: []\n'), /match\.server_name/],
       ['pii_types, which no finding carries', rule('    match:\n      pii_types: [SSN]\n'), /unknown match key 'pii_types'/],
+      ['an empty string match value', rule('    match:\n      finding_id: ""\n'), /match\.finding_id/],
+      ['an empty string in a match list', rule('    match:\n      server_name: [a, ""]\n'), /match\.server_name/],
+      ['a whitespace-only match value', rule('    match:\n      category: "  "\n'), /match\.category/],
       ['a match.severity that is not a severity', rule('    match:\n      severity: [critcal]\n'), /match\.severity/],
     ])('a rule with %s throws', (_n, body, re) => {
       yml(body);
