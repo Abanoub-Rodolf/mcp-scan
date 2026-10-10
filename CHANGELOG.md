@@ -17,12 +17,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A package whose registry entry has a legacy object license (`"license": {"type": "MIT"}`) or another non-string shape no longer crashes the scan; the license is stored as a string (the object's `type`, or the first `licenses[].type`) or left unset.
 - YAML policy rules are stricter: an unknown top-level rule key (`matcher`, `scaner`), an empty or whitespace-only `scanner`, and empty strings in `match` values (alone or in a list) are errors. Before, they were ignored and the rule matched every finding.
 - The policy file is opened once and its type checked on the open file, so a FIFO swapped in after the check can no longer hang the read.
+- `runScan` (the library entry) now rejects with `BaselineKeyError` when `baseline.key` is a directory or any other non-regular file, before it does any work. The class is exported from the package root so callers can `instanceof` it; the CLI already turns it into a one-line error and exit 1.
 
 ### Fixed
 - Every scan left a new `known-servers.json.backup-<timestamp>` in
   `~/.mcp-scan` and nothing removed them; one real install had over 1,100.
   Scans now keep the 5 newest. Backups the `fix` command makes of your own
   MCP client configs are never pruned.
+- If `baseline.key` is a directory (or any other non-file, such as a FIFO), mcp-scan now stops before scanning with a one-line error naming the path and exits 1. Before, every scan printed a misleading "fingerprint store went missing" MEDIUM for each server, never signed a baseline and exited 0; a FIFO there hung the scan. Move or remove the path and rerun.
+- A `.mcp-scan-ignore` that is a FIFO no longer hangs the scan forever. Any non-regular file there (FIFO, directory, device) is skipped with a line on stderr, so no suppressions apply. Skipping can only add findings, never hide one.
+- When the proxy gives up on a client that stopped reading, the "dropped N bytes of queued output" warning now counts writes queued behind the one in flight. It used to report only the unsent part of the first write (about 30 MB instead of about 35 MB in a measured case). The warning text is the only thing that changes.
 
 ## [2.1.0] - 2026-10-09
 

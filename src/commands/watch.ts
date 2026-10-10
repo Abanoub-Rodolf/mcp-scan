@@ -3,6 +3,8 @@ import os from 'os';
 import path from 'path';
 import { runScan } from './scan.js';
 import { logger } from '../utils/logger.js';
+import { BaselineKeyError } from '../utils/audit-logger.js';
+import { EXIT_ERROR } from '../utils/exit-codes.js';
 import { detectTools } from '../config/detector.js';
 import { ScanReport, Finding, ServerScanResult } from '../types/scan-result.js';
 import chalk from 'chalk';
@@ -38,9 +40,17 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
     let currentReport: ScanReport;
     try {
       currentReport = await runScan({ silent: true });
-    } catch (err) {
-      if (!(err instanceof PolicyError)) throw err;
-      logger.error(err.message);
+    } catch (e) {
+      if (e instanceof BaselineKeyError) {
+        // Rescans run from a timer, where a rejection would be unhandled and
+        // dump a stack. Say it once, keep watching: fixing the key path and
+        // touching a config recovers without a restart.
+        logger.error(e.message);
+        process.exitCode = EXIT_ERROR;
+        return;
+      }
+      if (!(e instanceof PolicyError)) throw e;
+      logger.error(e.message);
       // First scan: nothing to watch without a trustworthy policy. Later
       // scans: keep watching, but never report "all clear" for a scan that
       // did not run.
@@ -114,7 +124,7 @@ export async function runWatch(options: { webhook?: string, slackWebhook?: strin
   
   const onExit = () => {
     logger.info('Stopping watch mode.');
-    // A policy that broke mid-session set exitCode; Ctrl+C must not erase it.
+    // A broken policy or baseline key set exitCode; Ctrl+C must not erase it.
     process.exit(process.exitCode ?? 0);
   };
   process.on('SIGINT', onExit);

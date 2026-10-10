@@ -1,5 +1,6 @@
+import { spawn } from 'child_process';
 import { describe, it, expect } from 'vitest';
-import { JsonRpcInterceptor, queuedBytes } from '../../src/commands/proxy.js';
+import { JsonRpcInterceptor, queuedBytes, owedBytes } from '../../src/commands/proxy.js';
 
 // When the proxy gives up on a stalled client, input still queued behind a
 // half-read line must go with it: delivering its back half later would send a
@@ -62,5 +63,34 @@ describe('JsonRpcInterceptor.abandon', () => {
     expect(queuedBytes(0, 0)).toBe(0);
     for (const bad of [undefined, null, NaN, Infinity, -5, '7', {}]) expect(queuedBytes(bad, bad)).toBe(0);
     expect(queuedBytes(undefined, 12)).toBe(12);
+  });
+  it('adds writes queued behind the in-flight one to what libuv has not sent', () => {
+    // measured: a 30,000,000-byte write in flight, then 5,000,000 + 1,000 queued in Node
+    expect(queuedBytes(35001000, 29934464, 30000000)).toBe(34935464);
+    // in-flight write fully taken by the kernel but not yet called back: only the queue is owed
+    expect(queuedBytes(35001000, 0, 30000000)).toBe(5001000);
+    expect(queuedBytes(30000000, 0, 30000000)).toBe(0);
+    // no in-flight figure: unchanged
+    expect(queuedBytes(35001000, 29934464, undefined)).toBe(29934464);
+    // a stale or oversized in-flight figure never goes negative
+    expect(queuedBytes(100, 50, 200)).toBe(50);
+  });
+
+  it('owedBytes on a real pipe counts every queued write, not just the first', async () => {
+    // a child that never reads its stdin, so the kernel pipe fills and Node queues the rest
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], { stdio: ['pipe', 'ignore', 'ignore'] });
+    child.stdin.on('error', () => {});
+    try {
+      child.stdin.write('x'.repeat(30000000));
+      child.stdin.write('y'.repeat(5000000));
+      child.stdin.write('z'.repeat(1000));
+      const total = 35001000;
+      const owed = owedBytes(child.stdin);
+      // the kernel pipe buffer takes at most a few hundred KB of it
+      expect(owed).toBeGreaterThan(total - 1_000_000);
+      expect(owed).toBeLessThanOrEqual(total);
+    } finally {
+      child.kill('SIGKILL');
+    }
   });
 });

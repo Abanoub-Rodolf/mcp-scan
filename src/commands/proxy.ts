@@ -19,12 +19,26 @@ function warnStderr(msg: string) {
 // writableLength stays at the full size of an in-flight write until it
 // completes, so it overstates what the client is still owed once the kernel
 // has taken part of it. libuv's writeQueueSize counts only what the kernel has
-// not taken yet, so it wins when Node gives it as a finite number above 0.
-// Otherwise (no handle, or nothing handed to libuv yet) fall back to
-// writableLength. A value that is not a finite number counts as 0, so a
-// changed internal can never wedge the proxy.
+// not taken yet, but only of that one in-flight write: writes Node has queued
+// behind it are in writableLength alone. So with the in-flight write's size
+// known, owed = libuv's unsent part + everything queued behind it. Without it
+// (no handle, nothing in flight) libuv's figure wins when it is above 0,
+// otherwise writableLength. A value that is not a finite number counts as 0,
+// so a changed internal can never wedge the proxy.
 const finite = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0);
-export const queuedBytes = (writableLength: unknown, writeQueueSize: unknown): number => finite(writeQueueSize) || finite(writableLength);
+export const queuedBytes = (writableLength: unknown, writeQueueSize: unknown, inFlight?: unknown): number => {
+  const sent = finite(inFlight);
+  if (sent > 0) return finite(writeQueueSize) + Math.max(0, finite(writableLength) - sent);
+  return finite(writeQueueSize) || finite(writableLength);
+};
+
+// Bytes still owed to whoever reads this stream, read off Node's internals the
+// same defensive way (the in-flight size only counts when libuv's queue is readable).
+export const owedBytes = (s: any): number => {
+  const q = s?._handle?.writeQueueSize;
+  const st = s?._writableState;
+  return queuedBytes(s?.writableLength, q, st?.writing && typeof q === 'number' ? st.writelen : undefined);
+};
 
 const isJson = (text: string) => { try { JSON.parse(text); return true; } catch (_e) { return false; } };
 
@@ -424,7 +438,7 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
         const now = stdoutPending();
         still = now === last ? still + 1 : floor;
         last = now;
-        const owed = queuedBytes(process.stdout.writableLength, stdoutQueue());
+        const owed = owedBytes(process.stdout);
         // Nothing queued and still not done is stuck (5s). A reader that
         // simply stopped reading gets the full stall deadline.
         if (still >= (now === 0 ? 10 : ticks)) {

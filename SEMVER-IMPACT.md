@@ -18,6 +18,12 @@ Source: `dist/lib.d.ts`
 | `runScan` | `(options?: ScanOptions) => Promise<ScanReport>` | Breaking if signature narrows |
 | `detectTools` | `(dependencies: DetectorDependencies) => Promise<DetectedTool[]>` | Breaking if signature narrows |
 
+### Exported Errors
+
+| Symbol | Kind | Semver Risk |
+|--------|------|-------------|
+| `BaselineKeyError` | class (extends `Error`) | Added in 2.1.x. `runScan` now rejects with it when the `baseline.key` path is a directory or other non-regular file; it used to resolve with misleading MEDIUM findings. Callers that wrap `runScan` should handle the rejection. Removing or renaming the class = major. |
+
 ### Exported Types
 
 | Symbol | Kind | Semver Risk |

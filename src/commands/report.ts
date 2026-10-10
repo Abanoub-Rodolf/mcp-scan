@@ -8,6 +8,7 @@ import { printJsonReport } from '../utils/json-reporter.js';
 import { printReport } from '../utils/reporter.js';
 import { generateHtmlReport } from '../utils/html-reporter.js';
 import { recalcSeverityCounts } from '../utils/severity-tally.js';
+import { assertBaselineKeyUsable, BaselineKeyError } from '../utils/audit-logger.js';
 import { PolicyError } from '../utils/policy-file.js';
 
 /**
@@ -58,6 +59,9 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
     totalDurationMs: 0
   };
 
+  // Every file would fail the same way; one clear line beats one per file.
+  assertBaselineKeyUsable();
+
   const startTime = Date.now();
   const seenServers = new Set<string>();
   let notMcpConfigCount = 0;
@@ -84,6 +88,7 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
         }
         }
     } catch (err) {
+      if (err instanceof BaselineKeyError) throw err;
       // A broken policy would fail every file the same way; stop, don't skip.
       if (err instanceof PolicyError) throw err;
       // Silently swallowed per-file failures made configs vanish from the

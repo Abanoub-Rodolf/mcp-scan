@@ -28,6 +28,7 @@ vi.mock('../../src/utils/json-reporter.js', () => ({
 
 import { runMultiConfigReport } from '../../src/commands/report.js';
 import { logger } from '../../src/utils/logger.js';
+import { BaselineKeyError } from '../../src/utils/audit-logger.js';
 
 describe('runMultiConfigReport', () => {
   let tmpDir: string;
@@ -125,5 +126,35 @@ describe('runMultiConfigReport', () => {
     expect(runScanMock).toHaveBeenCalledWith(
       expect.objectContaining({ config: path.join(tmpDir, '.mcp.json') })
     );
+  });
+  // A baseline.key that is not a file fails every scan the same way, so the
+  // loop must not turn it into one "Skipping <file>" line per config.
+  describe('unusable baseline key', () => {
+    let home: string;
+    beforeEach(() => {
+      home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-report-home-'));
+      process.env.MCP_SCAN_HOME = home;
+      for (const n of ['a.json', 'b.json']) {
+        fs.writeFileSync(path.join(tmpDir, n), JSON.stringify({ mcpServers: { x: { command: 'npx', args: ['x'] } } }));
+      }
+    });
+    afterEach(() => {
+      delete process.env.MCP_SCAN_HOME;
+      fs.rmSync(home, { recursive: true, force: true });
+    });
+
+    it('rejects once, before scanning any file, with no per-file skip lines', async () => {
+      fs.mkdirSync(path.join(home, 'baseline.key'));
+      await expect(runMultiConfigReport({ configs: tmpDir, json: true })).rejects.toBeInstanceOf(BaselineKeyError);
+      expect(runScanMock).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('rethrows a BaselineKeyError that appears mid-run instead of skipping the file', async () => {
+      runScanMock.mockRejectedValue(new BaselineKeyError('baseline key went bad'));
+      await expect(runMultiConfigReport({ configs: tmpDir, json: true })).rejects.toBeInstanceOf(BaselineKeyError);
+      expect(runScanMock).toHaveBeenCalledTimes(1);
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
   });
 });

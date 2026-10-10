@@ -1,4 +1,5 @@
 import { runScan } from './commands/scan.js';
+import { BaselineKeyError } from './utils/audit-logger.js';
 import { detectTools } from './config/detector.js';
 import { generateHtmlReport } from './utils/html-reporter.js';
 import { generateSarif } from './utils/sarif-reporter.js';
@@ -21,6 +22,8 @@ import { PolicyError } from './utils/policy-file.js';
 
 export {
   runScan,
+  // runScan rejects with this when baseline.key is not a regular file.
+  BaselineKeyError,
   detectTools,
   generateHtmlReport,
   generateSarif,

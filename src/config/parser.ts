@@ -3,6 +3,7 @@ import path from 'path';
 import * as toml from 'smol-toml';
 import { McpConfig, ResolvedServer, McpScanPolicy, McpServerEntry } from '../types/config.js';
 import { logger } from '../utils/logger.js';
+import { readRegularFile, NotRegularFileError } from '../utils/regular-file.js';
 import { PolicyError, policyFileExists, readPolicyFile } from '../utils/policy-file.js';
 import { SEVERITY_ORDER, isSeverity } from '../types/severity.js';
 
@@ -212,16 +213,27 @@ export function loadPolicy(cwd: string = process.cwd()): McpScanPolicy | null {
   return parsed as McpScanPolicy;
 }
 
-export function loadIgnoreList(cwd: string = process.cwd()): string[] {
+// Once per path per process: watch mode rescans on every config edit and
+// would repeat the same line each time.
+const noticed = new Set<string>();
+
+export function loadIgnoreList(cwd: string = process.cwd(), opts: { silent?: boolean } = {}): string[] {
   const ignorePath = path.join(cwd, '.mcp-scan-ignore');
   try {
-    if (fs.existsSync(ignorePath)) {
-      const content = fs.readFileSync(ignorePath, 'utf8');
-      return content.split('\n')
-        .map(line => line.trim())
-        .filter(line => line && !line.startsWith('#'));
+    return readRegularFile(ignorePath).split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'));
+  } catch (error) {
+    // Skipped, not fatal: the list only suppresses findings, so dropping it
+    // can add findings but never hide one. stderr, because this runs before
+    // --json silences the logger and stdout must stay parseable.
+    // Anything but a plain absence: a socket that fails to open (ENXIO), a
+    // permission error, EISDIR on Windows all drop the list too.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !opts.silent && !noticed.has(ignorePath)) {
+      noticed.add(ignorePath);
+      const why = error instanceof NotRegularFileError ? error.message : `${(error as NodeJS.ErrnoException).code ?? 'error'}: ${error instanceof Error ? error.message : String(error)}`;
+      process.stderr.write(`mcp-scan: ignoring ${ignorePath}: ${why}\n`);
     }
-  } catch (_error) {}
+  }
   return [];
 }
-
