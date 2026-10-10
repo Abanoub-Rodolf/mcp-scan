@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import os from 'os';
 import path from 'path';
 import { loadPolicy } from '../../src/config/parser.js';
@@ -172,4 +173,31 @@ describe('policy loading fails closed', () => {
       expect(() => loadYamlPolicy()).toThrow(PolicyError);
     });
   });
+});
+
+// The type check has to be on the opened file, not on a path that can be
+// swapped for a FIFO between a stat and the read.
+describe('policy file type is checked on the opened file', () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-policy-fifo-')); });
+  afterEach(() => { vi.restoreAllMocks(); fs.rmSync(dir, { recursive: true, force: true }); });
+
+  const lyingStat = () => {
+    const real = fs.statSync;
+    // Every path-based stat claims a regular file, as if the swap happened after it.
+    vi.spyOn(fs, 'statSync').mockImplementation(((p: any, o: any) => ({ ...real(dir), isFile: () => true, isDirectory: () => false, size: 0, p, o })) as any);
+  };
+
+  it('a FIFO at .mcp-scan.json is rejected, not read', () => {
+    execSync(`mkfifo "${path.join(dir, '.mcp-scan.json')}"`);
+    lyingStat();
+    expect(() => loadPolicy(dir)).toThrow(/not a regular file/);
+  }, 5000);
+
+  it('a FIFO as the YAML policy is rejected, not read', () => {
+    const f = path.join(dir, 'p.yml');
+    execSync(`mkfifo "${f}"`);
+    lyingStat();
+    expect(() => loadYamlPolicy(f)).toThrow(/not a regular file/);
+  }, 5000);
 });

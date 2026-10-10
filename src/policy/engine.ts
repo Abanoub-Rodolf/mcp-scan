@@ -1,11 +1,10 @@
-import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { parse } from 'yaml';
 import { Finding, ServerScanResult } from '../types/scan-result.js';
 import { Severity, SEVERITY_ORDER } from '../types/severity.js';
 import chalk from 'chalk';
-import { PolicyError, policyFileExists, assertRegularFile } from '../utils/policy-file.js';
+import { PolicyError, policyFileExists, readPolicyFile } from '../utils/policy-file.js';
 
 export interface PolicyRule {
   id: string;
@@ -29,9 +28,7 @@ export interface SecurityPolicy {
 }
 
 function readAndParsePolicy(policyPath: string): SecurityPolicy {
-  assertRegularFile(policyPath);
-  const content = fs.readFileSync(policyPath, 'utf8');
-  return parse(content) as SecurityPolicy;
+  return parse(readPolicyFile(policyPath)) as SecurityPolicy;
 }
 
 const VALID_ACTIONS = ['block', 'warn', 'skip', 'override-severity'] as const;

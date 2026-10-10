@@ -21,8 +21,16 @@ export function policyFileExists(p: string): boolean {
   }
 }
 
-// A directory or a FIFO must error, not hang or be read as a policy.
-export function assertRegularFile(p: string): void {
-  const st = fs.statSync(p);
-  if (st && !st.isFile()) throw new Error('not a regular file');
+// Opens once and checks the type of what was opened, so a FIFO swapped in
+// after a separate stat cannot hang the read. O_NONBLOCK makes opening a FIFO
+// return at once; the type check then rejects it before any read. A directory
+// or device is rejected the same way.
+export function readPolicyFile(p: string): string {
+  const fd = fs.openSync(p, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0));
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw new Error('not a regular file');
+    return fs.readFileSync(fd, 'utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
 }

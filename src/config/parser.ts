@@ -3,7 +3,7 @@ import path from 'path';
 import * as toml from 'smol-toml';
 import { McpConfig, ResolvedServer, McpScanPolicy, McpServerEntry } from '../types/config.js';
 import { logger } from '../utils/logger.js';
-import { PolicyError, policyFileExists, assertRegularFile } from '../utils/policy-file.js';
+import { PolicyError, policyFileExists, readPolicyFile } from '../utils/policy-file.js';
 import { SEVERITY_ORDER } from '../types/severity.js';
 
 /**
@@ -201,8 +201,7 @@ export function loadPolicy(cwd: string = process.cwd()): McpScanPolicy | null {
 
   let parsed: unknown;
   try {
-    assertRegularFile(policyPath);
-    parsed = parseJsonC(fs.readFileSync(policyPath, 'utf8'));
+    parsed = parseJsonC(readPolicyFile(policyPath));
   } catch (error: any) {
     throw new PolicyError(`Cannot use policy ${policyPath}: ${error.message}. Fix or remove the file; the scan will not run without it.`);
   }
