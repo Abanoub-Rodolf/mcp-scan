@@ -4,92 +4,125 @@ import tseslint from "typescript-eslint";
 const NO_TIMERS_PROMISES = "No timers/promises sleeps in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.";
 const TIMERS = new Set(["setTimeout", "setInterval"]);
 const GLOBALS = new Set(["globalThis", "global", "window", "self"]);
-const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression"]);
+const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression", "FunctionDeclaration"]);
+// expressions whose value is the value of one operand
+const PASSES = new Set(["LogicalExpression", "TSAsExpression", "TSNonNullExpression", "TSSatisfiesExpression", "ArrayExpression"]);
 
 const isTimer = n => n.type === "CallExpression" && (
   (n.callee.type === "Identifier" && TIMERS.has(n.callee.name)) ||
   (n.callee.type === "MemberExpression" && !n.callee.computed && n.callee.object.type === "Identifier" &&
     GLOBALS.has(n.callee.object.name) && n.callee.property.type === "Identifier" && TIMERS.has(n.callee.property.name)));
 
-// A sleep promise: a timer inside a promise executor that fires the executor's
-// resolver (first param, any param count, any constructor name), either handed
-// over directly, `setTimeout(r, 5)`, or wrapped, `setTimeout(() => r(), 5)`.
-// A timer whose callback throws or rejects is a deadline guard and passes. So
-// does a resolve-style guard when the executor also hands the resolver to
-// something else (an argument, an assignment, a listener): the timer is then a
-// fallback in a race on a real signal, not the whole wait.
+// A sleep promise: the resolver (first executor param, any constructor name)
+// reaches a timer and goes nowhere else, `setTimeout(r, 5)` or
+// `setTimeout(() => r(), 5)`. It is not a sleep when the resolver is also handed
+// off: passed to a call, assigned to an outer or member target, returned, or put
+// in an object that is. Then the timer is a fallback in a race on a real signal.
+// A timer whose callback only throws or rejects never touches the resolver, so
+// a deadline guard passes on its own. Aliases (`const a = r`, `r.bind(...)`) are
+// followed through the scope manager, so shadowing needs no special case.
 const noSleepPromise = {
   meta: { type: "problem", schema: [] },
   create(context) {
     const message = "No sleep promises in tests. Wait on a signal (vi.waitFor, marker file, log line, reply) or use fake timers.";
-    const executors = anc => anc.filter(a => FNS.has(a.type) && a.parent?.type === "NewExpression" &&
-      a.parent.arguments[0] === a && a.params[0]?.type === "Identifier");
-    // Does the executor give its resolver to something else? Only these count:
-    // an argument of a non-timer call, the right side of an assignment or a
-    // declarator, a returned value, or a call of it inside a function that is
-    // itself given away. Reading it (`if (r)`, `typeof r`), a shadowing
-    // parameter, or a callback that only sits in a local does not.
-    const handsOff = (exec, name) => {
-      const keys = context.sourceCode.visitorKeys;
-      const isCall = n => n.type === "CallExpression" || n.type === "NewExpression";
-      const isTimerCb = f => f.parent?.type === "CallExpression" && f.parent.arguments[0] === f && isTimer(f.parent);
-      const redeclares = f => f.params.some(q => (q.type === "AssignmentPattern" ? q.left : q).name === name) ||
-        f.body.body?.some(st => st.type === "VariableDeclaration" && st.declarations.some(d => d.id.name === name));
-      const given = e => {
-        const p = e.parent;
-        return (isCall(p) && p.arguments.includes(e) && !isTimer(p)) ||
-          (p.type === "AssignmentExpression" && p.right === e) ||
-          p.type === "ReturnStatement" || (p.type === "ArrowFunctionExpression" && p.body === e);
+    const src = context.sourceCode;
+
+    // Where does the executor's resolver end up: on a timer, handed off, or both?
+    const analyze = (exec, resolver) => {
+      const inside = n => n.range[0] >= exec.range[0] && n.range[1] <= exec.range[1];
+      const fnsOf = site => {
+        const fns = [];
+        for (let n = site; n && n !== exec; n = n.parent) if (FNS.has(n.type)) fns.push(n);
+        return fns;
       };
-      let found = false;
-      const walk = (n, fns) => {
-        if (found || !n || typeof n.type !== "string") return;
-        if (FNS.has(n.type)) {
-          if (redeclares(n)) return;
-          fns = [...fns, n];
-        }
-        const p = n.parent;
-        if (n.type === "Identifier" && n.name === name &&
-            !(p.type === "MemberExpression" && p.property === n && !p.computed) &&
-            !(p.type === "Property" && p.key === n && !p.computed && !p.shorthand) &&
-            !(p.type === "VariableDeclarator" && p.id === n)) {
-          // `r.bind(...)` stands for the resolver
-          const bound = p.type === "MemberExpression" && p.object === n && !p.computed && p.property.name === "bind" &&
-            p.parent.type === "CallExpression" && p.parent.callee === p;
-          const e = bound ? p.parent : n;
-          const q = e.parent;
-          if (!bound && p.type === "MemberExpression") return;
-          if (fns.some(isTimerCb) || (isTimer(q) && q.arguments[0] === e)) return;
-          const stored = q.type === "VariableDeclarator" && q.init === e;
-          const called = q.type === "CallExpression" && q.callee === e;
-          found = given(e) || stored || (called && fns.some(f => given(f)));
-          return;
-        }
-        for (const k of keys[n.type] ?? []) {
-          for (const c of [].concat(n[k] ?? [])) walk(c, fns);
-        }
+      const none = () => ({ timer: false, given: false });
+      const merge = (out, x) => { out.timer ||= x.timer; out.given ||= x.given; };
+      const stack = new Set();
+      const memo = new Map();
+
+      // A variable stands for the value it holds: follow every read of it.
+      const follow = v => {
+        const out = none();
+        if (!v || stack.has(v)) return out;
+        stack.add(v);
+        for (const ref of v.references) if (!ref.init && !ref.isWriteOnly()) merge(out, trace(ref.identifier));
+        stack.delete(v);
+        return out;
       };
-      walk(exec.body, []);
-      return found;
+      const declared = (node, pick) => src.getDeclaredVariables(node).find(pick);
+      // A function runs on a timer or is given away; its calls count the same way.
+      const fnFlow = f => {
+        if (memo.has(f)) return memo.get(f) ?? none();
+        memo.set(f, null);
+        const r = f.type === "FunctionDeclaration" ? follow(declared(f, v => v.defs.some(d => d.type === "FunctionName"))) : trace(f);
+        memo.set(f, r);
+        return r;
+      };
+
+      // How is the value of expression `e` consumed?
+      const trace = e => {
+        const out = none();
+        const hit = (kind, site) => {
+          const fns = fnsOf(site);
+          if (kind === "timer" || fns.some(f => fnFlow(f).timer)) out.timer = true;
+          else if (kind === "given" || fns.some(f => fnFlow(f).given)) out.given = true;
+        };
+        let p = e.parent;
+        // `r.bind(...)` stands for the resolver
+        if (p.type === "MemberExpression" && p.object === e && !p.computed && p.property.name === "bind" &&
+            p.parent.type === "CallExpression" && p.parent.callee === p) {
+          e = p.parent;
+          p = e.parent;
+        }
+        switch (p.type) {
+          case "CallExpression":
+          case "NewExpression":
+            if (p.callee === e) hit("call", p);
+            else if (isTimer(p)) { if (p.arguments[0] === e) hit("timer", p); }
+            else hit("given", p);
+            break;
+          case "AssignmentExpression": {
+            if (p.right !== e) break;
+            let v = null;
+            if (p.left.type === "Identifier") {
+              for (let s = src.getScope(p); s && !v; s = s.upper) v = s.set.get(p.left.name);
+            }
+            if (v?.defs[0] && inside(v.defs[0].name)) merge(out, follow(v));
+            else hit("given", p);
+            break;
+          }
+          case "VariableDeclarator":
+            if (p.init === e && p.id.type === "Identifier") merge(out, follow(declared(p, v => v.name === p.id.name)));
+            break;
+          case "ReturnStatement":
+            hit("given", p);
+            break;
+          case "ArrowFunctionExpression":
+            if (p.body === e) hit("given", p);
+            break;
+          case "ConditionalExpression":
+            if (p.test !== e) merge(out, trace(p));
+            break;
+          case "SequenceExpression":
+            if (p.expressions.at(-1) === e) merge(out, trace(p));
+            break;
+          case "Property":
+            if (p.value === e && p.parent.type === "ObjectExpression") merge(out, trace(p.parent));
+            break;
+          default:
+            if (PASSES.has(p.type)) merge(out, trace(p));
+        }
+        return out;
+      };
+      return follow(resolver);
     };
-    const flag = (exec, name, node) => { if (!handsOff(exec, name)) context.report({ node, message }); };
     return {
-      CallExpression(node) {
-        const anc = context.sourceCode.getAncestors(node).reverse();
-        if (isTimer(node)) {
-          const cb = node.arguments[0];
-          const name = cb?.type === "Identifier" ? cb.name
-            : cb?.type === "CallExpression" && cb.callee.type === "MemberExpression" && cb.callee.property.name === "bind" && cb.callee.object.type === "Identifier" ? cb.callee.object.name
-            : null;
-          if (name) executors(anc).filter(e => e.params[0].name === name).forEach(e => flag(e, name, node));
-          return;
-        }
-        if (node.callee.type !== "Identifier") return;
-        // a call of the resolver inside a callback that a timer receives
-        anc.forEach((fn, i) => {
-          const timerCb = FNS.has(fn.type) && fn.parent?.type === "CallExpression" && fn.parent.arguments[0] === fn && isTimer(fn.parent);
-          if (timerCb) executors(anc.slice(i)).filter(e => e.params[0].name === node.callee.name).forEach(e => flag(e, node.callee.name, fn.parent));
-        });
+      NewExpression(node) {
+        const exec = node.arguments[0];
+        if (!exec || !FNS.has(exec.type) || exec.params[0]?.type !== "Identifier") return;
+        const resolver = src.getDeclaredVariables(exec).find(v => v.defs.some(d => d.type === "Parameter" && d.name === exec.params[0]));
+        const { timer, given } = analyze(exec, resolver);
+        if (timer && !given) context.report({ node, message });
       },
     };
   },

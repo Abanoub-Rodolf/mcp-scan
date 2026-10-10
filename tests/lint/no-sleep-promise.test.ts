@@ -32,6 +32,19 @@ const SLEEPS = [
   'await new Promise(r => { [1].forEach(r => console.log(r)); setTimeout(r, 5); });',
   'await new Promise(r => { r.length; setTimeout(r, 5); });',
   'await new Promise(r => { r(); setTimeout(r, 5); });',
+  // an alias is a handoff only when the alias itself is given away
+  'await new Promise(r => { const a = r; setTimeout(r, 5); });',
+  'await new Promise(r => { const done = r; void done; setTimeout(r, 5); });',
+  'await new Promise(r => { const f = r.bind(null); setTimeout(f, 5); });',
+  'await new Promise(r => { let f; f = r.bind(null); setTimeout(f, 5); });',
+  'await new Promise(r => { const a = r; setTimeout(a, 5); });',
+  'await new Promise(r => { const a = r; const b = a; setTimeout(b, 5); });',
+  'await new Promise(r => { const rec = { resolve: r }; setTimeout(r, 5); void rec; });',
+  // a shadowing binding is a different variable, whatever it is used for
+  'await new Promise(r => { function h(r) { use(r); } h(1); setTimeout(r, 5); });',
+  'await new Promise(r => { try { go(); } catch (r) { use(r); } setTimeout(r, 5); });',
+  'await new Promise(r => { function keep(r) { return r; } keep(null); setTimeout(r, 5); });',
+  'await new Promise(r => { { let r = 1; use(r); } setTimeout(r, 5); });',
 ];
 
 const IMPORTS = [
@@ -60,6 +73,18 @@ const ALLOWED = [
   // a listener that calls it, given away
   "await new Promise(r => { ee.once('x', () => { r(); }); setTimeout(() => r(), 5); });",
   "await new Promise(r => { handlers.x = () => r(); setTimeout(r, 5); });",
+  // aliases that are given away
+  "await new Promise(r => { const a = r; ee.on('x', a); setTimeout(r, 5); });",
+  "await new Promise(r => { const a = r.bind(null); ee.once('x', a); setTimeout(a, 5); });",
+  "await new Promise(r => { const a = r; const b = a; handlers.push(b); setTimeout(r, 5); });",
+  "await new Promise(r => { let f; f = r; ee.on('x', f); setTimeout(r, 5); });",
+  // the resolver sits in an object that is given
+  "await new Promise(r => { const t = setTimeout(() => r(), 5); pending.set(1, { resolve: r, timer: t }); });",
+  "await new Promise(r => { const rec = { resolve: r }; pending.set(1, rec); setTimeout(r, 5); });",
+  "await new Promise(r => { handlers.push([r]); setTimeout(r, 5); });",
+  // a named handler given to a listener
+  "await new Promise(r => { const h = () => r(); ee.on('x', h); setTimeout(r, 5); });",
+  "await new Promise(r => { function h() { r(); } ee.on('x', h); setTimeout(r, 5); });",
   // not a promise executor, or a plain timer
   "const t = setTimeout(() => {}, 5); clearTimeout(t);",
   "await new Promise(r => { r(1); });",
