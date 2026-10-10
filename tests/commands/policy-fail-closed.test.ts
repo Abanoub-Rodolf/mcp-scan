@@ -100,6 +100,13 @@ describe('CLI fails closed on an unusable policy', () => {
     expect(res.stdout).toBe('');
   }, 30000);
 
+  it.each(['list', 'show', 'validate'])('policy %s on a dangling symlink fails instead of reporting no policy', async (action) => {
+    fs.symlinkSync(path.join(dir, 'gone.yml'), path.join(dir, 'p.yml'));
+    const res = await execa('node', [CLI, 'policy', action, 'p.yml'], { cwd: dir, reject: false, stdin: 'ignore', env: { HOME: home } });
+    expect(res.exitCode).toBe(1);
+    expect(res.stdout).not.toMatch(/No policy file found/);
+  }, 30000);
+
   it('absent policy files still scan and exit 0', async () => {
     const res = await run(['scan', '--ci']);
     expect(res.exitCode).toBe(0);

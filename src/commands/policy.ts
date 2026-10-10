@@ -2,13 +2,13 @@ import { validatePolicy, loadYamlPolicy } from '../policy/engine.js';
 import chalk from 'chalk';
 import { proHint } from '../utils/pro-hint.js';
 import fs from 'fs';
-import { PolicyError } from '../utils/policy-file.js';
+import { PolicyError, policyFileExists } from '../utils/policy-file.js';
 
 // show and list take the file as a plain argument, so a missing one is a
 // message here, not the scan-time error loadYamlPolicy throws for --policy.
 function loadForDisplay(file: string) {
     try {
-        return fs.existsSync(file) ? loadYamlPolicy(file) : null;
+        return policyFileExists(file) ? loadYamlPolicy(file) : null;
     } catch (e) {
         if (!(e instanceof PolicyError)) throw e;
         console.error(chalk.red(`Error: ${e.message}`));

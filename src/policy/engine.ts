@@ -119,7 +119,7 @@ export function loadYamlPolicy(customPath?: string): SecurityPolicy | null {
 }
 
 export function validatePolicy(policyPath: string): boolean {
-  if (!fs.existsSync(policyPath)) {
+  if (!policyFileExists(policyPath)) {
       console.error(chalk.red(`Policy file not found: ${policyPath}`));
       return false;
   }
