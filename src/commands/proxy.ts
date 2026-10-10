@@ -42,6 +42,8 @@ export const owedBytes = (s: any): number => {
 
 const isJson = (text: string) => { try { JSON.parse(text); return true; } catch (_e) { return false; } };
 
+const UNREACHABLE = 'Internal error: server is no longer reachable';
+
 export class JsonRpcInterceptor extends Transform {
   private buffer: string = '';
   // A multibyte character can straddle two chunks; decoding each chunk on
@@ -54,6 +56,11 @@ export class JsonRpcInterceptor extends Transform {
   private replyToSender?: (line: string) => void;
   private refusing = false;
   private discarding = false;
+  // One entry per line pushed, in order: the requests it carries, with their
+  // ids as the sender wrote them (masking may have changed the pushed copy).
+  // Kept only for a consumer that reports back through settled(), or it grows forever.
+  private inFlight: { batch: boolean; requests: { id: string | number }[] }[] = [];
+  private tracking = false;
 
   constructor(direction: string, logStream: fs.WriteStream | null, privacyOptions?: PrivacyOptions, dashboardCallback?: (dir: string, msg: string, pii: boolean) => void, replyToSender?: (line: string) => void) {
     super();
@@ -83,6 +90,35 @@ export class JsonRpcInterceptor extends Transform {
     this.resume(); // nothing is pushed any more, but keep the buffers moving
   }
 
+  // The consumer takes the entries for each chunk when it writes it, in push
+  // order, and reports the write's outcome for exactly those. Every request in
+  // a chunk that never reached the destination is answered like a refused one,
+  // so a burst sent just before the pipe broke does not leave its senders
+  // waiting. Binding at write time means the outcome callbacks may fire in any
+  // order.
+  trackDelivery() {
+    this.tracking = true;
+  }
+
+  claim(chunk: Buffer) {
+    // every pushed line ends in exactly one newline, and 0x0a never occurs inside a UTF-8 sequence
+    let n = 0;
+    for (let i = chunk.indexOf(10); i !== -1; i = chunk.indexOf(10, i + 1)) n++;
+    return this.inFlight.splice(0, n);
+  }
+
+  settled(entries: { batch: boolean; requests: { id: string | number }[] }[], err?: Error | null) {
+    if (!err || !this.replyToSender) return;
+    for (const { batch, requests } of entries) {
+      if (requests.length > 0) this.replyToSender(this.errorLines(requests, batch, UNREACHABLE));
+    }
+  }
+
+  private send(line: string, ids = { batch: false, requests: [] as { id: string | number }[] }) {
+    if (this.tracking) this.inFlight.push(ids);
+    this.push(line + '\n');
+  }
+
   // Called when we stop waiting. Whatever is in the line buffer, and any
   // input still queued behind it for a stalled consumer (`unread` adds bytes
   // the caller knows are waiting upstream), may be the front or back half of
@@ -110,19 +146,20 @@ export class JsonRpcInterceptor extends Transform {
     try {
       json = JSON.parse(line);
     } catch (_e) {
+      if (this.refusing) return; // nobody to answer, and nowhere to send it
       // Not JSON: forward it, but never put the raw line in the
       // log or dashboard. It may hold secrets the string detectors miss.
       const note = `<unparsed line, ${line.length} chars, not logged>`;
       if (this.logStream) this.logStream.write(`[${this.direction} RAW] ${note}\n`);
       if (this.dashboardCallback) this.dashboardCallback(this.direction + ' RAW', note, false);
       // With masking on, an unparsed line gets the string detectors too.
-      this.push((this.privacyOptions ? maskString(line, this.privacyOptions) : line) + '\n');
+      this.send(this.privacyOptions ? maskString(line, this.privacyOptions) : line);
       return;
     }
 
     if (this.refusing) {
       const { batch, requests } = this.snapshotIds(json);
-      if (requests.length > 0 && this.replyToSender) this.replyToSender(this.errorLines(requests, batch, 'Internal error: server is no longer reachable'));
+      if (requests.length > 0 && this.replyToSender) this.replyToSender(this.errorLines(requests, batch, UNREACHABLE));
       return;
     }
 
@@ -132,7 +169,7 @@ export class JsonRpcInterceptor extends Transform {
     if (!this.privacyOptions) {
       if (this.logStream) this.logStream.write(`[${this.direction}] ${line}\n`);
       if (this.dashboardCallback) this.dashboardCallback(this.direction, line, false);
-      this.push(line + '\n');
+      this.send(line, this.snapshotIds(json));
       return;
     }
 
@@ -140,10 +177,11 @@ export class JsonRpcInterceptor extends Transform {
     // enabled, the raw JSON-RPC payload (which can contain secrets and
     // PII) must never be logged or forwarded.
     let piiMasked = false;
+    // maskPii edits in place and can throw halfway, so take the ids first:
+    // the error reply must carry the id exactly as the sender wrote it.
+    const ids = this.snapshotIds(json);
     if (this.privacyOptions) {
-      // maskPii edits in place and can throw halfway, so take the ids first:
-      // the error reply must carry the id exactly as the sender wrote it.
-      const dropped = this.snapshotIds(json);
+      const dropped = ids;
       try {
         const originalStr = JSON.stringify(json);
         json = maskPii(json, this.privacyOptions);
@@ -163,7 +201,7 @@ export class JsonRpcInterceptor extends Transform {
     if (this.logStream) this.logStream.write(`[${this.direction}] ${finalMsg}\n`);
     if (this.dashboardCallback) this.dashboardCallback(this.direction, finalMsg, piiMasked);
 
-    this.push(finalMsg + '\n');
+    this.send(finalMsg, ids);
   }
 
   private snapshotIds(json: unknown) {
@@ -190,7 +228,7 @@ export class JsonRpcInterceptor extends Transform {
   private answerDropped({ batch, requests, responses }: ReturnType<JsonRpcInterceptor['snapshotIds']>) {
     const errors = (list: { id: string | number }[]) => this.errorLines(list, batch, 'Internal error: message not forwarded');
     if (requests.length > 0 && this.replyToSender) this.replyToSender(errors(requests));
-    if (responses.length > 0) this.push(errors(responses));
+    if (responses.length > 0) this.send(errors(responses).slice(0, -1));
     if ((requests.length === 0 || !this.replyToSender) && responses.length === 0) {
       warnStderr(`dropped a ${this.direction} message: privacy masking failed`);
     }
@@ -359,7 +397,19 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   // A closed stderr must not turn the warning itself into a crash.
   process.stderr.on('error', () => {});
 
-  process.stdin.pipe(clientInterceptor).pipe(child.stdin);
+  // Not pipe(): each write's outcome is reported back, so requests that were
+  // already on their way when the server closed its stdin still get answered.
+  clientInterceptor.trackDelivery();
+  process.stdin.pipe(clientInterceptor);
+  clientInterceptor.on('data', (chunk: Buffer) => {
+    const sent = clientInterceptor.claim(chunk);
+    const ok = child.stdin.write(chunk, err => clientInterceptor.settled(sent, err));
+    if (!ok && !child.stdin.destroyed) {
+      clientInterceptor.pause();
+      child.stdin.once('drain', () => clientInterceptor.resume());
+    }
+  });
+  clientInterceptor.on('end', () => child.stdin.end());
   child.stdout.pipe(serverInterceptor).pipe(process.stdout);
 
   // The server's last output can still be in the pipe when 'exit' fires, so
