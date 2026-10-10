@@ -161,6 +161,9 @@ describe('policy loading fails closed', () => {
       ['an empty string match value', rule('    match:\n      finding_id: ""\n'), /match\.finding_id/],
       ['an empty string in a match list', rule('    match:\n      server_name: [a, ""]\n'), /match\.server_name/],
       ['a whitespace-only match value', rule('    match:\n      category: "  "\n'), /match\.category/],
+      ['a typo in a rule key (matcher)', 'version: 1\nrules:\n  - id: r\n    action: skip\n    matcher:\n      finding_id: x\n', /unknown key 'matcher'/],
+      ['a typo in a rule key (scaner)', 'version: 1\nrules:\n  - id: r\n    action: skip\n    scaner: data-flow\n', /unknown key 'scaner'/],
+      ['an empty scanner', 'version: 1\nrules:\n  - id: r\n    action: skip\n    scanner: ""\n', /scanner/],
       ['a match.severity that is not a severity', rule('    match:\n      severity: [critcal]\n'), /match\.severity/],
     ])('a rule with %s throws', (_n, body, re) => {
       yml(body);

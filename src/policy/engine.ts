@@ -55,6 +55,8 @@ function schemaProblem(parsed: SecurityPolicy | null): string | null {
 
 // Only keys ruleMatches reads. A key accepted here but never read makes a skip
 // rule match every finding, so findings carry no PII field and pii_types is not here.
+// Every key PolicyRule declares.
+const RULE_KEYS = ['id', 'description', 'scanner', 'action', 'severity', 'match'];
 const MATCH_KEYS = ['server_name', 'finding_id', 'severity', 'category', 'license_type'];
 // Policy files may write severities in any case (applyAction uppercases them).
 const isSeverityAnyCase = (v: unknown) => typeof v === 'string' && isSeverity(v.toUpperCase());
@@ -64,6 +66,13 @@ const SEVERITY_LIST = Object.keys(SEVERITY_ORDER).join(', ').toLowerCase();
 // never matches, or writes a severity the tally drops, and a block rule
 // quietly stops blocking. So both are rejected when the file loads.
 function ruleFieldProblem(rule: PolicyRule): string | null {
+  // A typo'd top-level key (matcher, scaner) is ignored, and a rule with no
+  // filter matches every finding.
+  const unknown = Object.keys(rule).find(k => !RULE_KEYS.includes(k));
+  if (unknown) return `unknown key '${unknown}'. Valid: ${RULE_KEYS.join(', ')}`;
+  if (rule.scanner !== undefined && (typeof rule.scanner !== 'string' || !rule.scanner.trim())) {
+    return `'scanner' must be a non-empty string`;
+  }
   if (rule.severity !== undefined && !isSeverityAnyCase(rule.severity)) {
     return `invalid severity '${rule.severity}'. Valid: ${SEVERITY_LIST}`;
   }
