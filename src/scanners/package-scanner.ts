@@ -456,6 +456,10 @@ function scanPackageOffline(packageName: string, versionSpec: string | null): Fi
         });
       }
     }
-  } catch (_error) {}
+  } catch (error) {
+    // A snapshot of an unexpected shape used to read as "no known
+    // vulnerabilities". Say the check did not finish.
+    logger.warn(`Offline CVE check for '${packageName}' failed (${error instanceof Error ? error.message : String(error)}); its vulnerability results may be incomplete.`);
+  }
   return findings;
 }
