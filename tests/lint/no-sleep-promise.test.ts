@@ -106,6 +106,7 @@ const SLEEPS = [
   'const { promise, resolve } = Promise.withResolvers<void>(); setTimeout(resolve, 5); await promise;',
   'const { resolve } = Promise.withResolvers(); setTimeout(() => resolve(), 5);',
   'const { resolve: done } = Promise.withResolvers(); setTimeout(done, 5);',
+  'const { resolve = noop } = Promise.withResolvers(); setTimeout(resolve, 5);',
   'const { promise, reject, resolve } = Promise.withResolvers(); setTimeout(() => resolve(1), 5); void reject; void promise;',
   'const w = Promise.withResolvers(); setTimeout(w.resolve, 5); await w.promise;',
   'const w = Promise.withResolvers(); setTimeout(() => w.resolve(), 5);',
