@@ -401,6 +401,8 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
   return findings;
 }
 
+let staleSnapshotWarned = false;
+
 function scanPackageOffline(packageName: string, versionSpec: string | null): Finding[] {
   const findings: Finding[] = [];
   try {
@@ -415,8 +417,11 @@ function scanPackageOffline(packageName: string, versionSpec: string | null): Fi
     const updatedAt = new Date(data.updatedAt ?? NaN);
     const now = new Date();
     const diffDays = (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays > 30) {
-      logger.warn(`CVE snapshot is ${Math.floor(diffDays)} days old. Run 'npm run update-cve-snapshot' to update.`);
+    if (diffDays > 30 && !staleSnapshotWarned) {
+      // Once per process, not per server. The update script only exists in
+      // a source checkout, so installed users are told to upgrade instead.
+      staleSnapshotWarned = true;
+      logger.warn(`CVE snapshot is ${Math.floor(diffDays)} days old. Upgrade mcp-scan to get a newer one.`);
     }
 
     const pkgData = data.packages?.[packageName];

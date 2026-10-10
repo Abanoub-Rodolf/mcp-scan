@@ -30,6 +30,11 @@ jobs:
     - run: npm run lint
     - run: npm run typecheck
     - run: npm run build
+    - name: Shipped action bundle is current
+      run: |
+        npm run build:action
+        git diff --exit-code action/dist
+        test -z "$(git status --porcelain action/dist)"
     - run: npm test
-    - name: Dependency audit (block on critical)
-      run: npm audit --audit-level=critical
+    - name: Dependency audit (runtime dependencies only, --omit=dev; blocks on high)
+      run: node scripts/audit-gate.mjs

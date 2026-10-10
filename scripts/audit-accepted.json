@@ -1,0 +1,9 @@
+[
+  {
+    "id": "GHSA-vfj7-8cjw-p6xm",
+    "package": "braces",
+    "reason": "Stack-exhaustion DoS on deeply nested patterns, reached through fast-glob. No fixed release is published. The globs in src/commands/report.ts and src/config/paths.ts are fixed in source, not built from scanned file content.",
+    "owner": "rodolf",
+    "reviewBy": "2026-12-09"
+  }
+]

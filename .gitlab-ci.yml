@@ -115,6 +115,24 @@ test:
   script:
     - npm test
 
+# The shipped action bundle is committed, so a source change without a
+# rebuild (or a bundle that was never added) fails the MR, not the release.
+action-bundle:
+  stage: test
+  image: node:20
+  rules: *mr-and-branch
+  needs:
+    - build
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-20"
+    paths:
+      - node_modules/
+    policy: pull
+  script:
+    - npm run build:action
+    - git diff --exit-code action/dist
+    - test -z "$(git status --porcelain action/dist)"
+
 audit:
   stage: audit
   image: node:20
@@ -124,13 +142,10 @@ audit:
     paths:
       - node_modules/
     policy: pull
-  # blessed-contrib pulls a transitive lodash that has 2 HIGH advisories
-  # (GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh). mcp-scan does not invoke
-  # _.template / _.unset / _.omit with user input, so the exploit path
-  # does not apply. Documented in SEMVER-IMPACT.md as accepted residual
-  # risk. Audit gate is set to critical so we still block on real CVEs.
+  # Fails on any high or critical runtime advisory that is not listed in
+  # scripts/audit-accepted.json (owner and review date required).
   script:
-    - npm audit --audit-level=critical
+    - node scripts/audit-gate.mjs
 
 # Manual only: scans the top MCP server packages on npm/PyPI for the
 # ThynkQ ecosystem campaign. No tags, so it lands on shared runners like

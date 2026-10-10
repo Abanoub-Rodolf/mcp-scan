@@ -1,6 +1,6 @@
 {
   "name": "mcp-scan",
-  "version": "2.0.13",
+  "version": "2.1.0",
   "description": "Open-source security scanner for Model Context Protocol (MCP) servers. Audits Claude Desktop, VS Code, Cursor, Windsurf, and 12 more AI tools for secrets, prompt injection, supply-chain risks, and 17 security checks.",
   "type": "module",
   "main": "./dist/lib.js",
@@ -27,12 +27,13 @@
   },
   "overrides": {
     "xml2js": ">=0.5.0",
-    "lodash": "4.17.21"
+    "lodash": ">=4.18.1"
   },
   "scripts": {
     "build": "tsup && node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('data',{recursive:true});cpSync('src/data/cve-snapshot.json','data/cve-snapshot.json');\"",
     "build:action": "tsup --config tsup.config.ts",
     "dev": "tsup --watch",
+    "pretest": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src --ext .ts",
@@ -88,7 +89,7 @@
     "fast-glob": "^3.3.3",
     "ora": "^8.0.1",
     "semver": "^7.7.4",
-    "smol-toml": "^1.6.1",
+    "smol-toml": "^1.9.1",
     "uuid": "^13.0.0",
     "yaml": "^2.8.3",
     "zod": "^3.23.8"

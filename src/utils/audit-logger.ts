@@ -29,6 +29,10 @@ export function logScan(report: ScanReport) {
       }
     }
 
+    // Fingerprints first, so the entry can say whether this scan left a
+    // signed baseline behind. A later unsigned store is then not an upgrade.
+    const baselineSigned = updateFingerprints(report.results);
+
     const logEntry = {
       timestamp: new Date().toISOString(),
       user: os.userInfo().username,
@@ -44,61 +48,312 @@ export function logScan(report: ScanReport) {
         info: report.infoCount
       },
       clients: [...new Set(report.results.map(r => r.toolName))],
-      servers: report.results.map(r => r.serverName)
+      servers: report.results.map(r => r.serverName),
+      baselineSigned
     };
 
     fs.appendFileSync(logFile, JSON.stringify(logEntry) + '\n', 'utf8');
-    
-    // Update fingerprints
-    updateFingerprints(report.results);
   } catch (_error) {}
+}
+
+// Bumped when the fingerprint recipe changes, so an old store is rebuilt
+// quietly instead of flagging every server once.
+const SCHEMA_KEY = '__schema';
+const SCHEMA = '2';
+// Only registry values are stored. Entries other versions wrote under other
+// sources (e.g. #resolved:snapshot) are left in place and never read.
+const resolvedKey = (key: string) => `${key}#resolved:registry`;
+
+// The registry's latest for a server whose spec has no version part (or
+// says `latest`), where latest really is what runs. Not tracked: any other
+// spec (an exact pin, a range, a tag), because the spec is part of the
+// fingerprint, and a range or tag resolves to something other than latest
+// (^1.0.0 stays in 1.x when 2.0.0 ships); and the bundled offline snapshot,
+// whose version moves whenever mcp-scan itself is upgraded. metadata.version
+// is never what the config resolves to.
+function trackedLatest(result: ServerScanResult): string | undefined {
+  const { packageName, version, versionSource } = result.metadata ?? {};
+  if (!version || versionSource !== 'registry') return undefined;
+  const at = packageName?.lastIndexOf('@') ?? -1;
+  if (at > 0 && packageName!.slice(at + 1) !== 'latest') return undefined;
+  return version;
+}
+
+// The HMAC lives inside the store as one more string entry, so the file
+// stays a flat map and the signature is replaced in the same atomic write.
+const SIG_KEY = '__sig';
+
+type Store =
+  | { status: 'missing'; baselineExisted: boolean }
+  | { status: 'ok' | 'unsigned' | 'legacy'; data: Record<string, string> }
+  | { status: 'bad'; reason: string; tampered?: boolean };
+
+const tampered = (reason: string): Store => ({ status: 'bad', reason, tampered: true });
+
+// What mcp-scan <= 2.0.13 wrote: "tool:server" -> sha256 hex, nothing else.
+// Only a file that matches this exactly is treated as a store to upgrade;
+// a store missing its schema marker for any other reason is suspect.
+// Server names are free text ('my#srv' is legal), so the key test is loose and
+// the names the new format reserves are rejected by name instead.
+const RESOLVED_SUFFIX = /#resolved(:[a-z]+)?$/;
+function isLegacyShape(data: Record<string, string>): boolean {
+  const entries = Object.entries(data);
+  return entries.length > 0
+    && entries.every(([k, v]) => /^[^:]+:.+$/.test(k) && k !== SCHEMA_KEY && k !== SIG_KEY
+      && !RESOLVED_SUFFIX.test(k) && /^[0-9a-f]{64}$/.test(v));
+}
+
+function fingerprintFile(): string {
+  return path.join(auditDir(), 'known-servers.json');
+}
+
+// Per-install secret, kept next to but outside the store so that editing
+// the store alone cannot produce a valid signature.
+function keyFile(): string {
+  return path.join(auditDir(), 'baseline.key');
+}
+
+type Key = { status: 'missing' } | { status: 'ok'; key: Buffer } | { status: 'bad'; reason: string };
+
+function readKey(): Key {
+  try {
+    const hex = fs.readFileSync(keyFile(), 'utf8').trim();
+    if (/^[0-9a-f]{64}$/.test(hex)) return { status: 'ok', key: Buffer.from(hex, 'hex') };
+    return { status: 'bad', reason: 'malformed' };
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing' };
+    return { status: 'bad', reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+function loadOrCreateKey(): { key: Buffer; created: boolean } {
+  const existing = readKey();
+  if (existing.status === 'ok') return { key: existing.key, created: false };
+  if (existing.status === 'bad') fs.rmSync(keyFile(), { force: true });
+  fs.mkdirSync(auditDir(), { recursive: true });
+  const key = crypto.randomBytes(32);
+  try {
+    // 'wx' so two first runs at once cannot replace each other's key: the
+    // one that lands second adopts the key already on disk.
+    fs.writeFileSync(keyFile(), key.toString('hex') + '\n', { mode: 0o600, flag: 'wx' });
+    return { key, created: true };
+  } catch (e) {
+    const winner = readKey();
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST' && winner.status === 'ok') return { key: winner.key, created: false };
+    throw e;
+  }
+}
+
+// Sorted so the same entries always sign the same, whatever order the file
+// or the scan happened to build them in.
+function sign(data: Record<string, string>, key: Buffer): string {
+  const entries = Object.keys(data).filter(k => k !== SIG_KEY).sort().map(k => [k, data[k]]);
+  return crypto.createHmac('sha256', key).update(JSON.stringify(entries)).digest('hex');
+}
+
+function signatureMatches(data: Record<string, string>, key: Buffer): boolean {
+  const have = data[SIG_KEY];
+  if (typeof have !== 'string' || !/^[0-9a-f]{64}$/.test(have)) return false;
+  return crypto.timingSafeEqual(Buffer.from(have, 'hex'), Buffer.from(sign(data, key), 'hex'));
+}
+
+// Signs that this install has kept a baseline before: the key is created
+// with the first store, and the audit log is appended on every scan, so a
+// store missing next to either one was removed, not never written.
+function baselineExisted(): boolean {
+  try {
+    if (fs.existsSync(keyFile())) return true;
+    // A scan that failed to write its baseline says so; it proves nothing.
+    // Lines from before the field existed have no flag and still count.
+    const lines = fs.readFileSync(path.join(auditDir(), 'audit.log'), 'utf8').split('\n');
+    return lines.some(l => l.trim() !== '' && !l.includes('"baselineSigned":false'));
+  } catch (_e) {
+    return false;
+  }
+}
+
+// True once any scan on this install left a signed baseline. Read from the
+// audit log, which anyone with write access can edit, so it only raises the
+// bar for a script that strips the signature and the key and nothing else.
+function everSigned(): boolean {
+  try {
+    return fs.readFileSync(path.join(auditDir(), 'audit.log'), 'utf8').includes('"baselineSigned":true');
+  } catch (_e) {
+    return false;
+  }
+}
+
+function readStore(): Store {
+  const file = fingerprintFile();
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing', baselineExisted: baselineExisted() };
+    return { status: 'bad', reason: e instanceof Error ? e.message : String(e) };
+  }
+  try {
+    const data = JSON.parse(raw);
+    const valid = data !== null && typeof data === 'object' && !Array.isArray(data)
+      && Object.values(data).every(v => typeof v === 'string');
+    if (!valid) return { status: 'bad', reason: 'not a map of fingerprints' };
+    // Once this install has a key, every store it reads must carry a valid
+    // signature, including one that looks like an older format. Otherwise
+    // writing an old-format file would be a way around the check.
+    const key = readKey();
+    // A store that was signed cannot be verified without its key. A missing
+    // or damaged key is how a forged store would be slipped past us.
+    if (key.status === 'bad') return tampered(`baseline key unreadable (${key.reason})`);
+    if (key.status === 'missing' && SIG_KEY in data) return tampered('signed store but the baseline key is gone');
+    if (key.status === 'ok') {
+      if (!(SIG_KEY in data)) return tampered('signature missing');
+      if (!signatureMatches(data, key.key)) return tampered('signature does not match');
+    }
+    // No key and no signature reads as an upgrade, unless this install
+    // already signed a baseline: then someone removed both.
+    const unkeyed = (status: 'unsigned' | 'legacy'): Store =>
+      everSigned() ? tampered('baseline was signed before, but its signature and key are gone') : { status, data };
+    // <= 2.0.13 writes {} when a scan finds no servers: an old-format
+    // store with no entries, handled like any other old-format store (an
+    // INFO per server), and tampered when this install signed before.
+    if (Object.keys(data).length === 0) return unkeyed('legacy');
+    if (data[SCHEMA_KEY] === SCHEMA) return key.status === 'ok' ? { status: 'ok', data } : unkeyed('unsigned');
+    if (SCHEMA_KEY in data) return { status: 'bad', reason: `unknown schema '${data[SCHEMA_KEY]}'` };
+    return isLegacyShape(data) ? unkeyed('legacy') : { status: 'bad', reason: 'no schema marker and not the old store format' };
+  } catch (e) {
+    return { status: 'bad', reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// Move a corrupt store aside so the next scan rebuilds a baseline instead
+// of tripping on the same file forever.
+function quarantineStore() {
+  try {
+    const file = fingerprintFile();
+    fs.renameSync(file, `${file}.corrupt-${Date.now()}`);
+  } catch (_e) {}
+}
+
+// Used when the baseline cannot vouch for any server: every one gets the
+// same finding, worded for that server.
+function flagAll(results: ServerScanResult[], severity: Finding['severity'], text: (name: string) => Pick<Finding, 'description' | 'fixRecommendation'>) {
+  const out: Record<string, Finding[]> = {};
+  for (const result of results) {
+    out[`${result.toolName}:${result.serverName}`] = [{ id: 'server-mutation', severity, ...text(result.serverName) }];
+  }
+  return out;
 }
 
 export function checkFingerprints(results: ServerScanResult[]): Record<string, Finding[]> {
   const mutationFindings: Record<string, Finding[]> = {};
-  try {
-    const fingerprintFile = path.join(auditDir(), 'known-servers.json');
-    if (!fs.existsSync(fingerprintFile)) return mutationFindings;
-    
-    let knownFingerprints: Record<string, string> = {};
-    try {
-      knownFingerprints = JSON.parse(fs.readFileSync(fingerprintFile, 'utf8'));
-    } catch (_e) {}
-    
-    for (const result of results) {
-      const key = `${result.toolName}:${result.serverName}`;
-      const currentFingerprint = generateFingerprint(result);
-      
-      if (knownFingerprints[key] && knownFingerprints[key] !== currentFingerprint) {
-        mutationFindings[key] = [{
-          id: 'server-mutation',
-          severity: 'MEDIUM',
-          description: `Server '${result.serverName}' configuration has changed since the last scan. This may indicate unauthorized modification.`,
-          fixRecommendation: 'Review the changes. Confirm they are intentional and not introduced by a third party.'
-        }];
-      }
+  const store = readStore();
+  // A true first run has nothing to compare against and stays quiet. A
+  // store that vanished from an install that had one is not a first run.
+  if (store.status === 'missing') {
+    if (!store.baselineExisted) return mutationFindings;
+    return flagAll(results, 'MEDIUM', name => ({
+      description: `Server '${name}' could not be checked for tampering: the fingerprint store (${fingerprintFile()}) went missing although earlier scans had recorded a baseline. Treat it as possibly deleted to hide a change.`,
+      fixRecommendation: 'A fresh baseline is built on this scan. Review the server configs by hand this once, and check what removed the file.'
+    }));
+  }
+
+  // Fail closed: if the baseline cannot be trusted, no server can be
+  // verified, so every server is reported rather than silently passed.
+  if (store.status === 'bad') {
+    quarantineStore();
+    return flagAll(results, 'MEDIUM', name => ({
+      description: `Server '${name}' could not be checked for tampering: the fingerprint store (${fingerprintFile()}) ${store.tampered ? 'failed its integrity check' : 'was unreadable or corrupt'} (${store.reason}). Treat it as possibly modified.`,
+      fixRecommendation: 'The bad file was moved aside and a fresh baseline is built on this scan. Review the server configs by hand this once, and check why the store was damaged.'
+    }));
+  }
+
+  // An old-format store cannot be compared against the new recipe, so the
+  // baseline resets. Say so, once, instead of resetting silently.
+  if (store.status === 'legacy') {
+    return flagAll(results, 'INFO', name => ({
+      description: `Server '${name}' baseline was reset: the fingerprint store used an older format, so this scan could not check it for changes.`,
+      fixRecommendation: 'No action needed. Changes are tracked from this scan on.'
+    }));
+  }
+
+  for (const result of results) {
+    const key = `${result.toolName}:${result.serverName}`;
+    const currentFingerprint = generateFingerprint(result);
+
+    if (store.data[key] && store.data[key] !== currentFingerprint) {
+      mutationFindings[key] = [{
+        id: 'server-mutation',
+        severity: 'MEDIUM',
+        description: `Server '${result.serverName}' configuration has changed since the last scan. This may indicate unauthorized modification.`,
+        fixRecommendation: 'Review the changes. Confirm they are intentional and not introduced by a third party.'
+      }];
+      continue;
     }
-  } catch (_error) {}
+
+    const latest = trackedLatest(result);
+    const before = latest && store.data[resolvedKey(key)];
+    if (store.data[key] && latest && before && before !== latest) {
+      // A new latest is how a rug-pull looks, so it is MEDIUM whatever the
+      // bump size: a compromised publish ships as a patch. Offline scans
+      // have no latest, so going offline is not a change.
+      mutationFindings[key] = [{
+        id: 'server-mutation',
+        severity: 'MEDIUM',
+        description: `Server '${result.serverName}': registry latest changed for an unpinned server (${before} -> ${latest}). The config itself is unchanged. This may indicate a package swap.`,
+        fixRecommendation: 'Pin the version in the config (pkg@x.y.z) and confirm the new release is the one you expect.'
+      }];
+    }
+  }
+
+  // The store came from a version that did not sign. Its entries were just
+  // compared as usual; this scan signs it. Said once, not per server.
+  if (store.status === 'unsigned' && results.length > 0) {
+    const first = `${results[0].toolName}:${results[0].serverName}`;
+    mutationFindings[first] = [...(mutationFindings[first] ?? []), {
+      id: 'server-mutation',
+      severity: 'INFO',
+      description: `The fingerprint store (${fingerprintFile()}) was not signed. It will be signed with a new per-install key on this scan, so later edits to it are detected.`,
+      fixRecommendation: 'No action needed. Changes are tracked and verified from this scan on.'
+    }];
+  }
   return mutationFindings;
 }
 
-function updateFingerprints(results: ServerScanResult[]) {
+function updateFingerprints(results: ServerScanResult[]): boolean {
+  let newKey = false;
   try {
-    let fingerprints: Record<string, string> = {};
-    const fingerprintFile = path.join(auditDir(), 'known-servers.json');
-    if (fs.existsSync(fingerprintFile)) {
-      fingerprints = JSON.parse(fs.readFileSync(fingerprintFile, 'utf8'));
-    }
+    const store = readStore();
+    if (store.status === 'bad') quarantineStore();
+    // A store from an older recipe is rebuilt from scratch, not merged.
+    // An unsigned current-format store keeps its entries and gets signed.
+    const fingerprints = store.status === 'ok' || store.status === 'unsigned' ? { ...store.data } : {};
+    delete fingerprints[SIG_KEY];
+    fingerprints[SCHEMA_KEY] = SCHEMA;
+    const loaded = loadOrCreateKey();
+    const hmacKey = loaded.key;
+    newKey = loaded.created;
 
     for (const result of results) {
       const key = `${result.toolName}:${result.serverName}`;
       fingerprints[key] = generateFingerprint(result);
+      const latest = trackedLatest(result);
+      if (latest) fingerprints[resolvedKey(key)] = latest;
     }
 
-    atomicWriteConfig(fingerprintFile, JSON.stringify(fingerprints, null, 2));
-  } catch (_error) {}
+    fingerprints[SIG_KEY] = sign(fingerprints, hmacKey);
+    atomicWriteConfig(fingerprintFile(), JSON.stringify(fingerprints, null, 2));
+    return true;
+  } catch (_error) {
+    // A key with no store behind it would read as a deleted baseline.
+    if (newKey) try { fs.rmSync(keyFile(), { force: true }); } catch (_e) {}
+    return false;
+  }
 }
 
+// Hash of the config the user wrote. The resolved package version is left
+// out on purpose: an unpinned npx server gets a new version whenever its
+// publisher ships, so the version is tracked separately and judged by how
+// it moved. The package name stays in: a different package is a swap.
 function generateFingerprint(result: ServerScanResult): string {
   const data = {
     command: result.connection?.command,
@@ -106,8 +361,8 @@ function generateFingerprint(result: ServerScanResult): string {
     url: result.connection?.url,
     type: result.connection?.type,
     env: result.connection?.env, // Already sorted in scan.ts
-    packageName: result.metadata?.packageName,
-    version: result.metadata?.version
+    // Same in offline and online scans. A swapped package is tampering.
+    packageName: result.metadata?.packageName
   };
   return crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
 }
