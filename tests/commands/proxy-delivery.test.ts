@@ -19,7 +19,7 @@ describe('JsonRpcInterceptor delivery tracking', () => {
     return { ic, chunks, replies };
   };
 
-  it('answers the requests in each failed write, whatever order the outcomes arrive in', () => {
+  it('claim() binds entries to their own write, so settled() can be called in any order and each failed write answers exactly its own requests', () => {
     const { ic, chunks, replies } = run(true);
     const sent = chunks.map(c => ic.claim(c));
     expect(sent.flat()).toHaveLength(3);
