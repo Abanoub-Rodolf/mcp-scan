@@ -31,6 +31,13 @@ describe('proxy policy file', () => {
     expect(res.stderr).toMatch(/not starting.*\.mcp-scan\.json/is);
   }, 30000);
 
+  it.each([['an array', '[]'], ['a string', '"x"'], ['null', 'null']])('refuses a policy file that parses but is %s', async (_n, body) => {
+    fs.writeFileSync(path.join(dir, '.mcp-scan.json'), body);
+    const res = await run();
+    expect(res.exitCode).not.toBe(0);
+    expect(res.started).toBe(false);
+  }, 30000);
+
   it('starts normally with a valid policy, or with none', async () => {
     const none = await run();
     expect(none.exitCode).toBe(0);

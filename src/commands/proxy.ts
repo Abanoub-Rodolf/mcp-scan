@@ -219,8 +219,8 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   // loadPolicy returns null for a file it could not parse. Running without
   // masking because the policy was unreadable would defeat the point of it.
   const policyFile = path.join(process.cwd(), '.mcp-scan.json');
-  if (!policy && fs.existsSync(policyFile)) {
-    logger.error(`Not starting: ${policyFile} exists but could not be parsed, so privacy settings cannot be trusted. Fix or remove it.`);
+  if (fs.existsSync(policyFile) && (!policy || typeof policy !== 'object' || Array.isArray(policy))) {
+    logger.error(`Not starting: ${policyFile} exists but is not a valid policy object, so privacy settings cannot be trusted. Fix or remove it.`);
     process.exitCode = 1;
     return;
   }
