@@ -5,6 +5,7 @@ import { parse } from 'yaml';
 import { Finding, ServerScanResult } from '../types/scan-result.js';
 import { Severity } from '../types/severity.js';
 import chalk from 'chalk';
+import { PolicyError, policyFileExists, assertRegularFile } from '../utils/policy-file.js';
 
 export interface PolicyRule {
   id: string;
@@ -28,10 +29,37 @@ export interface SecurityPolicy {
 }
 
 function readAndParsePolicy(policyPath: string): SecurityPolicy {
+  assertRegularFile(policyPath);
   const content = fs.readFileSync(policyPath, 'utf8');
   return parse(content) as SecurityPolicy;
 }
 
+const VALID_ACTIONS = ['block', 'warn', 'skip', 'override-severity'] as const;
+
+// First schema problem as the message to show, or null when the policy is sound.
+function schemaProblem(parsed: SecurityPolicy | null): string | null {
+  if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.rules)) {
+    return 'Invalid policy schema. Expected: { version: 1, rules: [...] }';
+  }
+  for (const rule of parsed.rules) {
+    if (!rule || !rule.id || !rule.action) {
+      return `Rule missing required fields (id, action): ${JSON.stringify(rule)}`;
+    }
+    if (!VALID_ACTIONS.includes(rule.action)) {
+      return `Rule '${rule.id}' has invalid action '${rule.action}'. Valid: ${VALID_ACTIONS.join(', ')}`;
+    }
+    if (rule.action === 'override-severity' && !rule.severity) {
+      return `Rule '${rule.id}' uses override-severity but is missing the 'severity' field.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * No file found: null. A file that exists but cannot be parsed or fails the
+ * schema, or an explicit path that does not exist, throws PolicyError:
+ * a scan that skips its policy must not look like a pass.
+ */
 export function loadYamlPolicy(customPath?: string): SecurityPolicy | null {
   let policyPath = customPath;
 
@@ -39,21 +67,27 @@ export function loadYamlPolicy(customPath?: string): SecurityPolicy | null {
     const cwdPath = path.join(process.cwd(), '.mcp-scan-policy.yml');
     const homePath = path.join(os.homedir(), '.mcp-scan-policy.yml');
 
-    if (fs.existsSync(cwdPath)) policyPath = cwdPath;
-    else if (fs.existsSync(homePath)) policyPath = homePath;
+    if (policyFileExists(cwdPath)) policyPath = cwdPath;
+    else if (policyFileExists(homePath)) policyPath = homePath;
   }
 
-  if (!policyPath || !fs.existsSync(policyPath)) return null;
+  if (!policyPath) return null;
+  if (!policyFileExists(policyPath)) {
+    throw new PolicyError(`Policy file not found: ${policyPath}. Fix the --policy path; the scan will not run without it.`);
+  }
 
+  let parsed: SecurityPolicy;
   try {
-    return readAndParsePolicy(policyPath);
+    parsed = readAndParsePolicy(policyPath);
   } catch (e: any) {
-    console.warn(chalk.yellow(`Warning: Failed to parse policy file at ${policyPath}: ${e.message}`));
-    return null;
+    throw new PolicyError(`Cannot use policy file ${policyPath}: ${e.message}. Fix or remove the file; the scan will not run without it.`);
   }
+  const problem = schemaProblem(parsed);
+  if (problem) {
+    throw new PolicyError(`Invalid policy file ${policyPath}: ${problem}. Fix or remove the file; the scan will not run without it.`);
+  }
+  return parsed;
 }
-
-const VALID_ACTIONS = ['block', 'warn', 'skip', 'override-severity'] as const;
 
 export function validatePolicy(policyPath: string): boolean {
   if (!fs.existsSync(policyPath)) {
@@ -62,23 +96,10 @@ export function validatePolicy(policyPath: string): boolean {
   }
   try {
     const parsed = readAndParsePolicy(policyPath);
-    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.rules)) {
-      console.error(chalk.red('Invalid policy schema. Expected: { version: 1, rules: [...] }'));
+    const problem = schemaProblem(parsed);
+    if (problem) {
+      console.error(chalk.red(problem));
       return false;
-    }
-    for (const rule of parsed.rules) {
-      if (!rule.id || !rule.action) {
-        console.error(chalk.red(`Rule missing required fields (id, action): ${JSON.stringify(rule)}`));
-        return false;
-      }
-      if (!VALID_ACTIONS.includes(rule.action)) {
-        console.error(chalk.red(`Rule '${rule.id}' has invalid action '${rule.action}'. Valid: ${VALID_ACTIONS.join(', ')}`));
-        return false;
-      }
-      if (rule.action === 'override-severity' && !rule.severity) {
-        console.error(chalk.red(`Rule '${rule.id}' uses override-severity but is missing the 'severity' field.`));
-        return false;
-      }
     }
     console.log(chalk.green(`✓ Policy file valid: ${policyPath} (${parsed.rules.length} rules)`));
     return true;
