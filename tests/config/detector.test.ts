@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import path from 'path';
 import os from 'os';
+import type fs from 'fs';
 
 // Mock fast-glob for glob paths
 vi.mock('fast-glob', () => ({
@@ -16,20 +17,21 @@ vi.mock('fast-glob', () => ({
 }));
 
 // Mock fs to control existsSync behavior for tests
-const fsMock = {
-  existsSync: vi.fn((p: string) => {
+const fsMock: Pick<typeof fs, 'existsSync'> = {
+  existsSync: vi.fn((p: fs.PathLike) => {
+    const s = String(p);
     // Any path that starts with our mocked home or cwd should exist.
-    return p.startsWith('/mock/home') || p.startsWith('/mock/cwd');
+    return s.startsWith('/mock/home') || s.startsWith('/mock/cwd');
   }),
 };
 
 // Mock os and process for dependency injection
-const osMock = {
+const osMock: Pick<typeof os, 'homedir' | 'platform'> = {
   homedir: () => '/mock/home',
   platform: () => 'darwin',
 };
 
-const processMock = {
+const processMock: { cwd: () => string; env: NodeJS.ProcessEnv } = {
   cwd: () => '/mock/cwd',
   env: {
     APPDATA: '/mock/home/AppData/Roaming',
@@ -40,7 +42,7 @@ const processMock = {
 describe('Detector Paths', () => {
   it('should return a list of paths for different tools', async () => {
     const { getConfigPaths } = await import('../../src/config/paths.js');
-    const paths = getConfigPaths({ homedir: osMock.homedir, platform: osMock.platform, env: processMock.env as NodeJS.ProcessEnv });
+    const paths = getConfigPaths({ homedir: osMock.homedir, platform: osMock.platform, env: processMock.env });
     expect(paths).toHaveProperty('Claude Desktop');
     expect(paths).toHaveProperty('Cursor');
     expect(paths).toHaveProperty('VS Code');
@@ -56,13 +58,13 @@ describe('Detector Paths', () => {
 
   it('should format paths correctly based on string type', async () => {
     const { getConfigPaths } = await import('../../src/config/paths.js');
-    const paths = getConfigPaths({ homedir: osMock.homedir, platform: osMock.platform, env: processMock.env as NodeJS.ProcessEnv });
+    const paths = getConfigPaths({ homedir: osMock.homedir, platform: osMock.platform, env: processMock.env });
     expect(typeof paths['Cursor']).toBe('string');
   });
 
   it('should not detect same config path under multiple tool names', async () => {
     const { detectTools } = await import('../../src/config/detector.js');
-    const tools = await detectTools({ fs: fsMock, os: osMock as typeof os, process: processMock as typeof process });
+    const tools = await detectTools({ fs: fsMock, os: osMock, process: processMock });
     const pathCounts = new Map<string, number>();
     for (const tool of tools) {
       const resolved = path.resolve(tool.configPath);
@@ -75,7 +77,7 @@ describe('Detector Paths', () => {
 
   it('should detect newly added tool configs, including globbed and project-level', async () => {
     const { detectTools } = await import('../../src/config/detector.js');
-    const detected = await detectTools({ fs: fsMock, os: osMock as typeof os, process: processMock as typeof process });
+    const detected = await detectTools({ fs: fsMock, os: osMock, process: processMock });
     const detectedNames = detected.map(t => t.name);
 
     expect(detectedNames).toContain('Zed');

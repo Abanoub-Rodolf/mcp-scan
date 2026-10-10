@@ -3,8 +3,8 @@ import { getConfigPaths, getProjectLevelPaths, getExtensionGlobPaths } from './p
 import { DetectedTool } from '../types/config.js';
 
 interface DetectorDependencies {
-  fs: typeof import('fs');
-  os: typeof import('os');
+  fs: Pick<typeof import('fs'), 'existsSync'>;
+  os: Pick<typeof import('os'), 'homedir' | 'platform'>;
   process: {
     cwd: () => string;
     env: NodeJS.ProcessEnv;

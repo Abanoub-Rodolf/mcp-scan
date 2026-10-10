@@ -26,8 +26,10 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
     - run: npm ci
+    # Same commands and order as .gitlab-ci.yml (canonical). Change both.
+    - run: npm run lint
+    - run: npm run typecheck
     - run: npm run build
     - run: npm test
-    - run: npm run lint
     - name: Dependency audit (block on critical)
       run: npm audit --audit-level=critical
