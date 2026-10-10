@@ -95,7 +95,7 @@ function updateFingerprints(results: ServerScanResult[]) {
       fingerprints[key] = generateFingerprint(result);
     }
 
-    atomicWriteConfig(fingerprintFile, JSON.stringify(fingerprints, null, 2));
+    atomicWriteConfig(fingerprintFile, JSON.stringify(fingerprints, null, 2), { keepBackups: 5 });
   } catch (_error) {}
 }
 
