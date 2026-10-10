@@ -65,6 +65,7 @@ describe('custom rules fail closed', () => {
   it.each([
     ['a severity the tally would drop', { ...good, severity: 'bogus' }, /severity/],
     ['a lowercase severity', { ...good, severity: 'high' }, /severity/],
+    ['a severity that is an Object.prototype name', { ...good, severity: 'constructor' }, /severity/],
     ['an unknown target', { ...good, target: 'header' }, /target/],
     ['a regex that does not compile', { ...good, pattern: '(' }, /invalid pattern/],
     ['a pattern that is not a string', { ...good, pattern: 5 }, /pattern/],

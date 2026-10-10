@@ -4,7 +4,7 @@ import * as toml from 'smol-toml';
 import { McpConfig, ResolvedServer, McpScanPolicy, McpServerEntry } from '../types/config.js';
 import { logger } from '../utils/logger.js';
 import { PolicyError, policyFileExists, readPolicyFile } from '../utils/policy-file.js';
-import { SEVERITY_ORDER } from '../types/severity.js';
+import { SEVERITY_ORDER, isSeverity } from '../types/severity.js';
 
 /**
  * Strips JSONC comments and trailing commas with a proper string-state
@@ -172,7 +172,7 @@ function policyShapeProblem(p: unknown): string | null {
     return '"requiredEnvVarPrefix" must be a string';
   }
   if (p.maxSeverity !== undefined
-    && !(typeof p.maxSeverity === 'string' && p.maxSeverity.toUpperCase() in SEVERITY_ORDER)) {
+    && !(typeof p.maxSeverity === 'string' && isSeverity(p.maxSeverity.toUpperCase()))) {
     return `"maxSeverity" must be one of ${Object.keys(SEVERITY_ORDER).join(', ').toLowerCase()}`;
   }
   if (p.privacy !== undefined) {

@@ -2,7 +2,7 @@ import path from 'path';
 import os from 'os';
 import { parse } from 'yaml';
 import { Finding, ServerScanResult } from '../types/scan-result.js';
-import { Severity, SEVERITY_ORDER } from '../types/severity.js';
+import { Severity, SEVERITY_ORDER, isSeverity } from '../types/severity.js';
 import chalk from 'chalk';
 import { PolicyError, policyFileExists, readPolicyFile } from '../utils/policy-file.js';
 
@@ -56,14 +56,15 @@ function schemaProblem(parsed: SecurityPolicy | null): string | null {
 // Only keys ruleMatches reads. A key accepted here but never read makes a skip
 // rule match every finding, so findings carry no PII field and pii_types is not here.
 const MATCH_KEYS = ['server_name', 'finding_id', 'severity', 'category', 'license_type'];
-const isSeverity = (v: unknown) => typeof v === 'string' && v.toUpperCase() in SEVERITY_ORDER;
+// Policy files may write severities in any case (applyAction uppercases them).
+const isSeverityAnyCase = (v: unknown) => typeof v === 'string' && isSeverity(v.toUpperCase());
 const SEVERITY_LIST = Object.keys(SEVERITY_ORDER).join(', ').toLowerCase();
 
 // An unknown match key or severity does not error at scan time: the rule just
 // never matches, or writes a severity the tally drops, and a block rule
 // quietly stops blocking. So both are rejected when the file loads.
 function ruleFieldProblem(rule: PolicyRule): string | null {
-  if (rule.severity !== undefined && !isSeverity(rule.severity)) {
+  if (rule.severity !== undefined && !isSeverityAnyCase(rule.severity)) {
     return `invalid severity '${rule.severity}'. Valid: ${SEVERITY_LIST}`;
   }
   if (rule.match === undefined) return null;
@@ -75,7 +76,7 @@ function ruleFieldProblem(rule: PolicyRule): string | null {
     if (values.length === 0 || !values.every(v => typeof v === 'string')) {
       return `match.${key} must be a string or a non-empty list of strings`;
     }
-    if (key === 'severity' && !values.every(isSeverity)) {
+    if (key === 'severity' && !values.every(isSeverityAnyCase)) {
       return `match.severity has an invalid severity. Valid: ${SEVERITY_LIST}`;
     }
   }

@@ -7,7 +7,7 @@ import { Finding } from '../types/scan-result.js';
 import { logger } from './logger.js';
 import { auditDir } from './audit-logger.js';
 import { PolicyError, policyFileExists, readPolicyFile } from './policy-file.js';
-import { SEVERITY_ORDER } from '../types/severity.js';
+import { SEVERITY_ORDER, isSeverity } from '../types/severity.js';
 
 function rulesDir(): string {
   return path.join(auditDir(), 'rules');
@@ -20,7 +20,7 @@ const RULE_TARGETS = ['env', 'args', 'command', 'url', 'name'];
 function ruleProblem(r: any): string | null {
   if (typeof r !== 'object' || r === null || Array.isArray(r)) return 'expected an object';
   if (typeof r.id !== 'string' || !r.id) return `'id' must be a non-empty string`;
-  if (!(r.severity in SEVERITY_ORDER)) return `rule '${r.id}': 'severity' must be one of ${Object.keys(SEVERITY_ORDER).join(', ')}`;
+  if (!isSeverity(r.severity)) return `rule '${r.id}': 'severity' must be one of ${Object.keys(SEVERITY_ORDER).join(', ')}`;
   if (!RULE_TARGETS.includes(r.target)) return `rule '${r.id}': 'target' must be one of ${RULE_TARGETS.join(', ')}`;
   if (typeof r.pattern !== 'string') return `rule '${r.id}': 'pattern' must be a string`;
   try {
