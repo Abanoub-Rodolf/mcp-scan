@@ -40,6 +40,10 @@ const SLEEPS = [
   'await new Promise(r => { const a = r; setTimeout(a, 5); });',
   'await new Promise(r => { const a = r; const b = a; setTimeout(b, 5); });',
   'await new Promise(r => { const rec = { resolve: r }; setTimeout(r, 5); void rec; });',
+  // a guard whose timer resolves is a sleep unless something else gets the resolver
+  'await new Promise((r, j) => { setTimeout(() => r(1), 5); void j; });',
+  'await new Promise((r, j) => { setTimeout(() => { if (x) j(new Error("d")); else r(1); }, 5); });',
+  'await new Promise((r, j) => { const t = setTimeout(() => r("none"), 5); clearTimeout(t); void j; });',
   // the timer reaches the resolver through a helper or a branch
   'await new Promise(r => { setTimeout(() => process.nextTick(r), 5); });',
   'await new Promise(r => { setTimeout(() => done(r), 5); });',
@@ -71,6 +75,12 @@ const ALLOWED = [
   "await new Promise(r => { server.on('x', r); setTimeout(() => { throw new Error('deadline'); }, 5000); });",
   "await new Promise((r, j) => { server.on('x', r); setTimeout(() => j(new Error('deadline')), 5000); });",
   "await new Promise(r => { setTimeout(() => { throw new Error('d'); }, 5); setTimeout(() => console.log('hi'), 5); r(1); });",
+  // deadline guards on their own: the timer only throws or rejects, and nothing
+  // else gets the resolver, so these cannot pass through a handoff
+  "await new Promise(r => { setTimeout(() => { throw new Error('deadline'); }, 5000); void r; });",
+  "await new Promise((r, j) => { setTimeout(() => j(new Error('deadline')), 5000); void r; });",
+  "await new Promise((r, j) => { setTimeout(j, 5000); void r; });",
+  "await new Promise((r, j) => { const t = setTimeout(() => j(new Error('deadline')), 5000); void t; void r; });",
   // resolve-style guard, resolver also handed to something else
   "await new Promise(resolve => { const t = setTimeout(() => resolve('none'), 5); onEvent(resolve); clearTimeout(t); });",
   "await new Promise(r => { server.on('x', r); setTimeout(r, 5000); });",
