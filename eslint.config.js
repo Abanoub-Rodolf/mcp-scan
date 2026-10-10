@@ -84,6 +84,7 @@ const noSleepPromise = {
           case "CallExpression":
           case "NewExpression":
             if (p.callee === e) hit("call", p);
+            // the callback, or an argument the timer passes to it (`setTimeout(go, 5, r)`)
             else if (isTimer(p)) { if (p.arguments[0] === e) hit("timer", p); }
             else if (!isConsole(p)) {
               // `setTimeout(once(r), 5)`: the call only wraps the resolver for the timer
