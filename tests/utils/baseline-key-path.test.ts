@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'node:url';
 import { runScan } from '../../src/commands/scan.js';
 import { logScan, BaselineKeyError } from '../../src/utils/audit-logger.js';
+import * as lib from '../../src/lib.js';
 import type { ScanReport } from '../../src/types/scan-result.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -102,5 +103,11 @@ describe('baseline.key that is not a regular file', () => {
     fs.writeFileSync(keyPath(), 'not a key');
     logScan(emptyReport);
     expect(fs.readFileSync(keyPath(), 'utf8').trim()).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('the library entry exports the same BaselineKeyError that runScan rejects with', async () => {
+    expect(lib.BaselineKeyError).toBe(BaselineKeyError);
+    fs.mkdirSync(keyPath());
+    await expect(lib.runScan({ config: FIXTURE, offline: true, silent: true })).rejects.toBeInstanceOf(lib.BaselineKeyError);
   });
 });
