@@ -5,6 +5,8 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
 import { runScan } from '../../src/commands/scan.js';
+import { logScan, BaselineKeyError } from '../../src/utils/audit-logger.js';
+import type { ScanReport } from '../../src/types/scan-result.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(here, '../../dist/index.js');
@@ -68,5 +70,37 @@ describe('baseline.key that is not a regular file', () => {
     const res = cli('--config', FIXTURE, '--offline', '--json');
     expect(res.status).toBe(0);
     expect(fs.statSync(keyPath()).isFile()).toBe(true);
+  });
+
+  // assertBaselineKeyUsable() runs once up front; a path swapped in after it
+  // reaches loadOrCreateKey, which must refuse rather than delete it.
+  const emptyReport: ScanReport = {
+    results: [], totalScanned: 0, criticalCount: 0, highCount: 0, mediumCount: 0,
+    lowCount: 0, infoCount: 0, totalDurationMs: 1, version: 'test',
+  };
+
+  // logScan swallows write-side errors by design (the scan already ran), so
+  // the observable contract is: the path survives and no baseline is signed.
+  const lastLine = () => JSON.parse(fs.readFileSync(path.join(home, 'audit.log'), 'utf8').trim().split('\n').pop()!);
+
+  it('logScan leaves a directory key alone and signs nothing', () => {
+    fs.mkdirSync(keyPath());
+    logScan(emptyReport);
+    expect(fs.statSync(keyPath()).isDirectory()).toBe(true);
+    expect(lastLine().baselineSigned).toBe(false);
+    expect(fs.existsSync(path.join(home, 'known-servers.json'))).toBe(false);
+  });
+
+  it.skipIf(process.platform === 'win32')('logScan does not delete a FIFO key swapped in after the up-front check', () => {
+    expect(spawnSync('mkfifo', [keyPath()]).status).toBe(0);
+    logScan(emptyReport);
+    expect(fs.lstatSync(keyPath()).isFIFO()).toBe(true);
+    expect(lastLine().baselineSigned).toBe(false);
+  });
+
+  it('a corrupt regular-file key is still replaced', () => {
+    fs.writeFileSync(keyPath(), 'not a key');
+    logScan(emptyReport);
+    expect(fs.readFileSync(keyPath(), 'utf8').trim()).toMatch(/^[0-9a-f]{64}$/);
   });
 });

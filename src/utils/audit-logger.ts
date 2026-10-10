@@ -4,7 +4,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { ScanReport, ServerScanResult, Finding } from '../types/scan-result.js';
 import { atomicWriteConfig } from '../config/writer.js';
-import { readRegularFile } from './regular-file.js';
+import { readRegularFile, NotRegularFileError } from './regular-file.js';
 
 // MCP_SCAN_HOME lets embedders and tests redirect the audit store away
 // from the real user home (the test suite sets it to a temp dir). Read at
@@ -140,7 +140,9 @@ export function assertBaselineKeyUsable(): void {
   );
 }
 
-type Key = { status: 'missing' } | { status: 'ok'; key: Buffer } | { status: 'bad'; reason: string };
+// 'notfile' is a directory, FIFO or device at the key path: never ours to
+// delete, unlike a corrupt regular file.
+type Key = { status: 'missing' } | { status: 'ok'; key: Buffer } | { status: 'bad'; reason: string } | { status: 'notfile'; reason: string };
 
 function readKey(): Key {
   try {
@@ -149,13 +151,19 @@ function readKey(): Key {
     return { status: 'bad', reason: 'malformed' };
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing' };
-    return { status: 'bad', reason: e instanceof Error ? e.message : String(e) };
+    const reason = e instanceof Error ? e.message : String(e);
+    if (e instanceof NotRegularFileError || (e as NodeJS.ErrnoException).code === 'EISDIR') return { status: 'notfile', reason };
+    return { status: 'bad', reason };
   }
 }
 
 function loadOrCreateKey(): { key: Buffer; created: boolean } {
   const existing = readKey();
   if (existing.status === 'ok') return { key: existing.key, created: false };
+  // A path swapped in after assertBaselineKeyUsable() ran: refuse, never remove.
+  if (existing.status === 'notfile') {
+    throw new BaselineKeyError(`baseline key ${keyFile()} ${existing.reason}, so the known-servers baseline cannot be signed or verified. Move or remove it, then run mcp-scan again.`);
+  }
   if (existing.status === 'bad') fs.rmSync(keyFile(), { force: true });
   fs.mkdirSync(auditDir(), { recursive: true });
   const key = crypto.randomBytes(32);
@@ -230,7 +238,7 @@ function readStore(): Store {
     const key = readKey();
     // A store that was signed cannot be verified without its key. A missing
     // or damaged key is how a forged store would be slipped past us.
-    if (key.status === 'bad') return tampered(`baseline key unreadable (${key.reason})`);
+    if (key.status === 'bad' || key.status === 'notfile') return tampered(`baseline key unreadable (${key.reason})`);
     if (key.status === 'missing' && SIG_KEY in data) return tampered('signed store but the baseline key is gone');
     if (key.status === 'ok') {
       if (!(SIG_KEY in data)) return tampered('signature missing');
