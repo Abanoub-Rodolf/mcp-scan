@@ -344,6 +344,15 @@ describe('local/no-sleep-promise and the timers/promises ban', () => {
   it('lets an unrelated module through', async () => {
     expect(await banned("await import('node:path'); require('timersx'); require('xtimers');")).toEqual([]);
   });
+  it('lets a template with a hole through, in every form', async () => {
+    const codes = [
+      'await import(`timers${x}`);',
+      'await import(`node:timers${x}`);',
+      'const m = require(`timers${x}`); void m;',
+      'const m = process.getBuiltinModule(`timers/promises${x}`); void m;',
+    ];
+    for (const code of codes) expect(await banned(code), code).toEqual([]);
+  });
   it.each(SLEEPS)('flags the sleep: %s', async code => {
     expect(await banned(code)).toContain('local/no-sleep-promise');
   });

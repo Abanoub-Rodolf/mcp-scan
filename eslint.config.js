@@ -8,8 +8,9 @@ const NO_TIMERS = ban("imports of the timers module (timers.promises is a sleep,
 // one list feeds the static-import paths and the selector regex for the dynamic forms
 const TIMERS_MODULES = ["timers", "timers/promises"].flatMap(m => [m, `node:${m}`]);
 const TIMERS_MODULE = `/^(${TIMERS_MODULES.map(m => m.replace("/", "\\/")).join("|")})$/`;
-// a module name is a string or a template without holes: 'timers' or `timers`
-const isTimersModule = path => `:matches([${path}.value=${TIMERS_MODULE}], [${path}.quasis.0.value.cooked=${TIMERS_MODULE}])`;
+// a module name is a string or a template without holes: 'timers' or `timers`.
+// A template with holes (`timers${x}`) names nothing we can read, so it is not banned.
+const isTimersModule = path => `:matches([${path}.value=${TIMERS_MODULE}], [${path}.quasis.length=1][${path}.quasis.0.value.cooked=${TIMERS_MODULE}])`;
 const TIMERS = new Set(["setTimeout", "setInterval"]);
 const GLOBALS = new Set(["globalThis", "global", "window", "self"]);
 const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression", "FunctionDeclaration"]);
