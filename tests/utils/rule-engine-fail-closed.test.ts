@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import os from 'os';
 import path from 'path';
 import { loadCustomRules } from '../../src/utils/rule-engine.js';
@@ -49,6 +50,12 @@ describe('custom rules fail closed', () => {
     fs.mkdirSync(path.join(rules, 'dir.json'));
     expect(() => loadCustomRules()).toThrow(/Cannot read custom rule file.*dir\.json/);
   });
+
+  it('a FIFO named like a rule file is rejected instead of blocking the scan', () => {
+    put('a.json', JSON.stringify([good]));
+    execSync(`mkfifo "${path.join(rules, 'pipe.json')}"`);
+    expect(() => loadCustomRules()).toThrow(/pipe\.json.*not a regular file/);
+  }, 5000);
 
   it('a rules path that is not a directory throws', () => {
     fs.writeFileSync(rules, 'x');

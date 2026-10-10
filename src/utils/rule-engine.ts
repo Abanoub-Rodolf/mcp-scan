@@ -6,7 +6,7 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { logger } from './logger.js';
 import { auditDir } from './audit-logger.js';
-import { PolicyError, policyFileExists } from './policy-file.js';
+import { PolicyError, policyFileExists, readPolicyFile } from './policy-file.js';
 import { SEVERITY_ORDER } from '../types/severity.js';
 
 function rulesDir(): string {
@@ -44,7 +44,8 @@ function readRuleFile(fullPath: string): CustomRule[] {
 
   let content: string;
   try {
-    content = fs.readFileSync(fullPath, 'utf8');
+    // fd-based and non-blocking open: a FIFO named *.json would hang a plain read.
+    content = readPolicyFile(fullPath);
   } catch (e: any) {
     throw fail(`Cannot read custom rule file ${fullPath}: ${e.message}`);
   }
