@@ -150,6 +150,9 @@ audit:
 # Manual only: scans the top MCP server packages on npm/PyPI for the
 # ThynkQ ecosystem campaign. No tags, so it lands on shared runners like
 # every other job here (this project has shared_runners_enabled).
+# Non-gating by design (manual + allow_failure): a 60-minute live-network
+# run that produces campaign data, not a check on the code in an MR. It is
+# not coverage and must never be counted as a gate.
 ecosystem-scan:
   stage: ecosystem
   image: node:20
