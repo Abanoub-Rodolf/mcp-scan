@@ -447,6 +447,21 @@ describe('signed baseline', () => {
     expect(checkFingerprints(results())['Cursor:files']?.[0]).toMatchObject({ severity: 'MEDIUM' });
   });
 
+  it('2.0.13 run against a 2.1.0-signed store makes the next scan report a signature mismatch, once', () => {
+    logScan(report(results()));
+    // what 2.0.13's updateFingerprints does (release commit 946c7c0): load the whole
+    // file, overwrite its own entries with old-recipe fingerprints, write it back
+    const store = JSON.parse(fs.readFileSync(storeFile(), 'utf8'));
+    store['Cursor:files'] = sha('2.0.13 recipe');
+    fs.writeFileSync(storeFile(), JSON.stringify(store, null, 2));
+    const f = checkFingerprints(results())['Cursor:files'];
+    expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
+    expect(f?.[0].description).toMatch(/signature does not match/);
+    expect(quarantined()).toHaveLength(1);
+    logScan(report(results()));
+    expect(checkFingerprints(results())).toEqual({});
+  });
+
   it('still compares an unsigned store while upgrading it', () => {
     writeUnsignedStore(results());
     const f = checkFingerprints(evil())['Cursor:files'];
