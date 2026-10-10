@@ -133,9 +133,18 @@ const noSleepPromise = {
       };
       return follow(resolver);
     };
+    // the executor: inline, a function declaration, or a const holding a function
+    const executor = arg => {
+      if (arg?.type !== "Identifier") return arg;
+      let v = null;
+      for (let s = src.getScope(arg); s && !v; s = s.upper) v = s.set.get(arg.name);
+      const def = v?.defs.length === 1 ? v.defs[0] : null;
+      if (def?.type === "FunctionName") return def.node;
+      return def?.type === "Variable" && def.node.id.type === "Identifier" ? def.node.init : null;
+    };
     return {
       NewExpression(node) {
-        const exec = node.arguments[0];
+        const exec = executor(node.arguments[0]);
         if (!exec || !FNS.has(exec.type) || exec.params[0]?.type !== "Identifier") return;
         const resolver = src.getDeclaredVariables(exec).find(v => v.defs.some(d => d.type === "Parameter" && d.name === exec.params[0]));
         const { timer, given } = analyze(exec, resolver);
