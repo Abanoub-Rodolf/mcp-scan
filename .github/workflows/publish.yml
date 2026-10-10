@@ -25,6 +25,10 @@ jobs:
         cache: 'npm'
     - run: npm ci
     - run: npm run build
+    - name: Shipped action bundle is current
+      run: |
+        npm run build:action
+        git diff --exit-code action/dist
     - run: npm test
     - run: npm run lint
     - run: node scripts/audit-gate.mjs

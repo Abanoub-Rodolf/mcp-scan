@@ -14,4 +14,10 @@ describe('publish workflow', () => {
       expect(body.indexOf('Tag must match')).toBeLessThan(body.indexOf('npm ci'));
     }
   });
+
+  it('fails the release when the shipped action bundle is stale', () => {
+    const test = yml.slice(yml.indexOf('  test:'), yml.indexOf('  publish:'));
+    expect(test).toContain('npm run build:action');
+    expect(test).toContain('git diff --exit-code action/dist');
+  });
 });
