@@ -17,6 +17,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - YAML policy rules are stricter: an unknown top-level rule key (`matcher`, `scaner`), an empty or whitespace-only `scanner`, and empty strings in `match` values (alone or in a list) are errors. Before, they were ignored and the rule matched every finding.
 - The policy file is opened once and its type checked on the open file, so a FIFO swapped in after the check can no longer hang the read.
 
+### Fixed
+- Every scan left a new `known-servers.json.backup-<timestamp>` in
+  `~/.mcp-scan` and nothing removed them; one real install had over 1,100.
+  Scans now keep the 5 newest. Backups the `fix` command makes of your own
+  MCP client configs are never pruned.
+
 ## [2.1.0] - 2026-10-09
 
 ### Security
