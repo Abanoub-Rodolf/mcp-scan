@@ -223,13 +223,16 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     return;
   }
 
-  const policy = loadPolicy();
-  // loadPolicy returns null for a file it could not parse. Running without
-  // masking because the policy was unreadable would defeat the point of it.
   const policyFile = path.join(process.cwd(), '.mcp-scan.json');
   // lstat, not existsSync: a dangling symlink "does not exist" to existsSync
   // but is still a policy the user put there that we failed to read.
   const policyPresent = (() => { try { fs.lstatSync(policyFile); return true; } catch (_e) { return false; } })();
+  // Decide from the file's type before reading it: a FIFO would block the
+  // read and /dev/zero never ends.
+  const policyIsFile = (() => { try { return fs.statSync(policyFile).isFile(); } catch (_e) { return false; } })();
+  const policy = !policyPresent || policyIsFile ? loadPolicy() : null;
+  // loadPolicy returns null for a file it could not parse. Running without
+  // masking because the policy was unreadable would defeat the point of it.
   if (policyPresent && (!policy || typeof policy !== 'object' || Array.isArray(policy))) {
     logger.error(`Not starting: ${policyFile} exists but is not a valid policy object, so privacy settings cannot be trusted. Fix or remove it.`);
     process.exitCode = 1;

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execa } from 'execa';
+import { execSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -44,6 +45,13 @@ describe('proxy policy file', () => {
     expect(res.exitCode).not.toBe(0);
     expect(res.started).toBe(false);
   }, 30000);
+
+  it('refuses a policy path that is not a regular file, without hanging on it', async () => {
+    execSync(`mkfifo "${path.join(dir, '.mcp-scan.json')}"`);
+    const res = await run();
+    expect(res.exitCode).not.toBe(0);
+    expect(res.started).toBe(false);
+  }, 15000);
 
   it('follows a symlink to a valid policy', async () => {
     fs.writeFileSync(path.join(dir, 'real.json'), JSON.stringify({ privacy: { maskPii: true } }));
