@@ -37,7 +37,10 @@ import { logger } from '../utils/logger.js';
 export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   const startTime = Date.now();
   
+  // Both policies load before anything is scanned or written: a broken one
+  // throws PolicyError and the scan never starts.
   const policy = loadPolicy();
+  const yamlPolicy = loadYamlPolicy(options.policy);
   const ignoreList = loadIgnoreList();
   const customRules = loadCustomRules();
   if (policy && !options.silent) {
@@ -284,7 +287,6 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   }
 
   // 18. Apply YAML Policy
-  const yamlPolicy = loadYamlPolicy(options.policy);
   if (yamlPolicy) {
     applyPolicy(report.results, yamlPolicy);
     if (!options.silent) {

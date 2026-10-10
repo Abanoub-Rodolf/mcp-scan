@@ -6,6 +6,7 @@ import os from 'os';
 import { Transform, TransformCallback } from 'stream';
 import { StringDecoder } from 'string_decoder';
 import { loadPolicy } from '../config/parser.js';
+import { PolicyError } from '../utils/policy-file.js';
 import { maskPii, maskString, PrivacyOptions } from '../utils/privacy-engine.js';
 import { reportBlessedImportError } from '../utils/dashboard-deps-hint.js';
 
@@ -232,7 +233,15 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   // Decide from the file's type before reading it: a FIFO would block the
   // read and /dev/zero never ends.
   const policyIsFile = (() => { try { return fs.statSync(policyFile).isFile(); } catch (_e) { return false; } })();
-  const policy = !policyPresent || policyIsFile ? loadPolicy() : null;
+  let policy: ReturnType<typeof loadPolicy> = null;
+  try {
+    if (!policyPresent || policyIsFile) policy = loadPolicy();
+  } catch (err) {
+    if (!(err instanceof PolicyError)) throw err;
+    logger.error(`Not starting: ${err.message}`);
+    process.exitCode = 1;
+    return;
+  }
   // loadPolicy returns null for a file it could not parse. Running without
   // masking because the policy was unreadable would defeat the point of it.
   if (policyPresent && (!policy || typeof policy !== 'object' || Array.isArray(policy))) {
