@@ -32,9 +32,12 @@ const noSleepPromise = {
   create(context) {
     const message = ban("sleep promises");
     const src = context.sourceCode;
+    const declared = (node, pick) => src.getDeclaredVariables(node).find(pick);
 
     // Where does the executor's resolver end up: on a timer, handed off, or both?
-    const analyze = (exec, resolver) => {
+    // `obj`: the variable holds a `Promise.withResolvers()` result, so only
+    // `.resolve` of it is the resolver, and the object itself going anywhere hands it off.
+    const analyze = (exec, resolver, obj = false) => {
       const inside = n => n.range[0] >= exec.range[0] && n.range[1] <= exec.range[1];
       const fnsOf = site => {
         const fns = [];
@@ -51,11 +54,15 @@ const noSleepPromise = {
         const out = none();
         if (!v || stack.has(v)) return out;
         stack.add(v);
-        for (const ref of v.references) if (!ref.isWriteOnly()) merge(out, trace(ref.identifier));
+        for (const ref of v.references) {
+          if (ref.isWriteOnly()) continue;
+          const m = ref.identifier.parent;
+          if (!obj || m.type !== "MemberExpression" || m.object !== ref.identifier) merge(out, trace(ref.identifier));
+          else if ((m.computed ? m.property.value : m.property.name) === "resolve") merge(out, trace(m));
+        }
         stack.delete(v);
         return out;
       };
-      const declared = (node, pick) => src.getDeclaredVariables(node).find(pick);
       // A function runs on a timer or is given away; its calls count the same way.
       const fnFlow = f => {
         if (memo.has(f)) return memo.get(f) ?? none();
@@ -133,6 +140,7 @@ const noSleepPromise = {
       };
       return follow(resolver);
     };
+    const scopeOf = n => { while (n.parent && !FNS.has(n.type)) n = n.parent; return n; };
     // the executor: inline, a function declaration, or a const holding a function
     const executor = arg => {
       if (arg?.type !== "Identifier") return arg;
@@ -148,6 +156,25 @@ const noSleepPromise = {
         if (!exec || !FNS.has(exec.type) || exec.params[0]?.type !== "Identifier") return;
         const resolver = src.getDeclaredVariables(exec).find(v => v.defs.some(d => d.type === "Parameter" && d.name === exec.params[0]));
         const { timer, given } = analyze(exec, resolver);
+        if (timer && !given) context.report({ node, message });
+      },
+      // `const { resolve } = Promise.withResolvers()` and `const w = Promise.withResolvers()`
+      CallExpression(node) {
+        const c = node.callee;
+        const d = node.parent;
+        if (c.type !== "MemberExpression" || c.computed || c.property.name !== "withResolvers" || d.type !== "VariableDeclarator" || d.init !== node) return;
+        let v = null;
+        let obj = false;
+        if (d.id.type === "Identifier") {
+          v = declared(d, x => x.name === d.id.name);
+          obj = true;
+        } else if (d.id.type === "ObjectPattern") {
+          const prop = d.id.properties.find(x => x.type === "Property" && !x.computed && x.key.name === "resolve");
+          const id = prop?.value.type === "AssignmentPattern" ? prop.value.left : prop?.value;
+          if (id?.type === "Identifier") v = declared(d, x => x.name === id.name);
+        }
+        if (!v) return;
+        const { timer, given } = analyze(scopeOf(d), v, obj);
         if (timer && !given) context.report({ node, message });
       },
     };
