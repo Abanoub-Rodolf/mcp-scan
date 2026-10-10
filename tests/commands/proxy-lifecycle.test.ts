@@ -54,6 +54,53 @@ describe('proxy lifecycle', () => {
     expect(alive(pid)).toBe(false);
   }, 40000);
 
+  it('answers every request in a pipelined burst that meets the broken pipe, not just the ones after it', async () => {
+    const closed = path.join(dir, 'server-closed-stdin');
+    const release = path.join(dir, 'release');
+    const server = serverFile(`
+      const fs = require('fs');
+      fs.closeSync(0);
+      fs.writeFileSync(${JSON.stringify(closed)}, '1');
+      setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}) || !fs.existsSync(${JSON.stringify(dir)})) process.exit(0); }, 20);
+      setTimeout(() => process.exit(0), 40000);`);
+    const proc = execa('node', [CLI, 'proxy', '--command', 'node', '--args', server], {
+      cwd: dir, reject: false, env: { MCP_SCAN_LOG_DIR: logDir }, stdin: 'pipe',
+    });
+    let out = '';
+    proc.stdout!.on('data', d => { out += d; });
+    proc.stdin!.on('error', () => {});
+    const stop = Date.now() + 25000;
+    const until = async (what: string, ok: () => boolean) => {
+      while (!ok()) {
+        if (Date.now() > stop) throw new Error(`timed out waiting for ${what}`);
+        await new Promise(r => setTimeout(r, 10));
+      }
+    };
+    const ids = () => out.split('\n').slice(0, -1).filter(Boolean).map(l => JSON.parse(l)).flat().map((r: any) => r.id);
+    let res;
+    try {
+      await until('the server to close its stdin', () => fs.existsSync(closed));
+      // one write: every line is forwarded before the first EPIPE comes back
+      proc.stdin!.write([
+        { jsonrpc: '2.0', id: 1, method: 'x' },
+        { jsonrpc: '2.0', method: 'notifications/ping' },
+        { jsonrpc: '2.0', id: 'two', method: 'x' },
+        [{ jsonrpc: '2.0', id: 3, method: 'x' }, { jsonrpc: '2.0', method: 'n' }],
+      ].map(m => JSON.stringify(m)).join('\n') + '\n');
+      await until('a reply to every request', () => ids().length >= 3);
+    } finally {
+      proc.stdin!.end();
+      fs.writeFileSync(release, '1');
+      res = await proc;
+    }
+    const replies = res.stdout.split('\n').filter(Boolean).map(l => JSON.parse(l));
+    expect(replies.flat().map((r: any) => r.id).sort()).toEqual([1, 3, 'two']);
+    for (const r of replies.flat()) expect(r).toMatchObject({ jsonrpc: '2.0', error: { code: -32603 } });
+    // the batch is answered as a batch
+    expect(replies.find(r => Array.isArray(r))).toEqual([expect.objectContaining({ id: 3 })]);
+    expect(res.stderr).not.toMatch(/Unhandled|node:events/);
+  }, 60000);
+
   it('answers requests that arrive after the server closed its stdin, with their own id, and ignores notifications', async () => {
     // Every step waits on an observable event instead of a sleep: how long node
     // takes to start the proxy and the server depends on the host's load.
@@ -106,7 +153,8 @@ describe('proxy lifecycle', () => {
     }
     const replies = res.stdout.split('\n').filter(Boolean).map(l => JSON.parse(l));
     const flat = replies.flat();
-    expect(flat.map((r: any) => r.id).sort()).toEqual([2, 4, 'three']);
+    // id 1 met the broken pipe on its way in, so it is answered too
+    expect(flat.map((r: any) => r.id).sort()).toEqual([1, 2, 4, 'three']);
     for (const r of flat) expect(r).toMatchObject({ jsonrpc: '2.0', error: { code: -32603 } });
     expect(Array.isArray(replies[replies.length - 1])).toBe(true);
     expect(res.stderr).not.toMatch(/Unhandled|node:events/);
