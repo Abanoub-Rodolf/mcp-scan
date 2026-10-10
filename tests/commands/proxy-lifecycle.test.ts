@@ -77,6 +77,9 @@ describe('proxy lifecycle', () => {
       }
     };
     const ids = () => out.split('\n').slice(0, -1).filter(Boolean).map(l => JSON.parse(l)).flat().map((r: any) => r.id);
+    // backstop: a hung proxy fails the test here instead of at vitest's timeout
+    const kill = setTimeout(() => proc.kill('SIGKILL'), 30000);
+    kill.unref();
     let res;
     try {
       await until('the server to close its stdin', () => fs.existsSync(closed));
@@ -92,6 +95,7 @@ describe('proxy lifecycle', () => {
       proc.stdin!.end();
       fs.writeFileSync(release, '1');
       res = await proc;
+      clearTimeout(kill);
     }
     const replies = res.stdout.split('\n').filter(Boolean).map(l => JSON.parse(l));
     expect(replies.flat().map((r: any) => r.id).sort()).toEqual([1, 3, 'two']);
