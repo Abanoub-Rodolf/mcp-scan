@@ -5,7 +5,7 @@ import { ESLint } from 'eslint';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { SPEC_CASES_ALLOWED, SPEC_CASES_BANNED } from './spec-cases';
+import { SPEC_CASES_ALLOWED, SPEC_CASES_BANNED } from './spec-cases.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const eslint = new ESLint({ cwd: REPO });
