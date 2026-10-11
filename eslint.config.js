@@ -38,7 +38,7 @@ const outer = n => {
 };
 // the name of a plain or literal key: w.resolve, w["resolve"], w[`resolve`], { resolve: r }, a[0]
 const nameOf = (computed, k) => {
-  if (!computed) return k.type === "Identifier" ? k.name : k.value;
+  if (!computed) return k.type === "Identifier" ? k.name : k.type === "PrivateIdentifier" ? `#${k.name}` : k.value;
   if (k.type === "Literal") return k.value;
   if (k.type === "TemplateLiteral" && !k.expressions.length) return k.quasis[0].value.cooked;
   return undefined;
@@ -200,7 +200,7 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 // - the resolver is run as `r['call']()` or handed over as `setTimeout(r.call, 5)`;
 // - a stored resolver (`rs.push(r)`, `rs[0] = r`) is run by a timer without a call rooted at the same
 //   container (`const [f] = rs; f()`), or sits behind `this.` or an undeclared name;
-// - `Promise.withResolvers()` is kept on a property (`this.d = Promise.withResolvers()`);
+// - a bag kept in a class field is read through an instance outside the class (`new A().d.resolve()`);
 // - the timers module is loaded through a stored `createRequire(...)` result (`const req = createRequire(u); req('timers')`);
 // - a clock busy-wait calls something (`while (Date.now() < end) { check(); }` is a poll), reads a clock the
 //   rule does not know (`process.hrtime`, `Number(new Date())`, `performance.timeOrigin`), or loops on a
@@ -256,6 +256,41 @@ const noSleepPromise = {
     const wr = makeResolver(src, (name, path, local) => !local && name === "Promise" && path.length === 1 && path[0] === "withResolvers");
     const isWR = c => (c.type === "MemberExpression" && nameOf(c.computed, c.property) === "withResolvers") || wr.isFn(c) || wr.methodOn(c, "call") || wr.methodOn(c, "apply")
       || (c.type === "CallExpression" && wr.methodOn(c.callee, "bind"));
+    // the class a `this` belongs to, and the class's own variables (a static member is read through them)
+    const classOf = n => { while (n && n.type !== "ClassBody") n = n.parent; return n?.parent; };
+    const classVars = cls => {
+      const vs = src.getDeclaredVariables(cls);
+      if (cls.type === "ClassExpression" && cls.parent.type === "VariableDeclarator" && cls.parent.id.type === "Identifier") vs.push(...src.getDeclaredVariables(cls.parent));
+      return vs;
+    };
+    // the reads of `this.a.b` anywhere in the class, as the node of the whole chain
+    const thisReads = (cls, path) => {
+      const reads = [];
+      for (const t of nodes(cls)) {
+        if (t.type !== "ThisExpression") continue;
+        let node = outer(t);
+        for (const key of path) {
+          const p = node.parent;
+          if (p.type !== "MemberExpression" || p.object !== node || String(keyOf(p.computed, p.property)) !== String(key)) { node = null; break; }
+          node = outer(p);
+        }
+        if (node && !(node.parent.type === "AssignmentExpression" && node.parent.left === node)) reads.push(node);
+      }
+      return reads;
+    };
+    // where a bag kept on a property can be read: `this.d = ...`, `o.a.d = ...`
+    const memberBag = left => {
+      const path = [];
+      let n = inner(left);
+      for (; n.type === "MemberExpression"; n = inner(n.object)) {
+        const k = keyOf(n.computed, n.property);
+        if (k === undefined) return null;
+        path.unshift(k);
+      }
+      if (n.type === "Identifier") { const v = lookup(n); return v ? { exec: scopeOf(n), roots: [[v, path]], reads: [] } : null; }
+      const cls = n.type === "ThisExpression" ? classOf(n) : null;
+      return cls ? { exec: scopeOf(cls), roots: [], reads: thisReads(cls, path) } : null;
+    };
     const timerLeaf = (name, path) => (!path.length && TIMERS.has(name)) || (path.length === 1 && GLOBALS.has(name) && TIMERS.has(path[0]));
     const { isFn: isTimerFn, methodOn } = makeResolver(src, timerLeaf, state);
     // `f.apply(this, list)` and `Reflect.apply(f, this, list)`: the function, whether it is a
@@ -301,7 +336,8 @@ const noSleepPromise = {
       const inside = n => n.range[0] >= exec.range[0] && n.range[1] <= exec.range[1];
       const fnsOf = site => {
         const fns = [];
-        for (let n = site; n && n !== exec; n = n.parent) if (FNS.has(n.type)) fns.push(n);
+        // a class method is where the class's own code lives, not a callback someone may never give away
+        for (let n = site; n && n !== exec; n = n.parent) if (FNS.has(n.type) && n.parent.type !== "MethodDefinition") fns.push(n);
         return fns;
       };
       // `if (false) ee.on('x', r)`: a branch that cannot run hands nothing off
@@ -714,19 +750,24 @@ const noSleepPromise = {
         }
         // `const { resolve } = Promise.withResolvers()`, `const w = Promise.withResolvers()`,
         // and the same assigned later: `w = Promise.withResolvers()`, `({ resolve } = ...)`;
-        // or kept in a literal (`{ d: ... }`)
+        // or kept in a literal (`{ d: ... }`), on a property (`o.d = ...`) or in a class field
         if (!isWR(c)) return;
         const top = outer(node);
         const d = top.parent;
         let id = null;
         let obj = false;
         let bag = null;
-        if (d.type === "VariableDeclarator" && d.init === top) id = d.id;
+        if (d.type === "PropertyDefinition" && d.value === top) {
+          const key = nameOf(d.computed, d.key);
+          const cls = classOf(d);
+          if (key !== undefined && cls) bag = { exec: scopeOf(cls), roots: d.static ? classVars(cls).map(v => [v, [key]]) : [], reads: thisReads(cls, [key]) };
+        } else if (d.type === "VariableDeclarator" && d.init === top) id = d.id;
         else if (d.type === "AssignmentExpression" && d.right === top && d.operator === "=") id = d.left;
         else {
           const b = boxOf(top);
           if (b) bag = { exec: scopeOf(top), roots: [[b.v, b.path]], reads: [] };
         }
+        if (id?.type === "MemberExpression") bag = memberBag(id);
         if (bag) return settle(node, analyze(bag.exec, null, true, bag));
         if (!id) return;
         let v = null;
