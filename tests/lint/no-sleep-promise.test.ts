@@ -417,6 +417,10 @@ const BYPASS_BANNED: Record<string, string[]> = {
     'const w = opts.timer ?? setTimeout; await new Promise(r => w(r, 50));',
     'const w = cond ? setTimeout : fake; await new Promise(r => w(r, 50));',
     'const g = globalThis; await new Promise(r => g.setTimeout(r, 50));',
+    // two branches read one object under two keys: the second read is no cycle
+    'const o = { a: fake, b: setTimeout }; const w = o.a ?? o.b; await new Promise(r => w(r, 50));',
+    'const o = { a: fake, b: setTimeout }; const w = cond ? o.a : o.b; await new Promise(r => w(r, 50));',
+    'const o = { a: fake, b: setTimeout }; const w = o.a || o.b || o.a; await new Promise(r => w(r, 50));',
   ],
   // withResolvers assigned later, and resolvers stored for a timer elsewhere
   c8: [
@@ -668,6 +672,7 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [9, "local/no-sleep-promise", "sleep promises", "const run = async (wait = globalThis.setTimeout) => new Promise((r) => wait(r, 50)); await run();"],
   [9, "local/no-sleep-promise", "sleep promises", "async function run({ wait = setTimeout } = {}) { await new Promise((r) => wait(r, 50)); } await run();"],
   [9, "local/no-sleep-promise", "sleep promises", "const w = setTimeout; await new Promise((r) => w(r, 50));"],
+  [9, "local/no-sleep-promise", "sleep promises", "const o = { a: fake, b: setTimeout }; const w = o.a ?? o.b; await new Promise((r) => w(r, 50));"],
   [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); setTimeout(() => d.resolve(), 50); await d.promise;"],
   [10, "local/no-sleep-promise", "sleep promises", "const { promise, resolve } = Promise.withResolvers<void>(); setTimeout(resolve, 50); await promise;"],
   [10, "local/no-sleep-promise", "sleep promises", "let d; d = Promise.withResolvers<void>(); setTimeout(d.resolve, 50); await d.promise;"],
@@ -791,6 +796,14 @@ describe('sleep rule spec table', () => {
     }
     expect(rows.length, 'a row that only this rule reports').toBeGreaterThan(0);
     expect(await specLint(rows[0], { off: id })).toEqual([]);
+  });
+  // Per-branch walking must not turn a chain of `a1 = a0 ?? a0` into 2^n steps
+  it('walks a doubling chain of aliases once', async () => {
+    const chain = Array.from({ length: 24 }, (_, i) => `const a${i + 1} = a${i} ?? a${i};`).join(' ');
+    const t0 = Date.now();
+    expect(await specLint(`const a0 = other; ${chain} await new Promise((r) => a24(r, 50));`)).toEqual([]);
+    expect(await specLint(`const a0 = setTimeout; ${chain} await new Promise((r) => a24(r, 50));`)).not.toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(3000);
   });
   // A crash inside a rule aborts the lint for every file, so the exit code is what matters here
   it.each([

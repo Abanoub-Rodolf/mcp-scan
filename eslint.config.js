@@ -140,10 +140,24 @@ const noSleepPromise = {
     // `globalThis.setTimeout`, `self["setInterval"]`, `{ wait: setTimeout }.wait`,
     // `[setTimeout][0]`, `a ?? setTimeout`, `setTimeout.bind(null)`, or a name that
     // is only ever one of those: a const, a destructured const, a parameter default.
+    // `seen` is the walk that led here, one branch at a time: `o.a ?? o.b` reads `o` twice,
+    // under two keys, and a node that merely finished earlier is no cycle. A false that no
+    // cycle cut short stays true for the file, so a chain of `a1 = a0 ?? a0` is walked once.
+    let cuts = 0;
+    const known = new Map();
     const timerAt = (e, path, seen) => {
       e = inner(e);
-      if (seen.has(e)) return false;
-      seen.add(e);
+      const key = `${e.type}${e.range}|${path}`;
+      if (known.has(key)) return known.get(key);
+      if (seen.has(key)) { cuts++; return false; }
+      seen.add(key);
+      const before = cuts;
+      const r = walk(e, path, seen);
+      seen.delete(key);
+      if (r || cuts === before) known.set(key, r);
+      return r;
+    };
+    const walk = (e, path, seen) => {
       switch (e.type) {
         case "Identifier": {
           if (!path.length && TIMERS.has(e.name)) return true;
