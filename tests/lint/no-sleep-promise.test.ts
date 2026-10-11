@@ -642,6 +642,52 @@ BYPASS_ALLOWED.c13 = [
   'const end = new Date(0).getTime(); while (new Date(1).getTime() < end) {}',
 ];
 
+// The timer reached through Reflect.apply, a helper called with .call/.apply/.bind, a resolver wrapped
+// in a literal or walked by an array method, the timers module through a comma or a cast, and a
+// script held in a const, a raw template or a concatenation
+BYPASS_BANNED.c14 = [
+  'await new Promise(r => Reflect.apply(setTimeout, globalThis, [r, 50]));',
+  'await new Promise(r => { const list = [r, 50]; Reflect.apply(setTimeout, globalThis, list); });',
+  'await new Promise(r => { const list = [r, 50]; setTimeout.apply(null, list); });',
+  "const t = (0, require)('timers'); void t;",
+  "const t = (require as any)('timers/promises'); void t;",
+  "const t = (0, process.getBuiltinModule)('node:timers'); void t;",
+  "const t = (module.require as any)('timers'); void t;",
+  "const t = (0, module.require)('timers'); void t;",
+  'function after(r: () => void) { setTimeout(r, 50); } await new Promise(r => after.call(null, r));',
+  'function after(r: () => void) { setTimeout(r, 50); } await new Promise(r => after.apply(null, [r]));',
+  'function after(r: () => void) { setTimeout(r, 50); } await new Promise(r => { after.bind(null, r)(); });',
+  'function after(r: () => void) { setTimeout(r, 50); } await new Promise(r => Reflect.apply(after, null, [r]));',
+  'function after(o: any) { setTimeout(o.f, 50); } await new Promise(r => after({ f: r }));',
+  'function after({ f }: any) { setTimeout(f, 50); } await new Promise(r => after({ f: r }));',
+  'function after({ n: { f } }: any) { setTimeout(f, 50); } await new Promise(r => after({ n: { f: r } }));',
+  'function after([f]: any) { setTimeout(f, 50); } await new Promise(r => after([r]));',
+  'const after = ({ f }: any) => setTimeout(f, 50); await new Promise(r => after({ f: r }));',
+  'await new Promise(r => { [r].forEach((f) => setTimeout(f, 50)); });',
+  'await new Promise(r => { [r].map((f) => setTimeout(f, 50)); });',
+  'await new Promise(r => { const rs = [r]; rs.forEach((f) => setTimeout(f, 50)); });',
+  'function go(f: () => void) { setTimeout(f, 50); } await new Promise(r => { [r].forEach(go); });',
+  "const js = 'setTimeout(() => {}, 50)'; await page.evaluate(js);",
+  "await page.evaluate(String.raw`new Promise((r) => setTimeout(r, 50))`);",
+  "await page.evaluate('new Promise((r) => set' + 'Timeout(r, 50))');",
+  "const head = 'new Promise((r) => '; await page.evaluate(`${head}setTimeout(r, 50))`);",
+  "await page.evaluate(['new Promise(r => ', 'setTimeout(r, 50))'].join(''));",
+  "await page.evaluate('new Promise(r => '.concat('setInterval(r, 50))'));",
+];
+BYPASS_ALLOWED.c14 = [
+  // the key the helper reads is not the one that holds the resolver
+  'function after({ f }: any) { setTimeout(f, 50); } await new Promise(r => { after({ g: r }); });',
+  // a real handoff inside the helper or the callback
+  "function after({ f }: any) { ee.on('x', f); setTimeout(f, 50); } await new Promise(r => after({ f: r }));",
+  "await new Promise(r => { [r].forEach((f) => ee.on('x', f)); setTimeout(r, 50); });",
+  "function after(r: () => void) { ee.once('x', r); } await new Promise(r => { Reflect.apply(after, null, [r]); setTimeout(r, 50); });",
+  "function after(r: () => void) { ee.once('x', r); } await new Promise(r => { after.call(null, r); setTimeout(r, 50); });",
+  // scripts that name no timer, or join an unknown into the middle of one
+  "const js = 'return 1'; await page.evaluate(js);",
+  "await page.evaluate('set' + name + 'Timeout');",
+  "await page.evaluate(String.raw`document.title`);",
+];
+
 const BYPASS_STATIC: string[] = [
   "import timers = require('node:timers');\nvoid timers;\n",
   "import timers = require('timers/promises');\nvoid timers;\n",

@@ -13,9 +13,10 @@ const TIMERS_MODULE = `/^(${TIMERS_MODULES.map(m => m.replace("/", "\\/")).join(
 const isTimersModule = path => `:matches([${path}.value=${TIMERS_MODULE}], [${path}.quasis.length=1][${path}.quasis.0.value.cooked=${TIMERS_MODULE}])`;
 // the ways to load a module by name: require, module.require, process.getBuiltinModule,
 // and the function createRequire(...) returns, called in place
-const REQUIRES = ["[callee.name='require']", "[callee.property.name='require']", "[callee.property.value='require']",
-  "[callee.property.name='getBuiltinModule']", "[callee.property.value='getBuiltinModule']",
-  "[callee.callee.name='createRequire']", "[callee.callee.property.name='createRequire']"];
+const REQUIRES = ["", ".expression", ".expressions.1", ".expressions.1.expression"].flatMap(w => [
+  `[callee${w}.name='require']`,
+  ...["require", "getBuiltinModule"].flatMap(m => [`[callee${w}.property.name='${m}']`, `[callee${w}.property.value='${m}']`]),
+  `[callee${w}.callee.name='createRequire']`, `[callee${w}.callee.property.name='createRequire']`]);
 const TIMERS = new Set(["setTimeout", "setInterval"]);
 const GLOBALS = new Set(["globalThis", "global", "window", "self"]);
 const FNS = new Set(["ArrowFunctionExpression", "FunctionExpression", "FunctionDeclaration"]);
@@ -68,6 +69,8 @@ const INERT = new Set(["length", "name", "toString", "call", "apply", "bind"]);
 const TAKES = new Set(["shift", "pop", "at"]);
 // calls on a stored-resolver container that do not run what is in it
 const BENIGN = new Set(["clear", "delete", "has"]);
+// array methods that hand each element to a callback as its first argument
+const ITER = new Set(["forEach", "map", "filter", "some", "every", "find", "findLast", "findIndex", "flatMap"]);
 // calls that subscribe the resolver to something that will run it later: the real signal of a race
 const SUBSCRIBES = new Set(["on", "once", "addListener", "prependListener", "prependOnceListener", "addEventListener", "then", "finally", "subscribe"]);
 
@@ -189,7 +192,11 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 // - the timer is `let` or reassigned (`let t = setTimeout; t(r, 5)`), or reached through a computed key
 //   the file does not spell out (`globalThis[k](r, 5)` with k from a call);
 // - a timer, a script, `Atomics.wait` or `scheduler.wait` is passed on as a value (`run(setTimeout as never)`,
-//   `run(Atomics.wait)`), or its name is built at runtime (`'set' + 'Timeout'`, a script string joined from parts);
+//   `run(Atomics.wait)`), or its name is built at runtime (`'set' + name`); a script string is read through
+//   consts, templates, `String.raw`, `+`, `.concat` and an array `.join`, and nothing past a call result,
+//   a `let` or a parameter;
+// - the resolver is wrapped in a literal that is kept in a variable first (`const o = { f: r }; after(o)`),
+//   or walked by `reduce` or a `for...of` over a literal instead of `forEach`, `map` and the like;
 // - the resolver is run as `r['call']()` or handed over as `setTimeout(r.call, 5)`;
 // - a stored resolver (`rs.push(r)`, `rs[0] = r`) is run by a timer without a call rooted at the same
 //   container (`const [f] = rs; f()`), or sits behind `this.` or an undeclared name;
@@ -216,6 +223,7 @@ const noSleepPromise = {
     const src = context.sourceCode;
     const declared = (node, pick) => src.getDeclaredVariables(node).find(pick);
     const lookup = node => lookupIn(src, node);
+    const keyOf = (computed, k) => keyIn(src, computed, k);
     // the variable at the root of `a`, `a.b[0]`, `a.get(1)()`
     const rootOf = n => {
       for (n = inner(n); n.type === "MemberExpression" || n.type === "CallExpression"; n = inner(n.type === "CallExpression" ? n.callee : n.object));
@@ -224,6 +232,18 @@ const noSleepPromise = {
     const state = { cuts: 0 };
     const timerLeaf = (name, path) => (!path.length && TIMERS.has(name)) || (path.length === 1 && GLOBALS.has(name) && TIMERS.has(path[0]));
     const { isFn: isTimerFn, methodOn } = makeResolver(src, timerLeaf, state);
+    // `f.apply(this, list)` and `Reflect.apply(f, this, list)`: the function, whether it is a
+    // timer, and which argument holds the list
+    const applyTarget = call => {
+      const c = inner(call.callee);
+      if (c.type !== "MemberExpression" || nameOf(c.computed, c.property) !== "apply") return null;
+      const o = inner(c.object);
+      if (o.type === "Identifier" && o.name === "Reflect" && !lookup(o)?.defs.length) {
+        const f = call.arguments[0] && inner(call.arguments[0]);
+        return f ? { timer: isTimerFn(f), fn: executor(f), at: 2 } : null;
+      }
+      return { timer: isTimerFn(o), fn: executor(o), at: 1 };
+    };
     // What a timer call hands the timer, as `(callback, ms, ...args)`, or null when the
     // call is no timer: `t(cb, 5)`, `t.call(this, cb, 5)`, `t.apply(this, [cb, 5])`,
     // `t.bind(this)(cb, 5)`, `(0, t)(cb, 5)`.
@@ -231,8 +251,9 @@ const noSleepPromise = {
       const c = inner(call.callee);
       if (c.type === "CallExpression" && methodOn(c.callee, "bind")) return [...c.arguments.slice(1), ...call.arguments];
       if (methodOn(c, "call")) return call.arguments.slice(1);
-      if (methodOn(c, "apply")) {
-        const list = call.arguments[1] && inner(call.arguments[1]);
+      const ap = applyTarget(call);
+      if (ap?.timer) {
+        const list = call.arguments[ap.at] && inner(call.arguments[ap.at]);
         return list?.type === "ArrayExpression" ? list.elements.filter(Boolean) : [];
       }
       return isTimerFn(c) ? call.arguments : null;
@@ -330,17 +351,27 @@ const noSleepPromise = {
         memo.set(f, r);
         return r;
       };
-      // What a helper declared in this file does with the argument it gets, or null
-      // when it is not one (imported, a method, already being analyzed).
-      const helperFlow = (call, arg) => {
-        const fn = executor(call.callee);
-        const i = call.arguments.indexOf(arg);
-        const first = fn && FNS.has(fn.type) ? fn.params[i] : null;
-        const param = first?.type === "AssignmentPattern" ? first.left : first;
-        if (param?.type !== "Identifier") return null;
+      // The identifier a parameter pattern binds to the value found `via` these keys of the argument:
+      // `({ f }) => ...` called with `{ f: r }` binds f.
+      const bindAt = (pat, via) => {
+        if (!pat) return null;
+        if (pat.type === "AssignmentPattern") return bindAt(pat.left, via);
+        if (pat.type === "Identifier") return pat;
+        if (!via.length) return null;
+        const [k, ...rest] = via;
+        if (pat.type === "ObjectPattern") {
+          for (const q of pat.properties) if (q.type === "Property" && String(keyOf(q.computed, q.key)) === String(k)) return bindAt(q.value, rest);
+        } else if (pat.type === "ArrayPattern") return bindAt(pat.elements[k], rest);
+        return null;
+      };
+      // What a helper declared in this file does with parameter `i`, or null when `fn` is not one
+      // (imported, a method, already being analyzed). `via`: where in that argument the resolver sits.
+      const helperFlow = (fn, i, via = []) => {
+        const param = fn && FNS.has(fn.type) ? bindAt(fn.params[i], via) : null;
+        if (!param) return null;
         if (busy.has(fn)) { state.cuts++; return null; }
         // one helper and one parameter answer the same for every caller, unless a recursion cut the answer short
-        const key = `${fn.range}|${i}`;
+        const key = `${fn.range}|${param.range}`;
         if (helpers.has(key)) return helpers.get(key);
         busy.add(fn);
         const before = state.cuts;
@@ -349,9 +380,17 @@ const noSleepPromise = {
         if (state.cuts === before) helpers.set(key, r);
         return r;
       };
+      // ...for a call, as `after(r)`, `after.call(null, r)`, `after.bind(null, r)`
+      const helperCall = (call, arg, via) => {
+        const c = inner(call.callee);
+        const how = c.type === "MemberExpression" ? nameOf(c.computed, c.property) : undefined;
+        const i = call.arguments.indexOf(arg);
+        if ((how === "call" || how === "bind") && i > 0) return helperFlow(executor(inner(c.object)), i - 1, via);
+        return helperFlow(executor(c), i, via);
+      };
 
       // How is the value of expression `e` consumed?
-      const trace = e => {
+      const trace = (e, via = []) => {
         const out = none();
         // `listen`: handed to a subscription. `store`: kept in the containers `roots` names, for
         // code elsewhere to run. `use`, `call`: any other read. Inside a nested function, only
@@ -385,13 +424,13 @@ const noSleepPromise = {
             const args = call ? timerArgs(p) : null;
             if (p.callee === e) hit("call", p);
             // `t.apply(null, list)` takes the whole list
-            else if (call && p.arguments[1] === e && methodOn(p.callee, "apply")) hit("timer", p);
+            else if (call && applyTarget(p)?.timer && p.arguments[applyTarget(p).at] === e) hit("timer", p);
             // the callback, or an argument the timer passes to it (`setTimeout(go, 5, r)`)
             else if (args) { if (args[0] === e || args.indexOf(e) > 1) hit("timer", p); }
             // `t.bind(null, r, 5)` keeps the arguments for later
             else if (call && methodOn(p.callee, "bind")) { const i = p.arguments.indexOf(e); if (i === 1 || i > 2) hit("timer", p); }
             else if (!isConsole(p)) {
-              const f = call ? helperFlow(p, e) : null;
+              const f = call ? helperCall(p, e, via) : null;
               const m = call && inner(p.callee);
               const name = m.type === "MemberExpression" ? nameOf(m.computed, m.property) : undefined;
               if (f) {
@@ -438,7 +477,7 @@ const noSleepPromise = {
           case "Property":
             // `{ res, rej }` stored whole: calling `.rej` on it is not running the resolver
             if (p.value === e && p.parent.type === "ObjectExpression") {
-              merge(out, except(trace(p.parent), p.parent.properties.filter(x => x !== p && x.type === "Property").map(x => nameOf(x.computed, x.key)).filter(k => k !== undefined && k !== nameOf(p.computed, p.key))));
+              merge(out, except(trace(p.parent, [nameOf(p.computed, p.key), ...via]), p.parent.properties.filter(x => x !== p && x.type === "Property").map(x => nameOf(x.computed, x.key)).filter(k => k !== undefined && k !== nameOf(p.computed, p.key))));
             }
             break;
           case "MemberExpression": {
@@ -447,15 +486,29 @@ const noSleepPromise = {
             if (p.object !== e || INERT.has(name)) break;
             if (p.parent.type !== "CallExpression" || p.parent.callee !== p) merge(out, trace(p));
             else if (TAKES.has(name)) merge(out, trace(p.parent));
+            else if (ITER.has(name)) {
+              // `[r].forEach((f) => setTimeout(f, 50))`: the callback gets each element
+              const f = helperFlow(executor(p.parent.arguments[0]), 0);
+              if (f?.timer) hit("timer", p.parent);
+              if (f?.given) hit("listen", p.parent);
+              if (f?.leaks.length) hit("store", p.parent, f.leaks);
+            }
             break;
           }
           case "ArrayExpression": {
             // `setTimeout.apply(null, [r, 5])`: the first element is the callback
             const call = p.parent;
-            if (call.type === "CallExpression" && call.arguments[1] === p && methodOn(call.callee, "apply")) {
-              const i = p.elements.indexOf(e);
-              if (i === 0 || i > 1) hit("timer", call);
-            } else merge(out, trace(p));
+            const ap = call.type === "CallExpression" ? applyTarget(call) : null;
+            const i = p.elements.indexOf(e);
+            if (ap && call.arguments[ap.at] === p) {
+              if (ap.timer) { if (i === 0 || i > 1) hit("timer", call); }
+              else {
+                const f = helperFlow(ap.fn, i, via);
+                if (f?.timer) hit("timer", call);
+                if (f?.given) hit("listen", call);
+                if (f?.leaks.length) hit("store", call, f.leaks);
+              }
+            } else merge(out, trace(p, [i, ...via]));
             break;
           }
           default:
@@ -641,13 +694,45 @@ const noFixedWait = {
     const keyOf = (computed, k) => keyIn(src, computed, k);
     const flag = (node, what) => context.report({ node, message: ban(what) });
     const waits = WAITS.map(([leaf, what]) => [makeResolver(src, leaf), what]);
-    // text of a script argument: a string, a template, or an object holding one (`{ content }`)
-    const mentionsTimer = a => {
-      if (a.type === "Literal") return typeof a.value === "string" && /set(Timeout|Interval)/.test(a.value);
-      if (a.type === "TemplateLiteral") return a.quasis.some(q => /set(Timeout|Interval)/.test(q.value.cooked ?? q.value.raw));
-      if (a.type === "ObjectExpression") return a.properties.some(x => x.type === "Property" && mentionsTimer(x.value));
-      return false;
+    // The text a script argument holds, as far as the file spells it out: a string, a template, a
+    // `String.raw` template, a `+` or `.concat` of those, a const that holds one, an array `.join`ed, an
+    // object holding one (`{ content }`). What it cannot read becomes a NUL, so two readable halves
+    // still join (`'set' + 'Timeout'`) and an unknown middle does not.
+    const textOf = (e, depth = 0) => {
+      e = inner(e);
+      const unknown = "\0";
+      if (depth > 8) return unknown;
+      const sub = x => textOf(x, depth + 1);
+      switch (e.type) {
+        case "Literal": return typeof e.value === "string" ? e.value : String(e.value);
+        case "TemplateLiteral":
+        case "TaggedTemplateExpression": {
+          const t = e.type === "TemplateLiteral" ? e : e.quasi;
+          return t.quasis.map((q, i) => (q.value.cooked ?? q.value.raw) + (i < t.expressions.length ? sub(t.expressions[i]) : "")).join("");
+        }
+        case "BinaryExpression": return e.operator === "+" ? sub(e.left) + sub(e.right) : unknown;
+        case "ConditionalExpression": return `${sub(e.consequent)}${unknown}${sub(e.alternate)}`;
+        case "LogicalExpression": return `${sub(e.left)}${unknown}${sub(e.right)}`;
+        case "ObjectExpression": return e.properties.map(x => (x.type === "Property" ? sub(x.value) : unknown)).join(unknown);
+        case "ArrayExpression": return e.elements.map(x => (x ? sub(x) : "")).join(unknown);
+        case "Identifier": {
+          const def = lookupIn(src, e)?.defs;
+          const d = def?.length === 1 && def[0].type === "Variable" && def[0].parent.kind === "const" ? def[0].node : null;
+          return d?.id.type === "Identifier" && d.init ? sub(d.init) : unknown;
+        }
+        case "CallExpression": {
+          const c = inner(e.callee);
+          const how = c.type === "MemberExpression" ? keyOf(c.computed, c.property) : undefined;
+          if (how === "concat") return sub(c.object) + e.arguments.map(sub).join("");
+          if (how === "join" && inner(c.object).type === "ArrayExpression") {
+            const sep = e.arguments[0] ? sub(e.arguments[0]) : ",";
+            return inner(c.object).elements.map(x => (x ? sub(x) : "")).join(sep);
+          }
+        }
+      }
+      return unknown;
     };
+    const mentionsTimer = a => /set(Timeout|Interval)/.test(textOf(a));
     const clock = makeResolver(src, clockLeaf);
     const isClock = n => {
       if (n.type === "NewExpression") {
