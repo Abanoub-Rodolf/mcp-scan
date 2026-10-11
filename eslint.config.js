@@ -312,8 +312,11 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 // - a resolver is walked by `reduce` or a `for...of` over a literal instead of `forEach`, `map` and the like;
 // - a stored resolver (`rs.push(r)`, `rs[0] = r`) is run by a timer without a call rooted at the same
 //   container (`const [f] = rs; f()`), or sits behind `this.` or an undeclared name;
-// - the timers module is loaded through a stored `createRequire(...)` result (`const req = createRequire(u); req('timers')`),
-//   or `module.require('timers')`;
+// - the timers module is loaded through a stored `createRequire(...)` result (`const req = createRequire(u); req('timers')`);
+// - a promise executor takes its resolver as a rest, destructured or `arguments` parameter (`(...a) => setTimeout(a[0], 50)`),
+//   or a resolver is destructured out of a literal (`const [f] = [r]`, `const { f } = { f: r }`);
+// - the Promise constructor is reached as `new Promise.prototype.constructor(...)`;
+// - a `Promise.withResolvers()` bag is made inside a `.map(() => ...)` callback or by a hand-rolled `deferred()` helper;
 // - a clock busy-wait calls something (`while (Date.now() < end) { check(); }` is a poll), or reads
 //   a clock the rule does not know (`process.hrtime()`);
 // - the race fallback, which is the one exemption kept (row 4x:race): a resolver also handed to a subscription
@@ -1059,7 +1062,8 @@ const noFixedWait = {
             return t.quasis.map((q, i) => (q.value.cooked ?? q.value.raw) + (i < t.expressions.length ? go(t.expressions[i]) : "")).join("");
           }
           case "BinaryExpression": {
-            // `a + b + c` leans to the left: read it as a list, not as a stack of calls
+            // `a + b + c` leans to the left: read it as a list, not as a stack of calls (defensive: the parser
+            // gives up on a long chain before a recursion over it would)
             if (e.operator !== "+") return unknown;
             const parts = [];
             let n = e;
