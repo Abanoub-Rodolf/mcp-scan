@@ -1081,7 +1081,10 @@ const noFixedWait = {
         const c = n.callee;
         const f = inner(c);
         if (loads(c) && heldTimers(n.arguments[0])) context.report({ node: n, message: NO_TIMERS });
-        for (const [w, what] of waits) if (w.isFn(f) || w.methodOn(f, "call") || w.methodOn(f, "apply")) flag(n, what);
+        // `Reflect.apply(Atomics.wait, null, [...])` runs its first argument
+        const viaReflect = f.type === "MemberExpression" && keyOf(f.computed, f.property) === "apply" && inner(f.object).type === "Identifier" && inner(f.object).name === "Reflect" && !lookupIn(src, inner(f.object))?.defs.length;
+        const target = viaReflect && n.arguments[0] ? inner(n.arguments[0]) : null;
+        for (const [w, what] of waits) if (w.isFn(f) || w.methodOn(f, "call") || w.methodOn(f, "apply") || (target && (w.isFn(target) || w.methodOn(target, "call") || w.methodOn(target, "apply")))) flag(n, what);
         const runner = c.type === "MemberExpression" ? keyOf(c.computed, c.property) : undefined;
         // the script is the first argument, except for `$eval(selector, script)`; later arguments are data
         const script = n.arguments[runner === "$eval" || runner === "$$eval" ? 1 : 0];
