@@ -90,7 +90,11 @@ const ITER = new Set(["forEach", "map", "filter", "some", "every", "find", "find
 // calls that subscribe the resolver to something that will run it later: the real signal of a race
 const SUBSCRIBES = new Set(["on", "once", "addListener", "prependListener", "prependOnceListener", "addEventListener", "then", "finally", "subscribe"]);
 
-const timerLeaf = (name, path) => (!path.length && TIMERS.has(name)) || (path.length === 1 && GLOBALS.has(name) && TIMERS.has(path[0]));
+// a global is also a member of itself: globalThis.window.self.setTimeout is setTimeout
+const timerLeaf = (name, path) => {
+  if (!GLOBALS.has(name)) return !path.length && TIMERS.has(name);
+  return path.length > 0 && TIMERS.has(path.at(-1)) && path.slice(0, -1).every(k => GLOBALS.has(k));
+};
 
 // The scope manager's view of a value: does `e`, read down `path`, end at a host function that
 // `leaf(name, path, local)` accepts? Follows consts, destructuring, objects, arrays, defaults,
@@ -260,8 +264,7 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 //   `h = { after: (f) => setTimeout(f, 50) }`), or a timer built in another module;
 // - a timer key or a script is held in a `let` written more than once, is built at runtime
 //   (`'set' + name`, a key from a call), or is handed to a local function as an argument (`run('setTimeout(...)')`);
-// - a timer is a `let` that is written twice (`let t = setTimeout; t(r, 5); t = other`), or the host is reached
-//   through itself (`globalThis.globalThis.setTimeout`, `window.self.setTimeout`);
+// - a timer is a `let` that is written twice (`let t = setTimeout; t(r, 5); t = other`);
 // - a timer, `Atomics.wait` or `scheduler.wait` is passed on as a plain value (`run(setTimeout)`, `run(Atomics.wait)`;
 //   behind a cast it is reported), or a page script is a call result (`const s = mk(); page.evaluate(s)`);
 // - a `Promise.withResolvers()` bag is returned from a local function (`const d = mk()`), or kept in a class

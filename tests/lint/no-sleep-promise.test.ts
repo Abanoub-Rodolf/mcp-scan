@@ -422,6 +422,11 @@ const BYPASS_BANNED: Record<string, string[]> = {
     "const { 'setTimeout': wait } = globalThis; await new Promise(r => wait(r, 50));",
     "const { ['setInterval']: wait } = globalThis; await new Promise(r => wait(r, 50));",
     'const { setTimeout: wait } = self; await new Promise(r => wait(r, 50));',
+    'const { window: { setTimeout: wait } } = globalThis; await new Promise(r => wait(r, 50));',
+    'const { window: { self: { setInterval: wait } } } = global; await new Promise(r => wait(r, 50));',
+    'const { window: w } = globalThis; await new Promise(r => w.setTimeout(r, 50));',
+    'await new Promise(r => globalThis.globalThis.setTimeout(r, 50));',
+    'await new Promise(r => window.self.setTimeout(r, 50));',
     'const { setTimeout: wait } = globalThis as any; await new Promise(r => wait(r, 50));',
     'const { setInterval: wait } = global; await new Promise(r => wait(r, 50));',
     'const o = { wait: setTimeout }; await new Promise(r => o.wait(r, 50));',
@@ -1282,7 +1287,7 @@ describe('sleep rule spec table', () => {
 // leave alone. A row is only left out of the loop while it is listed in OPEN, and the list shrinks as rows close.
 const OPEN = new Set<string>([
   '6:literal', '6:array', '6:outer',
-  '8a:nested', '8d:let-twice', '8d:let-reversed',
+  '8d:let-twice', '8d:let-reversed',
   '11b:let-twice', '11b:let-reversed',
   '12a:let-twice', '12a:let-reversed', '12a:let-append',
   'A15:default-overridden', 'A15:default-overridden-promise',
