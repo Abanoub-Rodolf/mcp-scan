@@ -778,12 +778,21 @@ describe('local/no-sleep-promise and the timers/promises ban', () => {
   it('lets an unrelated module through', async () => {
     expect(await banned("await import('node:path'); require('timersx'); require('xtimers');")).toEqual([]);
   });
-  it('lets a template with a hole through, in every form', async () => {
+  it('bans a template that starts with the module name, hole or not', async () => {
     const codes = [
       'await import(`timers${x}`);',
       'await import(`node:timers${x}`);',
       'const m = require(`timers${x}`); void m;',
       'const m = process.getBuiltinModule(`timers/promises${x}`); void m;',
+    ];
+    for (const code of codes) expect((await banned(code)).length, code).toBeGreaterThan(0);
+  });
+  it('lets a template through when the hole comes before or inside the name', async () => {
+    const codes = [
+      'await import(`${x}timers`);',
+      'await import(`timers-${x}`);',
+      'const m = require(`${x}`); void m;',
+      'const m = process.getBuiltinModule(`node:${x}`); void m;',
     ];
     for (const code of codes) expect(await banned(code), code).toEqual([]);
   });
@@ -1272,7 +1281,6 @@ describe('sleep rule spec table', () => {
 // The shared spec table, every row: a shape the rule must report (by the rule id and message it names) or must
 // leave alone. A row is only left out of the loop while it is listed in OPEN, and the list shrinks as rows close.
 const OPEN = new Set<string>([
-  '3c:hole', '3d:hole', '3e:hole', '3d:hole-const',
   '6:literal', '6:array', '6:outer',
   '8a:nested', '8d:let-twice', '8d:let-reversed',
   '11b:let-twice', '11b:let-reversed',

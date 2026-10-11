@@ -8,9 +8,9 @@ const NO_TIMERS = ban("imports of the timers module (timers.promises is a sleep,
 // one list feeds the static-import paths and the selector regex for the dynamic forms
 const TIMERS_MODULES = ["timers", "timers/promises"].flatMap(m => [m, `node:${m}`]);
 const TIMERS_MODULE = `/^(${TIMERS_MODULES.map(m => m.replace("/", "\\/")).join("|")})$/`;
-// a module name is a string or a template without holes: 'timers' or `timers`.
-// A template with holes (`timers${x}`) names nothing we can read, so it is not banned.
-const isTimersModule = path => `:matches([${path}.value=${TIMERS_MODULE}], [${path}.quasis.length=1][${path}.quasis.0.value.cooked=${TIMERS_MODULE}])`;
+// a module name is a string, or a template whose first text is the name: 'timers', `timers`, `timers${x}`.
+// A hole after the name can only make timers, timers/promises or a module that is not there.
+const isTimersModule = path => `:matches([${path}.value=${TIMERS_MODULE}], [${path}.quasis.0.value.cooked=${TIMERS_MODULE}])`;
 // the ways to load a module by name: require, module.require, process.getBuiltinModule,
 // and the function createRequire(...) returns, called in place
 const REQUIRES = ["", ".expression", ".expressions.1", ".expressions.1.expression"].flatMap(w => [
@@ -1031,7 +1031,7 @@ const noFixedWait = {
       for (let i = 0; i < 8 && a; i++) {
         a = inner(a);
         if (a.type === "Literal") return a.value;
-        if (a.type === "TemplateLiteral") return a.expressions.length ? undefined : a.quasis[0].value.cooked;
+        if (a.type === "TemplateLiteral") return a.quasis[0].value.cooked;
         a = a.type === "Identifier" ? soleInit(lookupIn(src, a)) : null;
         if (!a) return undefined;
       }

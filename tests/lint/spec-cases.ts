@@ -147,7 +147,7 @@ export const SPEC_CASES_BANNED: Array<[string, number, string, string, string]> 
   ["3c:hole", 3, "no-restricted-syntax", "imports of the timers module", "const t = require(`timers${suffix}`); void t;"],
   ["3d:hole", 3, "no-restricted-syntax", "imports of the timers module", "const t = await import(`timers${suffix}`); void t;"],
   ["3e:hole", 3, "no-restricted-syntax", "imports of the timers module", "const t = process.getBuiltinModule(`node:timers${suffix}`); void t;"],
-  ["3d:hole-const", 3, "no-restricted-syntax", "imports of the timers module", "const m = `timers${suffix}`; const t = await import(m); void t;"],
+  ["3d:hole-const", 3, "local/no-fixed-wait", "imports of the timers module", "const m = `timers${suffix}`; const t = await import(m); void t;"],
   ["3f:alias", 3, "local/no-fixed-wait", "scheduler.wait", "const s = globalThis.scheduler; await s.wait(50);"],
   ["3f:destructured-host", 3, "local/no-fixed-wait", "scheduler.wait", "const { scheduler: s } = globalThis; await s.wait(50);"],
   ["4e:host-var", 4, "local/no-sleep-promise", "sleep promises", "const g = globalThis; const { Promise: P } = g; await new P((r) => setTimeout(r, 5));"],
