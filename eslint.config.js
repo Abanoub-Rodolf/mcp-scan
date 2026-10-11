@@ -933,7 +933,7 @@ const WAITS = [
 const SCRIPT_RUNNERS = new Set(["evaluate", "evaluateHandle", "waitForFunction", "addInitScript", "$eval", "$$eval"]);
 // a clock read: `Date.now`, `performance.now`, in any of the spellings the timers have (host object,
 // quoted key, alias, destructure, comma, `?.`); `new Date()` with no argument is the current time too
-const clockLeaf = onHost((name, path, local) => !local && path.length === 1 && path[0] === "now" && (name === "Date" || name === "performance"));
+const clockLeaf = onHost((name, path, local) => !local && ((path.length === 1 && path[0] === "now" && (name === "Date" || name === "performance")) || (name === "process" && path.length === 2 && path[0] === "hrtime" && path[1] === "bigint")));
 const noFixedWait = {
   meta: { type: "problem", schema: [] },
   create(context) {
