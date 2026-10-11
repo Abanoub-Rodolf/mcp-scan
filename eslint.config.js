@@ -1101,12 +1101,18 @@ const noFixedWait = {
     const busy = node => {
       const test = node.test && inner(node.test);
       const forever = !test || (test.type === "Literal" && !!test.value);
-      const guard = ifsOf(node.body).some(x => clockTest(x.test, node.body) && (leaves(x.consequent) || (x.alternate && leaves(x.alternate))));
+      // a clock guard also ends the loop by setting a name the test reads: `while (!done) { if (Date.now() > end) done = true; }`
+      const tested = new Set(test ? [...nodes(test)].filter(x => x.type === "Identifier").map(x => lookupIn(src, x)) : []);
+      const sets = n => [...nodes(n)].some(a => a.type === "AssignmentExpression" && a.left.type === "Identifier" && tested.has(lookupIn(src, a.left)));
+      const exits = n => leaves(n) || sets(n);
+      const guard = ifsOf(node.body).some(x => clockTest(x.test, node.body) && (exits(x.consequent) || (x.alternate && exits(x.alternate))));
       // `while (t < end) { t = Date.now(); }`: the test reads a name the body sets from the clock
       const clocked = forever ? [...nodes(node.body)].some(isClock) : [...nodes(test), ...(node.update ? nodes(node.update) : [])].some(isClock) || guard || clockTest(test, node.body);
       if (!clocked) return;
       const rest = [node.body, node.update].filter(Boolean).flatMap(x => [...nodes(x)]);
-      if (!rest.some(n => !isClock(n) && WORK.test(n.type))) flag(node, "busy-waits on the clock");
+      // what a `throw new Error(...)` builds happens once, on the way out
+      const thrown = n => { for (let p = n.parent; p && p !== node; p = p.parent) if (p.type === "ThrowStatement") return true; return false; };
+      if (!rest.some(n => !isClock(n) && WORK.test(n.type) && !thrown(n))) flag(node, "busy-waits on the clock");
     };
     return {
       MemberExpression(n) {

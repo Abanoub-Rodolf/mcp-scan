@@ -998,6 +998,8 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; let t = 0; do { t = Date.now(); } while (t < end);"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; let ok = true; while (ok) { ok = Date.now() < end; }"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = performance.now() + 500; let t = 0; for (; t < end; ) { t = performance.now(); }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "let done = false; const end = Date.now() + 500; while (!done) { if (Date.now() > end) done = true; }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; while (true) { if (Date.now() > end) throw new Error('late'); }"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const start = Date.now(); const elapsed = () => Date.now() - start; while (elapsed() < 500) {}"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "function now() { return performance.now(); } const end = now() + 500; while (now() < end) {}"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const now = function () { return Date.now(); }; const end = now() + 500; for (;;) { if (now() > end) break; }"],
@@ -1071,6 +1073,8 @@ const SPEC_ALLOWED: string[] = [
   "let n = 0; let t = 0; while (n < 3) { t = performance.now(); n++; } use(t);",
   "let t = Date.now(); while (t < end) { t = Date.now(); await check(); }",
   "let ok = true; while (ok) { ok = next(); }",
+  "let done = false; let other = 0; while (!done) { if (Date.now() > end) other = 1; done = ok(); }",
+  "const end = Date.now() + 500; while (true) { if (Date.now() > end) throw new Error('late'); work(); }",
   "let t = 0; let n = 0; while (t < end) { n++; t = n * 2; }",
   "function now() { return Date.now(); } const stamps: number[] = []; for (let i = 0; i < 3; i++) stamps[i] = now(); use(stamps);",
   "const mk = () => () => Date.now(); const end = 5; while (mk() < end) {}",
@@ -1272,7 +1276,6 @@ const OPEN = new Set<string>([
   '8a:nested', '8d:let-twice', '8d:let-reversed',
   '11b:let-twice', '11b:let-reversed',
   '12a:let-twice', '12a:let-reversed', '12a:let-append',
-  '14d:set-flag', '14d:throw-new',
   'A15:default-overridden', 'A15:default-overridden-promise',
 ]);
 describe('shared spec table', () => {
