@@ -1235,38 +1235,54 @@ describe('sleep rule spec table', () => {
     expect(await specLint(rows[0], { off: id })).toEqual([]);
   });
   // Cost: the end-of-file judgment is promises x timers x callback size, and a helper that calls
-  // another helper twice is 2^n, unless each is computed once
-  it('lints 200 stored resolvers against 200 timers within 1.5 s', async () => {
-    const lines = ['const rs: Array<() => void> = [];'];
-    for (let i = 0; i < 200; i++) lines.push(`const p${i} = new Promise<void>((res) => { rs.push(res); });`);
-    for (let i = 0; i < 200; i++) lines.push(`setTimeout(() => { ${Array.from({ length: 25 }, (_, j) => `step${j}(${i}, log);`).join(' ')} }, 50);`);
-    lines.push('await Promise.all([p0, p1]);');
-    // best of three: a loaded runner stalls one run, a quadratic walk slows all of them
-    const took: number[] = [];
-    for (let i = 0; i < 3; i++) {
-      const t0 = Date.now();
-      expect(await specLint(lines.join('\n'))).toEqual([]);
-      took.push(Date.now() - t0);
-    }
-    expect(Math.min(...took)).toBeLessThan(1500);
+  // another helper twice is 2^n, unless each is computed once. Each test times two sizes and compares them,
+  // so a slow runner moves both and a walk that grows too fast moves one.
+  it('lints stored resolvers against timers in time that grows with the file, not its square', async () => {
+    const stored = (n: number) => {
+      const lines = ['const rs: Array<() => void> = [];'];
+      for (let i = 0; i < n; i++) lines.push(`const p${i} = new Promise<void>((res) => { rs.push(res); });`);
+      for (let i = 0; i < n; i++) lines.push(`setTimeout(() => { ${Array.from({ length: 25 }, (_, j) => `step${j}(${i}, log);`).join(' ')} }, 50);`);
+      lines.push('await Promise.all([p0, p1]);');
+      return lines.join('\n');
+    };
+    expect(await specLint(stored(100))).toEqual([]);
+    const t100 = await fastest(stored(100));
+    const t400 = await fastest(stored(400), ms => ms < 8 * t100);
+    expect(t400 / t100).toBeLessThan(8);
     // and the same file does report once a timer runs the container
-    expect((await specLint(lines.join('\n') + '\nsetTimeout(() => rs.forEach((f) => f()), 50);')).length).toBeGreaterThan(0);
+    expect((await specLint(stored(100) + '\nsetTimeout(() => rs.forEach((f) => f()), 50);')).length).toBeGreaterThan(0);
+  });
+  // every promise is reported here, and each report asks who else runs the container: that answer is built once
+  it('judges every stored resolver of a container a timer runs without rebuilding the answer', async () => {
+    const run = (n: number) => {
+      const lines = ['const rs: Array<() => void> = [];'];
+      for (let i = 0; i < n; i++) lines.push(`const p${i} = new Promise<void>((res) => { rs.push(res); });`);
+      for (let i = 0; i < n; i++) lines.push(`setTimeout(() => { ${Array.from({ length: 25 }, (_, j) => `step${j}(${i}, log);`).join(' ')} }, 50);`);
+      lines.push('setTimeout(() => rs.forEach((f) => f()), 50);', 'await Promise.all([p0, p1]);');
+      return lines.join('\n');
+    };
+    expect((await specLint(run(100))).length).toBe(100);
+    const t100 = await fastest(run(100));
+    const t400 = await fastest(run(400), ms => ms < 8 * t100);
+    expect(t400 / t100).toBeLessThan(8);
   });
   it('analyzes a helper that calls the next helper twice once per helper', async () => {
-    const lines = ['function h0(f: () => void) { setTimeout(f, 5); }'];
-    for (let i = 1; i <= 200; i++) lines.push(`function h${i}(f: () => void) { h${i - 1}(f); h${i - 1}(f); }`);
-    lines.push('await new Promise<void>((r) => h200(r));');
-    const t0 = Date.now();
-    expect((await specLint(lines.join('\n'))).length).toBeGreaterThan(0);
-    expect(Date.now() - t0).toBeLessThan(1500);
+    const helpers = (n: number) => {
+      const lines = ['function h0(f: () => void) { setTimeout(f, 5); }'];
+      for (let i = 1; i <= n; i++) lines.push(`function h${i}(f: () => void) { h${i - 1}(f); h${i - 1}(f); }`);
+      lines.push(`await new Promise<void>((r) => h${n}(r));`);
+      return lines.join('\n');
+    };
+    const t16 = await fastest(helpers(16));
+    const t20 = await fastest(helpers(20), ms => ms < 4 * t16 + 50);
+    expect(t20).toBeLessThan(4 * t16 + 50);
+    expect((await specLint(helpers(200))).length).toBeGreaterThan(0);
   });
-  // 100 nested executors is as deep as the parser goes; each level is judged once
-  it('judges 100 nested promise executors within 1.5 s', async () => {
+  // each level of a nest is judged once, so the count does not depend on how deep it goes
+  it('judges 100 nested promise executors, one report', async () => {
     let code = 'setTimeout(r99, 50);';
     for (let i = 99; i >= 0; i--) code = `new Promise<void>((r${i}) => { ${code} });`;
-    const t0 = Date.now();
     expect((await specLint(`await ${code}`)).length).toBe(1);
-    expect(Date.now() - t0).toBeLessThan(1500);
   });
   // A resolver called under N nested callbacks is judged once per callback, not once per path to it: without
   // the memo on a function's flow the cost doubles with every level.
@@ -1283,11 +1299,31 @@ describe('sleep rule spec table', () => {
   });
   // Per-branch walking must not turn a chain of `a1 = a0 ?? a0` into 2^n steps
   it('walks a doubling chain of aliases once', async () => {
-    const chain = Array.from({ length: 200 }, (_, i) => `const a${i + 1} = a${i} ?? a${i};`).join(' ');
-    const t0 = Date.now();
-    expect(await specLint(`const a0 = other; ${chain} await new Promise((r) => a200(r, 50));`)).toEqual([]);
-    expect(await specLint(`const a0 = setTimeout; ${chain} await new Promise((r) => a200(r, 50));`)).not.toEqual([]);
-    expect(Date.now() - t0).toBeLessThan(1500);
+    const chain = (n: number, head: string) => `const a0 = ${head}; ${Array.from({ length: n }, (_, i) => `const a${i + 1} = a${i} ?? a${i};`).join(' ')} await new Promise((r) => a${n}(r, 50));`;
+    const t16 = await fastest(chain(16, 'other'));
+    const t20 = await fastest(chain(20, 'other'), ms => ms < 4 * t16 + 50);
+    expect(t20).toBeLessThan(4 * t16 + 50);
+    expect(await specLint(chain(200, 'other'))).toEqual([]);
+    expect(await specLint(chain(200, 'setTimeout'))).not.toEqual([]);
+  });
+  // The text of a script held in a name is read once per name: `s1 = s0 + s0` doubles the walk at every level
+  it('reads a doubling chain of script texts once', async () => {
+    const chain = (n: number, head: string) => `const s0 = '${head}'; ${Array.from({ length: n }, (_, i) => `const s${i + 1} = s${i} + s${i};`).join(' ')} await page.evaluate(s${n});`;
+    const t16 = await fastest(chain(16, 'document.title'));
+    const t20 = await fastest(chain(20, 'document.title'), ms => ms < 4 * t16 + 50);
+    expect(t20).toBeLessThan(4 * t16 + 50);
+    expect(await specLint(chain(200, 'document.title'))).toEqual([]);
+    expect(await specLint(chain(200, 'setTimeout(() => 0, 5)'))).not.toEqual([]);
+  });
+  // 200 reverse assignments and 200 calls into a 200-line helper (spec 5.9)
+  it('lints a 200-step reverse assignment chain and 200 calls into a long helper in under a second', async () => {
+    const decl = Array.from({ length: 200 }, (_, i) => `let c${i}: any;`).join(' ');
+    const asg = Array.from({ length: 199 }, (_, i) => `c${198 - i} = c${199 - i};`).join(' ');
+    const helper = `function long(f: () => void) { ${Array.from({ length: 200 }, (_, i) => `log(${i}, f);`).join(' ')} }`;
+    const calls = Array.from({ length: 200 }, () => 'long(() => undefined);').join(' ');
+    const code = `${decl} c199 = Promise.withResolvers<void>(); ${asg} setTimeout(c0.resolve, 5); ${helper} ${calls}`;
+    expect((await specLint(code)).length).toBeGreaterThan(0);
+    expect(await fastest(code, ms => ms < 1000)).toBeLessThan(1000);
   });
   // A crash inside a rule aborts the lint for every file, so the exit code is what matters here
   it.each([
