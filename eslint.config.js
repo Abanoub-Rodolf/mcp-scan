@@ -946,6 +946,24 @@ const noFixedWait = {
     // object holding one (`{ content }`). What it cannot read becomes a NUL, so two readable halves
     // still join (`'set' + 'Timeout'`) and an unknown middle does not.
     const CAP = 20000;
+    // `function run(s = 'script') { page.evaluate(s) }`: the default is the script a bare call runs
+    const paramDefault = v => {
+      const d = v?.defs.length === 1 && v.defs[0].type === "Parameter" ? v.defs[0] : null;
+      const p = d?.name.parent;
+      return p?.type === "AssignmentPattern" && p.left === d.name && FNS.has(p.parent.type) && !v.references.some(r => r.isWrite() && !r.init) ? p.right : null;
+    };
+    // a function handed to the page as the script: inline, or a name declared in the file
+    const scriptFn = a => {
+      a = inner(a);
+      if (FNS.has(a.type)) return a;
+      if (a.type !== "Identifier") return null;
+      const v = lookupIn(src, a);
+      const d = v?.defs.length === 1 ? v.defs[0] : null;
+      if (d?.type === "FunctionName") return d.node;
+      const init = soleInit(v);
+      return init && FNS.has(inner(init).type) ? inner(init) : null;
+    };
+    const setsTimer = f => [...nodes(f.body)].some(x => x.type === "CallExpression" && (timers.isFn(inner(x.callee)) || timers.methodOn(inner(x.callee), "call") || timers.methodOn(inner(x.callee), "apply")));
     const textOf = top => {
       const unknown = "\0";
       // a name's text is the same wherever it is read, unless a cycle cut the walk short
@@ -976,7 +994,7 @@ const noFixedWait = {
           case "ArrayExpression": return e.elements.map(x => (x ? go(x) : "")).join(unknown);
           case "Identifier": {
             const v = lookupIn(src, e);
-            const init = soleInit(v);
+            const init = soleInit(v) ?? paramDefault(v);
             if (!init) return unknown;
             if (memo.has(v)) return memo.get(v);
             if (active.has(v)) { cuts++; return unknown; }
@@ -1097,8 +1115,9 @@ const noFixedWait = {
         const runner = c.type === "MemberExpression" ? keyOf(c.computed, c.property) : undefined;
         // the script is the first argument, except for `$eval(selector, script)`; later arguments are data
         const script = n.arguments[runner === "$eval" || runner === "$$eval" ? 1 : 0];
-        if (SCRIPT_RUNNERS.has(runner) && script && mentionsTimer(script)) {
-          flag(n, "timers in a script string (it runs in the browser, where the sleep rule cannot see it)");
+        if (SCRIPT_RUNNERS.has(runner) && script) {
+          if (mentionsTimer(script)) flag(n, "timers in a script string (it runs in the browser, where the sleep rule cannot see it)");
+          else if (scriptFn(script) && setsTimer(scriptFn(script))) flag(n, "timers in a function sent to the page (it runs in the browser, where the sleep rule cannot see it)");
         }
       },
       WhileStatement: busy,
