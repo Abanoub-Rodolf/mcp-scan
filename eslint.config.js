@@ -179,15 +179,16 @@ const noSleepPromise = {
         case "ConditionalExpression":
           return timerAt(e.consequent, path, seen) || timerAt(e.alternate, path, seen);
         case "CallExpression":
-          return !path.length && methodOn(e.callee, "bind");
+          return !path.length && methodOn(e.callee, "bind", seen);
       }
       return false;
     };
     const isTimerFn = c => timerAt(c, [], new Set());
-    // `t.call`, `t.apply`, `t.bind` where t is a timer
-    const methodOn = (callee, how) => {
+    // `t.call`, `t.apply`, `t.bind` where t is a timer. `seen` carries the walk that
+    // got here, so `const t = t.bind(null)` ends instead of starting over.
+    const methodOn = (callee, how, seen = new Set()) => {
       const c = inner(callee);
-      return c.type === "MemberExpression" && nameOf(c.computed, c.property) === how && isTimerFn(c.object);
+      return c.type === "MemberExpression" && nameOf(c.computed, c.property) === how && timerAt(c.object, [], seen);
     };
     // What a timer call hands the timer, as `(callback, ms, ...args)`, or null when the
     // call is no timer: `t(cb, 5)`, `t.call(this, cb, 5)`, `t.apply(this, [cb, 5])`,

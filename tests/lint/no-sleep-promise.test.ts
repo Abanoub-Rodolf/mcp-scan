@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { ESLint } from 'eslint';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const eslint = new ESLint({ cwd: REPO });
@@ -744,6 +745,9 @@ const SPEC_ALLOWED: string[] = [
   "const d = Promise.withResolvers<void>(); queueMicrotask(() => d.resolve()); await d.promise;",
   "await new Promise((r) => { globalThis['queueMicrotask'](r); });",
   "await mySched.wait(50);",
+  // a bind that names itself never reaches a timer, and must end the walk instead of overflowing the stack
+  "const t = t.bind(null); t(1);",
+  "function f(a = b.bind(null), b = a.bind(null)) { a(1); } f();",
 ];
 
 
@@ -787,6 +791,15 @@ describe('sleep rule spec table', () => {
     }
     expect(rows.length, 'a row that only this rule reports').toBeGreaterThan(0);
     expect(await specLint(rows[0], { off: id })).toEqual([]);
+  });
+  // A crash inside a rule aborts the lint for every file, so the exit code is what matters here
+  it.each([
+    'const t = t.bind(null); t(1);\n',
+    'function f(a = b.bind(null), b = a.bind(null)) { a(1); }\nf();\n',
+  ])('exits 0 on a bind that names itself: %s', code => {
+    const run = spawnSync(process.execPath, [path.join(REPO, 'node_modules/eslint/bin/eslint.js'), '--stdin', '--stdin-filename', 'tests/snippet.test.ts'], { cwd: REPO, input: code, encoding: 'utf8' });
+    expect(run.stdout + run.stderr).toBe('');
+    expect(run.status).toBe(0);
   });
   // The race fallback is the one exemption: the resolver is also handed to something else.
   // `noop(r)` is the edge of it, any call that takes the resolver counts as the handoff.
