@@ -47,13 +47,24 @@ const lookupIn = (src, node) => {
   for (let s = src.getScope(node); s; s = s.upper) if (s.set.has(node.name)) return s.set.get(node.name);
   return null;
 };
-// nameOf, and a computed key that is a const string reads as that string: `const k = "setTimeout"; o[k]`
+// The one expression a name ever holds: a const's init, or a let/var written exactly once (by its
+// init or by a single plain assignment). A name written twice could be anything, so it reads as nothing.
+const soleInit = v => {
+  const def = v?.defs.length === 1 && v.defs[0].type === "Variable" ? v.defs[0] : null;
+  if (!def || def.node.id.type !== "Identifier") return null;
+  if (def.parent.kind === "const") return def.node.init;
+  const ws = v.references.filter(r => r.isWrite());
+  if (ws.length !== 1) return null;
+  if (def.node.init) return ws[0].init ? def.node.init : null;
+  const a = ws[0].identifier.parent;
+  return a.type === "AssignmentExpression" && a.operator === "=" && a.left === ws[0].identifier ? a.right : null;
+};
+// nameOf, and a computed key that is a name written once reads as that string: `const k = "setTimeout"; o[k]`
 const keyIn = (src, computed, k) => {
   const name = nameOf(computed, k);
   if (name !== undefined || !computed || k.type !== "Identifier") return name;
-  const def = lookupIn(src, k)?.defs;
-  const d = def?.length === 1 && def[0].type === "Variable" && def[0].parent.kind === "const" ? def[0].node : null;
-  return d?.id.type === "Identifier" && d.init ? nameOf(true, inner(d.init)) : undefined;
+  const init = soleInit(lookupIn(src, k));
+  return init ? nameOf(true, inner(init)) : undefined;
 };
 function* nodes(n) {
   yield n;
@@ -80,24 +91,45 @@ const SUBSCRIBES = new Set(["on", "once", "addListener", "prependListener", "pre
 const makeResolver = (src, leaf, state = { cuts: 0 }) => {
   const lookup = node => lookupIn(src, node);
   const keyOf = (computed, k) => keyIn(src, computed, k);
-  // Where is `pat` bound to `name`: the keys leading to it, and a default value
-  // that applies to it directly. `{ a: [, b = 1] }` finds b at ["a", 1] with 1.
-  const locate = (pat, name, path = [], dflt = null) => {
-    if (pat.type === "Identifier") return pat === name ? { path, dflt } : null;
-    if (pat.type === "AssignmentPattern") return locate(pat.left, name, path, pat.right);
+  // Where is `pat` bound to `name`: the keys leading to it, and the defaults on the way, each with how many
+  // keys it sits behind. `{ a: [, b = 1] }` finds b at ["a", 1] with 1 behind two keys; `({ a } = g)` is a at ["a"]
+  // with the default g behind none.
+  const locate = (pat, name, path = [], dflts = []) => {
+    if (pat.type === "Identifier") return pat === name ? { path, dflts } : null;
+    if (pat.type === "AssignmentPattern") return locate(pat.left, name, path, [...dflts, { at: path.length, value: pat.right }]);
     if (pat.type === "ObjectPattern") {
       for (const p of pat.properties) {
         const k = p.type === "Property" ? keyOf(p.computed, p.key) : undefined;
-        const r = k === undefined ? null : locate(p.value, name, [...path, k]);
+        const r = k === undefined ? null : locate(p.value, name, [...path, k], dflts);
         if (r) return r;
       }
     } else if (pat.type === "ArrayPattern") {
       for (const [i, el] of pat.elements.entries()) {
-        const r = el && el.type !== "RestElement" ? locate(el, name, [...path, i]) : null;
+        const r = el && el.type !== "RestElement" ? locate(el, name, [...path, i], dflts) : null;
         if (r) return r;
       }
     }
     return null;
+  };
+  // Where a name gets its value, and the keys down that value where it sits: a const's init, a let/var
+  // written once (its init, or one assignment, a destructuring one included), or a parameter.
+  const origin = (v, d) => {
+    if (d.type === "Parameter") {
+      const pat = d.node.params?.find(x => x.range[0] <= d.name.range[0] && d.name.range[1] <= x.range[1]);
+      const at = pat && locate(pat, d.name);
+      return at && { init: null, at };
+    }
+    if (d.type !== "Variable") return null;
+    const ws = d.parent.kind === "const" ? null : v.references.filter(r => r.isWrite());
+    if (ws && ws.length !== 1) return null;
+    if (d.node.init && (!ws || ws[0].init)) return { init: d.node.init, at: locate(d.node.id, d.name) };
+    if (!ws || d.node.init) return { init: null, at: locate(d.node.id, d.name) };
+    // `let w; ({ setTimeout: w } = globalThis)`
+    let n = ws[0].identifier;
+    while (["Property", "ObjectPattern", "ArrayPattern", "AssignmentPattern"].includes(n.parent.type)) n = n.parent;
+    const asg = n.parent;
+    if (asg.type !== "AssignmentExpression" || asg.operator !== "=" || asg.left !== n) return null;
+    return { init: asg.right, at: locate(asg.left, ws[0].identifier) };
   };
   // Does the value of `e`, read down `path`, hold a timer? `setTimeout`,
   // `globalThis.setTimeout`, `self["setInterval"]`, `{ wait: setTimeout }.wait`,
@@ -124,16 +156,15 @@ const makeResolver = (src, leaf, state = { cuts: 0 }) => {
   const walk = (e, path, seen) => {
     switch (e.type) {
       case "Identifier": {
-        const def = lookup(e)?.defs;
+        const v = lookup(e);
+        const def = v?.defs;
         // a name the file declares itself is no host object, but an import is the real thing
         if (leaf(e.name, path, !!def?.length && def[0].type !== "ImportBinding")) return true;
         if (def?.length !== 1) return false;
-        let pat, init;
-        if (def[0].type === "Variable" && def[0].parent.kind === "const") ({ id: pat, init } = def[0].node);
-        else if (def[0].type === "Parameter") pat = def[0].node.params?.find(x => x.range[0] <= def[0].name.range[0] && def[0].name.range[1] <= x.range[1]);
-        const at = pat && locate(pat, def[0].name);
-        if (!at) return false;
-        return !!(init && reach(init, [...at.path, ...path], seen)) || !!(at.dflt && reach(at.dflt, path, seen));
+        const o = origin(v, def[0]);
+        if (!o?.at) return false;
+        const { at, init } = o;
+        return !!(init && reach(init, [...at.path, ...path], seen)) || at.dflts.some(x => reach(x.value, [...at.path.slice(x.at), ...path], seen));
       }
       case "MemberExpression": {
         const k = keyOf(e.computed, e.property);
@@ -835,9 +866,8 @@ const noFixedWait = {
         case "ObjectExpression": return e.properties.map(x => (x.type === "Property" ? sub(x.value) : unknown)).join(unknown);
         case "ArrayExpression": return e.elements.map(x => (x ? sub(x) : "")).join(unknown);
         case "Identifier": {
-          const def = lookupIn(src, e)?.defs;
-          const d = def?.length === 1 && def[0].type === "Variable" && def[0].parent.kind === "const" ? def[0].node : null;
-          return d?.id.type === "Identifier" && d.init ? sub(d.init) : unknown;
+          const init = soleInit(lookupIn(src, e));
+          return init ? sub(init) : unknown;
         }
         case "CallExpression": {
           const c = inner(e.callee);
@@ -851,6 +881,26 @@ const noFixedWait = {
       }
       return unknown;
     };
+    // A module name held in a name written once (`const m = 'timers'; require(m)`). The selectors read the
+    // spelled-out forms; this reads the name, through other names written once.
+    const heldModule = a => {
+      for (let i = 0; i < 8 && a; i++) {
+        a = inner(a);
+        if (a.type === "Literal") return a.value;
+        if (a.type === "TemplateLiteral") return a.expressions.length ? undefined : a.quasis[0].value.cooked;
+        a = a.type === "Identifier" ? soleInit(lookupIn(src, a)) : null;
+        if (!a) return undefined;
+      }
+    };
+    const loads = c => {
+      c = inner(c);
+      // `createRequire(url)('timers')` calls what createRequire returns
+      const made = c.type === "CallExpression";
+      if (made) c = inner(c.callee);
+      const name = c.type === "Identifier" ? c.name : c.type === "MemberExpression" ? keyOf(c.computed, c.property) : undefined;
+      return made ? name === "createRequire" : name === "require" || name === "getBuiltinModule";
+    };
+    const heldTimers = a => a && inner(a).type === "Identifier" && TIMERS_MODULES.includes(heldModule(a));
     const mentionsTimer = a => /set(Timeout|Interval)/.test(textOf(a));
     const clock = makeResolver(src, clockLeaf);
     const isClock = n => {
@@ -881,9 +931,13 @@ const noFixedWait = {
       Property(n) {
         if (n.parent.type === "ObjectPattern" && keyOf(n.computed, n.key) === "waitForTimeout") flag(n, "fixed waitForTimeout (a call, a reference or a destructure of it)");
       },
+      ImportExpression(n) {
+        if (heldTimers(n.source)) context.report({ node: n, message: NO_TIMERS });
+      },
       CallExpression(n) {
         const c = n.callee;
         const f = inner(c);
+        if (loads(c) && heldTimers(n.arguments[0])) context.report({ node: n, message: NO_TIMERS });
         for (const [w, what] of waits) if (w.isFn(f) || w.methodOn(f, "call") || w.methodOn(f, "apply")) flag(n, what);
         if (c.type === "MemberExpression" && SCRIPT_RUNNERS.has(keyOf(c.computed, c.property)) && n.arguments.slice(0, 2).some(mentionsTimer)) {
           flag(n, "timers in a script string (it runs in the browser, where the sleep rule cannot see it)");
