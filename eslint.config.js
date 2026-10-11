@@ -910,38 +910,61 @@ const noFixedWait = {
     // `String.raw` template, a `+` or `.concat` of those, a const that holds one, an array `.join`ed, an
     // object holding one (`{ content }`). What it cannot read becomes a NUL, so two readable halves
     // still join (`'set' + 'Timeout'`) and an unknown middle does not.
-    const textOf = (e, depth = 0) => {
-      e = inner(e);
+    const CAP = 20000;
+    const textOf = top => {
       const unknown = "\0";
-      if (depth > 8) return unknown;
-      const sub = x => textOf(x, depth + 1);
-      switch (e.type) {
-        case "Literal": return typeof e.value === "string" ? e.value : String(e.value);
-        case "TemplateLiteral":
-        case "TaggedTemplateExpression": {
-          const t = e.type === "TemplateLiteral" ? e : e.quasi;
-          return t.quasis.map((q, i) => (q.value.cooked ?? q.value.raw) + (i < t.expressions.length ? sub(t.expressions[i]) : "")).join("");
-        }
-        case "BinaryExpression": return e.operator === "+" ? sub(e.left) + sub(e.right) : unknown;
-        case "ConditionalExpression": return `${sub(e.consequent)}${unknown}${sub(e.alternate)}`;
-        case "LogicalExpression": return `${sub(e.left)}${unknown}${sub(e.right)}`;
-        case "ObjectExpression": return e.properties.map(x => (x.type === "Property" ? sub(x.value) : unknown)).join(unknown);
-        case "ArrayExpression": return e.elements.map(x => (x ? sub(x) : "")).join(unknown);
-        case "Identifier": {
-          const init = soleInit(lookupIn(src, e));
-          return init ? sub(init) : unknown;
-        }
-        case "CallExpression": {
-          const c = inner(e.callee);
-          const how = c.type === "MemberExpression" ? keyOf(c.computed, c.property) : undefined;
-          if (how === "concat") return sub(c.object) + e.arguments.map(sub).join("");
-          if (how === "join" && inner(c.object).type === "ArrayExpression") {
-            const sep = e.arguments[0] ? sub(e.arguments[0]) : ",";
-            return inner(c.object).elements.map(x => (x ? sub(x) : "")).join(sep);
+      // a name's text is the same wherever it is read, unless a cycle cut the walk short
+      const memo = new Map();
+      const active = new Set();
+      let cuts = 0;
+      const go = e => {
+        e = inner(e);
+        switch (e.type) {
+          case "Literal": return typeof e.value === "string" ? e.value : String(e.value);
+          case "TemplateLiteral":
+          case "TaggedTemplateExpression": {
+            const t = e.type === "TemplateLiteral" ? e : e.quasi;
+            return t.quasis.map((q, i) => (q.value.cooked ?? q.value.raw) + (i < t.expressions.length ? go(t.expressions[i]) : "")).join("");
+          }
+          case "BinaryExpression": {
+            // `a + b + c` leans to the left: read it as a list, not as a stack of calls
+            if (e.operator !== "+") return unknown;
+            const parts = [];
+            let n = e;
+            for (; n.type === "BinaryExpression" && n.operator === "+"; n = inner(n.left)) parts.push(n.right);
+            parts.push(n);
+            return parts.reverse().map(go).join("").slice(0, CAP);
+          }
+          case "ConditionalExpression": return `${go(e.consequent)}${unknown}${go(e.alternate)}`;
+          case "LogicalExpression": return `${go(e.left)}${unknown}${go(e.right)}`;
+          case "ObjectExpression": return e.properties.map(x => (x.type === "Property" ? go(x.value) : unknown)).join(unknown);
+          case "ArrayExpression": return e.elements.map(x => (x ? go(x) : "")).join(unknown);
+          case "Identifier": {
+            const v = lookupIn(src, e);
+            const init = soleInit(v);
+            if (!init) return unknown;
+            if (memo.has(v)) return memo.get(v);
+            if (active.has(v)) { cuts++; return unknown; }
+            active.add(v);
+            const before = cuts;
+            const t = go(init).slice(0, CAP);
+            active.delete(v);
+            if (cuts === before) memo.set(v, t);
+            return t;
+          }
+          case "CallExpression": {
+            const c = inner(e.callee);
+            const how = c.type === "MemberExpression" ? keyOf(c.computed, c.property) : undefined;
+            if (how === "concat") return (go(c.object) + e.arguments.map(go).join("")).slice(0, CAP);
+            if (how === "join" && inner(c.object).type === "ArrayExpression") {
+              const sep = e.arguments[0] ? go(e.arguments[0]) : ",";
+              return inner(c.object).elements.map(x => (x ? go(x) : "")).join(sep).slice(0, CAP);
+            }
           }
         }
-      }
-      return unknown;
+        return unknown;
+      };
+      return go(top);
     };
     // A module name held in a name written once (`const m = 'timers'; require(m)`). The selectors read the
     // spelled-out forms; this reads the name, through other names written once.
