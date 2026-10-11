@@ -85,6 +85,8 @@ const ITER = new Set(["forEach", "map", "filter", "some", "every", "find", "find
 // calls that subscribe the resolver to something that will run it later: the real signal of a race
 const SUBSCRIBES = new Set(["on", "once", "addListener", "prependListener", "prependOnceListener", "addEventListener", "then", "finally", "subscribe"]);
 
+const timerLeaf = (name, path) => (!path.length && TIMERS.has(name)) || (path.length === 1 && GLOBALS.has(name) && TIMERS.has(path[0]));
+
 // The scope manager's view of a value: does `e`, read down `path`, end at a host function that
 // `leaf(name, path, local)` accepts? Follows consts, destructuring, objects, arrays, defaults,
 // `??`/`||`/ternary and `.bind`. `local` is true for a name the file declares itself.
@@ -187,10 +189,41 @@ const makeResolver = (src, leaf, state = { cuts: 0 }) => {
         return reach(e.left, path, seen) || reach(e.right, path, seen);
       case "ConditionalExpression":
         return reach(e.consequent, path, seen) || reach(e.alternate, path, seen);
-      case "CallExpression":
-        return !path.length && methodOn(e.callee, "bind", seen);
+      case "CallExpression": {
+        if (!path.length && methodOn(e.callee, "bind", seen)) return true;
+        // a function declared in the file returns it: `function mk() { return setTimeout; }`, `(() => setTimeout)()`
+        const f = fnOf(e.callee);
+        return !!f && returned(f).some(x => reach(x, path, seen));
+      }
     }
     return false;
+  };
+  // the function a callee stands for: written out, declared in the file, or a name written once
+  const fnOf = callee => {
+    const c = inner(callee);
+    if (FNS.has(c.type)) return c;
+    const v = c.type === "Identifier" ? lookup(c) : null;
+    const d = v?.defs.length === 1 ? v.defs[0] : null;
+    if (d?.type === "FunctionName") return d.node;
+    const init = d?.type === "Variable" ? soleInit(v) : null;
+    return init && FNS.has(inner(init).type) ? inner(init) : null;
+  };
+  // what a function hands back: an arrow's expression body, or every `return x` that is its own
+  const returned = f => {
+    if (f.body.type !== "BlockStatement") return [f.body];
+    const out = [];
+    const walkBody = n => {
+      for (const [k, v] of Object.entries(n)) {
+        if (k === "parent") continue;
+        for (const c of Array.isArray(v) ? v : [v]) {
+          if (!c || typeof c.type !== "string" || FNS.has(c.type) || c.type === "ClassBody") continue;
+          if (c.type === "ReturnStatement" && c.argument) out.push(c.argument);
+          walkBody(c);
+        }
+      }
+    };
+    walkBody(f.body);
+    return out;
   };
   const isFn = c => reach(c, [], new Set());
   // `t.call`, `t.apply`, `t.bind` where t is a timer. `seen` carries the walk that
@@ -322,7 +355,6 @@ const noSleepPromise = {
       const cls = n.type === "ThisExpression" ? classOf(n) : null;
       return cls ? { exec: scopeOf(cls), roots: [], reads: thisReads(cls, path) } : null;
     };
-    const timerLeaf = (name, path) => (!path.length && TIMERS.has(name)) || (path.length === 1 && GLOBALS.has(name) && TIMERS.has(path[0]));
     const { isFn: isTimerFn, methodOn } = makeResolver(src, timerLeaf, state);
     // `f.apply(this, list)` and `Reflect.apply(f, this, list)`: the function, whether it is a
     // timer, and which argument holds the list
@@ -902,6 +934,7 @@ const noFixedWait = {
     };
     const heldTimers = a => a && inner(a).type === "Identifier" && TIMERS_MODULES.includes(heldModule(a));
     const mentionsTimer = a => /set(Timeout|Interval)/.test(textOf(a));
+    const timers = makeResolver(src, timerLeaf);
     const clock = makeResolver(src, clockLeaf);
     const isClock = n => {
       if (n.type === "NewExpression") {
@@ -930,6 +963,10 @@ const noFixedWait = {
       },
       Property(n) {
         if (n.parent.type === "ObjectPattern" && keyOf(n.computed, n.key) === "waitForTimeout") flag(n, "fixed waitForTimeout (a call, a reference or a destructure of it)");
+      },
+      TemplateLiteral(n) {
+        // `${setTimeout}` is the timer turned into text, for a script to run
+        if (n.expressions.some(x => timers.isFn(x))) flag(n, "timers turned into text or passed on as a value (the sleep is hidden from this rule)");
       },
       ImportExpression(n) {
         if (heldTimers(n.source)) context.report({ node: n, message: NO_TIMERS });
