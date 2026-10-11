@@ -1021,7 +1021,8 @@ const noFixedWait = {
       return made ? name === "createRequire" : name === "require" || name === "getBuiltinModule";
     };
     const heldTimers = a => a && inner(a).type === "Identifier" && TIMERS_MODULES.includes(heldModule(a));
-    const mentionsTimer = a => /set(Timeout|Interval)/.test(textOf(a));
+    const timerWord = new RegExp([...TIMERS].join("|"));
+    const mentionsTimer = a => timerWord.test(textOf(a));
     const timers = makeResolver(src, timerLeaf);
     const clock = makeResolver(src, clockLeaf);
     const isClock = n => {
