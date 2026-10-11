@@ -789,6 +789,32 @@ const noSleepPromise = {
       }
       return tops;
     };
+    // What a timer runs: its callbacks and the functions of the file they call, and theirs in turn (`all`).
+    // `only` is the part nobody else runs: the callbacks, and the functions every use of which sits in them.
+    let reached = null;
+    const reachOf = () => {
+      if (reached) return reached;
+      const all = new Set(topsOf());
+      for (const top of all) {
+        for (const n of nodes(top)) {
+          const c = n.type === "CallExpression" ? inner(n.callee) : null;
+          const f = c?.type === "Identifier" ? executor(c) : null;
+          if (f && FNS.has(f.type)) all.add(f);
+        }
+      }
+      const only = new Set(topsOf());
+      const nameOfFn = f => src.getDeclaredVariables(f.type === "FunctionDeclaration" ? f : f.parent).find(v => v.defs.some(d => d.type === "FunctionName" || d.node === f.parent));
+      const within = id => [...only].some(t => id.range[0] >= t.range[0] && id.range[1] <= t.range[1]);
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const f of all) {
+          if (only.has(f)) continue;
+          const v = nameOfFn(f);
+          if (v && v.references.every(r => r.isWrite() || within(r.identifier))) { only.add(f); grew = true; }
+        }
+      }
+      return (reached = { all, only });
+    };
     let ran = null;
     const ranOf = () => {
       if (ran) return ran;
@@ -798,7 +824,8 @@ const noSleepPromise = {
         if (!ran.has(root)) ran.set(root, new Map());
         ran.get(root).set(k, names);
       };
-      for (const top of topsOf()) {
+      const reach = reachOf().all;
+      for (const top of reach) {
         const chain = c => { const root = rootOf(c); if (root) add(root, namesOf(c)); };
         chain(top);
         for (const n of nodes(top)) {
@@ -822,7 +849,7 @@ const noSleepPromise = {
     const calledOf = () => {
       if (called) return called;
       called = new Map();
-      const ts = [...topsOf()];
+      const ts = [...reachOf().only];
       for (const n of calls) {
         if (ts.some(t => n.range[0] >= t.range[0] && n.range[1] <= t.range[1])) continue;
         const root = rootOf(n.type === "ForOfStatement" ? n.right : n);

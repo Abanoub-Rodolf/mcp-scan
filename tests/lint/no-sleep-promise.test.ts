@@ -860,6 +860,8 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [6, "local/no-sleep-promise", "sleep promises", "await new Promise((r) => { const o = { a: { done: r } }; setTimeout(() => o.a.done(), 50); });"],
   [6, "local/no-sleep-promise", "sleep promises", "await new Promise((r) => { const o = { done: r }; const go = () => o.done(); setTimeout(go, 50); });"],
   [6, "local/no-sleep-promise", "sleep promises", "await new Promise((r) => { const a = [[r]]; setTimeout(() => a[0][0](), 50); });"],
+  [6, "local/no-sleep-promise", "sleep promises", "let ok = () => undefined; const late = (j: (e: Error) => void) => { ok(); void j; }; await new Promise((r, rej) => { ok = r; setTimeout(() => late(rej), 50); });"],
+  [6, "local/no-sleep-promise", "sleep promises", "let ok = () => undefined; function a() { b(); } function b() { ok(); } await new Promise((r) => { ok = r; setTimeout(a, 50); });"],
   [8, "local/no-sleep-promise", "sleep promises", "const { setTimeout: wait } = globalThis; await new Promise((r) => wait(r, 50));"],
   [8, "local/no-sleep-promise", "sleep promises", "let k = 'setTimeout'; k = 'setTimeout'; await new Promise((r) => (globalThis as any)[k](r, 50));"],
   [8, "local/no-sleep-promise", "sleep promises", "let k = 'title'; k = 'setInterval'; await new Promise((r) => (globalThis as any)[k](r, 50));"],
@@ -1139,6 +1141,9 @@ const SPEC_ALLOWED: string[] = [
   "let t = setTimeout; t = other; await new Promise((r) => t(r, 50));",
   "let k = 'setTimeout'; k = 'other'; const { [k]: wait } = globalThis; use(wait);",
   "let k = 'title'; k = 'url'; await (page as any)[k]();",
+  "let ok = () => undefined; const late = () => { ok(); }; await new Promise((r) => { ok = r; ee.on('x', () => late()); setTimeout(() => late(), 50); });",
+  "let ok = () => undefined; const late = () => { ok(); }; await new Promise((r) => { ok = r; ee.on('x', late); setTimeout(() => other(), 50); });",
+  "let ok = () => undefined; const never = () => { ok(); }; await new Promise((r) => { ok = r; ee.on('x', () => never()); setTimeout(() => other(), 50); });",
   "await new Promise((r, rej) => { const o = { r, rej }; ee.on('x', o.r); setTimeout(() => o.rej(new Error('late')), 50); });",
   "let s = 'document.title'; s += '.length'; await page.evaluate(s);",
   "let wait; ({ setTimeout: wait } = opts); use(wait);",
@@ -1300,7 +1305,6 @@ describe('sleep rule spec table', () => {
 // The shared spec table, every row: a shape the rule must report (by the rule id and message it names) or must
 // leave alone. A row is only left out of the loop while it is listed in OPEN, and the list shrinks as rows close.
 const OPEN = new Set<string>([
-  '6:outer',
   'A15:default-overridden', 'A15:default-overridden-promise',
 ]);
 describe('shared spec table', () => {
