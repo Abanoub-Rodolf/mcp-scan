@@ -1164,9 +1164,14 @@ describe('sleep rule spec table', () => {
     for (let i = 0; i < 200; i++) lines.push(`const p${i} = new Promise<void>((res) => { rs.push(res); });`);
     for (let i = 0; i < 200; i++) lines.push(`setTimeout(() => { ${Array.from({ length: 25 }, (_, j) => `step${j}(${i}, log);`).join(' ')} }, 50);`);
     lines.push('await Promise.all([p0, p1]);');
-    const t0 = Date.now();
-    expect(await specLint(lines.join('\n'))).toEqual([]);
-    expect(Date.now() - t0).toBeLessThan(1500);
+    // best of three: a loaded runner stalls one run, a quadratic walk slows all of them
+    const took: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const t0 = Date.now();
+      expect(await specLint(lines.join('\n'))).toEqual([]);
+      took.push(Date.now() - t0);
+    }
+    expect(Math.min(...took)).toBeLessThan(1500);
     // and the same file does report once a timer runs the container
     expect((await specLint(lines.join('\n') + '\nsetTimeout(() => rs.forEach((f) => f()), 50);')).length).toBeGreaterThan(0);
   });
