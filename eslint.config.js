@@ -68,6 +68,8 @@ const INERT = new Set(["length", "name", "toString", "call", "apply", "bind"]);
 const TAKES = new Set(["shift", "pop", "at"]);
 // calls on a stored-resolver container that do not run what is in it
 const BENIGN = new Set(["clear", "delete", "has"]);
+// calls that subscribe the resolver to something that will run it later: the real signal of a race
+const SUBSCRIBES = new Set(["on", "once", "addListener", "prependListener", "prependOnceListener", "addEventListener", "then", "finally", "subscribe"]);
 
 // Logging a value does not take ownership of it.
 const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.name === "console";
@@ -98,9 +100,14 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 // - the timers module is loaded through a stored `createRequire(...)` result (`const req = createRequire(u); req('timers')`);
 // - a clock busy-wait calls something (`while (Date.now() < end) { check(); }` is a poll) or reads another
 //   clock (`process.hrtime`);
-// - the race fallback, which is the one exemption kept: a resolver that is also handed to any call, store,
-//   return or object (`new Promise((r) => { noop(r); setTimeout(r, 50); })`) is a timeout fallback in a race on a
-//   real signal, so it passes. Rewrite such a test as a deadline guard that rejects to get strictness.
+// - the race fallback, which is the one exemption kept: a resolver also handed to a subscription (`on`, `once`,
+//   `addListener`, `prependListener`, `addEventListener`, `then`, `finally`, `subscribe`), or stored in a container
+//   that code outside every timer callback calls (`handlers.push(r)` plus `handlers.forEach(f => f())` in a
+//   listener), is a timeout fallback in a race on a real signal, so it passes. Any other read (`noop(r)`,
+//   `expect(r)`, `return r`, a store nobody calls) is not a handoff. A call inside an `if (false)` or `false &&`
+//   branch does not count; a condition the rule cannot fold does. A `Promise.withResolvers()` object held in an
+//   array, object or logical expression counts as handed off without checking who calls it. Rewrite such a test
+//   as a deadline guard that rejects to get strictness.
 // Accepted false positives: a timer callback that calls anything rooted at a container the resolver was
 // stored in (other than `clear`, `delete`, `has`) counts as running it; any `.waitForTimeout` on any object
 // is reported, and a script string that merely names setTimeout is reported.
@@ -236,6 +243,17 @@ const noSleepPromise = {
         for (let n = site; n && n !== exec; n = n.parent) if (FNS.has(n.type)) fns.push(n);
         return fns;
       };
+      // `if (false) ee.on('x', r)`: a branch that cannot run hands nothing off
+      const falsy = t => { t = inner(t); return (t.type === "Literal" && !t.value) || (t.type === "Identifier" && t.name === "undefined"); };
+      const truthy = t => { t = inner(t); return t.type === "Literal" && !!t.value; };
+      const dead = site => {
+        for (let n = site; n && n !== exec && n.parent; n = n.parent) {
+          const p = n.parent;
+          if ((p.type === "IfStatement" || p.type === "ConditionalExpression") && ((p.consequent === n && falsy(p.test)) || (p.alternate === n && truthy(p.test)))) return true;
+          if (p.type === "LogicalExpression" && p.right === n && ((p.operator === "&&" && falsy(p.left)) || (p.operator === "||" && truthy(p.left)))) return true;
+        }
+        return false;
+      };
       const none = () => ({ timer: false, given: false, leaks: [] });
       const merge = (out, x) => {
         out.timer ||= x.timer;
@@ -323,16 +341,19 @@ const noSleepPromise = {
       // How is the value of expression `e` consumed?
       const trace = e => {
         const out = none();
-        // `root`: the container the value is stored in, for a timer elsewhere to run
-        const hit = (kind, site, root) => {
+        // `listen`: handed to a subscription. `store`: kept in the containers `roots` names, for
+        // code elsewhere to run. `use`, `call`: any other read. Inside a nested function, only
+        // a function that is itself given (to a subscription) or stored (in a container) counts.
+        const hit = (kind, site, roots = []) => {
           const fns = fnsOf(site);
-          // inside a nested function, only a function that is itself given counts
-          const owned = fns.some(f => fnFlow(f).given);
-          if (kind === "timer" || fns.some(f => fnFlow(f).timer)) out.timer = true;
-          if (kind === "given" ? !fns.length || owned : kind === "call" && owned) {
-            out.given = true;
-            if (root) out.leaks.push({ root, skip: new Set() });
-          }
+          const flows = fns.map(fnFlow);
+          if (kind === "timer" || flows.some(x => x.timer)) out.timer = true;
+          if (kind === "timer" || dead(site)) return;
+          const owned = flows.some(x => x.given);
+          const carried = flows.flatMap(x => x.leaks);
+          out.leaks.push(...carried);
+          if (owned || (kind === "listen" && !fns.length)) out.given = true;
+          if (kind === "store" && (!fns.length || owned || carried.length)) out.leaks.push(...roots);
         };
         let p = e.parent;
         if (p.type === "MemberExpression" && p.object === e && !p.computed && p.parent.type === "CallExpression" && p.parent.callee === p) {
@@ -360,14 +381,22 @@ const noSleepPromise = {
             else if (!isConsole(p)) {
               const f = call ? helperFlow(p, e) : null;
               const m = call && inner(p.callee);
-              const root = m.type === "MemberExpression" && STORES.has(nameOf(m.computed, m.property)) ? rootOf(m.object) : null;
-              if (f?.timer) {
-                hit("timer", p);
-                if (f.given) hit("given", p);
-              } else {
-                // `setTimeout(once(r), 5)`: the call only wraps the resolver for the timer
-                const t = trace(p);
-                hit(t.timer && !t.given ? "timer" : "given", p, root);
+              const name = m.type === "MemberExpression" ? nameOf(m.computed, m.property) : undefined;
+              if (f) {
+                if (f.timer) hit("timer", p);
+                if (f.given) hit("listen", p);
+                if (f.leaks.length) hit("store", p, f.leaks);
+              }
+              if (!f?.timer) {
+                if (SUBSCRIBES.has(name)) hit("listen", p);
+                else if (STORES.has(name) && rootOf(m.object)) hit("store", p, [{ root: rootOf(m.object), skip: new Set() }]);
+                else {
+                  // `setTimeout(once(r), 5)`: the call only wraps the resolver for the timer
+                  const t = trace(p);
+                  if (t.timer && !t.given) hit("timer", p);
+                  else merge(out, t);
+                  hit("use", p);
+                }
               }
             }
             break;
@@ -376,17 +405,17 @@ const noSleepPromise = {
             if (p.right !== e) break;
             const v = p.left.type === "Identifier" ? lookup(p.left) : null;
             if (v?.defs[0] && inside(v.defs[0].name)) merge(out, follow(sameObj(e, v)));
-            else hit("given", p, rootOf(p.left));
+            else hit("store", p, rootOf(p.left) ? [{ root: rootOf(p.left), skip: new Set() }] : []);
             break;
           }
           case "VariableDeclarator":
             if (p.init === e && p.id.type === "Identifier") merge(out, follow(sameObj(e, declared(p, v => v.name === p.id.name))));
             break;
           case "ReturnStatement":
-            hit("given", p);
+            hit("use", p);
             break;
           case "ArrowFunctionExpression":
-            if (p.body === e) hit("given", p);
+            if (p.body === e) hit("use", p);
             break;
           case "ConditionalExpression":
             if (p.test !== e) merge(out, trace(p));
@@ -434,12 +463,14 @@ const noSleepPromise = {
       return def?.type === "Variable" && def.node.id.type === "Identifier" ? def.node.init : null;
     };
 
-    // timers in the file, and promises whose resolver sits in a container (judged at the end)
+    // timers and calls in the file, and promises that are not settled by what they do alone (judged at the end)
     const timers = [];
-    const leaky = [];
+    const calls = [];
+    const pending = [];
     const settle = (node, { timer, given, leaks }) => {
-      if (timer && !given) context.report({ node, message });
-      else if (leaks.length) leaky.push({ node, leaks });
+      if (given || !(timer || leaks.length)) return;
+      if (timer && !leaks.length) context.report({ node, message });
+      else pending.push({ node, leaks, timer });
     };
     // the member names a chain reads on its way down to its root: `pending.get(1).rej(e)` reads rej, get
     const namesOf = n => {
@@ -458,6 +489,18 @@ const noSleepPromise = {
     // What the timer callbacks of the file call, by container: every chain that starts at a
     // variable, as the member names it reads. Built once, so a promise that stored its resolver
     // costs a lookup and not a walk of every callback.
+    let tops = null;
+    const topsOf = () => {
+      if (tops) return tops;
+      tops = new Set();
+      for (const a of timers) {
+        const cb = a[0] && inner(a[0]);
+        if (!cb) continue;
+        const fn = cb.type === "Identifier" ? executor(cb) : null;
+        tops.add(fn && FNS.has(fn.type) ? fn : cb);
+      }
+      return tops;
+    };
     let ran = null;
     const ranOf = () => {
       if (ran) return ran;
@@ -467,14 +510,7 @@ const noSleepPromise = {
         if (!ran.has(root)) ran.set(root, new Map());
         ran.get(root).set(k, names);
       };
-      const tops = new Set();
-      for (const a of timers) {
-        const cb = a[0] && inner(a[0]);
-        if (!cb) continue;
-        const fn = cb.type === "Identifier" ? executor(cb) : null;
-        tops.add(fn && FNS.has(fn.type) ? fn : cb);
-      }
-      for (const top of tops) {
+      for (const top of topsOf()) {
         const chain = c => { const root = rootOf(c); if (root) add(root, namesOf(c)); };
         chain(top);
         for (const n of nodes(top)) {
@@ -493,6 +529,22 @@ const noSleepPromise = {
       }
       return false;
     });
+    // The same, for the calls outside every timer callback: someone besides the timer runs the container.
+    let called = null;
+    const calledOf = () => {
+      if (called) return called;
+      called = new Map();
+      const ts = [...topsOf()];
+      for (const n of calls) {
+        if (ts.some(t => n.range[0] >= t.range[0] && n.range[1] <= t.range[1])) continue;
+        const root = rootOf(n.type === "ForOfStatement" ? n.right : n);
+        if (!root || (n.type === "CallExpression" && continues(n))) continue;
+        if (!called.has(root)) called.set(root, []);
+        called.get(root).push(n.type === "ForOfStatement" ? [] : namesOf(n));
+      }
+      return called;
+    };
+    const handedOff = leaks => leaks.some(l => (calledOf().get(l.root) ?? []).some(names => !STORES.has(names[0]) && !BENIGN.has(names[0]) && !names.some(x => l.skip.has(x))));
     // a promise executor: `new P(exec)`, `super(exec)` in a subclass, `Reflect.construct(P, [exec])`
     const check = (node, arg) => {
       const exec = executor(arg && inner(arg));
@@ -507,7 +559,11 @@ const noSleepPromise = {
       NewExpression(node) {
         check(node, node.arguments[0]);
       },
+      ForOfStatement(node) {
+        calls.push(node);
+      },
       CallExpression(node) {
+        calls.push(node);
         const c = inner(node.callee);
         const args = timerArgs(node);
         if (args) timers.push(args);
@@ -542,7 +598,7 @@ const noSleepPromise = {
         if (v) settle(node, analyze(scopeOf(d), v, obj));
       },
       "Program:exit"() {
-        for (const { node, leaks } of leaky) if (runs(leaks)) context.report({ node, message });
+        for (const { node, leaks, timer } of pending) if ((timer || runs(leaks)) && !handedOff(leaks)) context.report({ node, message });
       },
     };
   },

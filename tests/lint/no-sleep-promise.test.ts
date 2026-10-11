@@ -38,6 +38,22 @@ const SLEEPS = [
   'await new Promise(r => { [1].forEach(r => console.log(r)); setTimeout(r, 5); });',
   'await new Promise(r => { r.length; setTimeout(r, 5); });',
   'await new Promise(r => { r(); setTimeout(r, 5); });',
+  // the race fallback needs a real handoff: a subscription, or a container something else calls
+  'await new Promise(r => { expect(r).toBeDefined(); setTimeout(r, 50); });',
+  'await new Promise(r => { void String(r); setTimeout(r, 50); });',
+  'await new Promise(r => { Object.freeze(r); setTimeout(r, 50); });',
+  'await new Promise(r => { vi.fn()(r); setTimeout(r, 50); });',
+  'await new Promise(r => { noop(r); setTimeout(r, 50); });',
+  "await new Promise(r => { ee.off('x', r); setTimeout(r, 50); });",
+  "await new Promise(r => { if (false) ee.on('x', r); setTimeout(r, 50); });",
+  "await new Promise(r => { false && ee.on('x', r); setTimeout(r, 50); });",
+  "await new Promise(r => { false ? ee.on('x', r) : 0; setTimeout(r, 50); });",
+  'await new Promise(r => { setTimeout(r, 50); return r; });',
+  'const fn = await new Promise(r => { setTimeout(r, 5); return r; });',
+  // a store nobody calls, or only a timer calls
+  'const sink: any[] = []; await new Promise(r => { sink.push(r); setTimeout(r, 50); });',
+  'let saved: any; const p = new Promise(r => { saved = r; setTimeout(() => r(1), 5); }); void saved; await p;',
+  "const handlers: any[] = []; const p = new Promise(r => { handlers.push(r); setTimeout(r, 5); }); setTimeout(() => handlers.forEach(f => f()), 5); await p;",
   // an alias is a handoff only when the alias itself is given away
   'await new Promise(r => { const a = r; setTimeout(r, 5); });',
   'await new Promise(r => { const done = r; void done; setTimeout(r, 5); });',
@@ -195,28 +211,27 @@ const ALLOWED = [
   "await new Promise((r, j) => { setTimeout(j, 5000); void r; });",
   "await new Promise((r, j) => { const t = setTimeout(() => j(new Error('deadline')), 5000); void t; void r; });",
   // resolve-style guard, resolver also handed to something else
-  "await new Promise(resolve => { const t = setTimeout(() => resolve('none'), 5); onEvent(resolve); clearTimeout(t); });",
+  "await new Promise(resolve => { const t = setTimeout(() => resolve('none'), 5); ee.on('x', resolve); clearTimeout(t); });",
   "await new Promise(r => { server.on('x', r); setTimeout(r, 5000); });",
   "await new Promise(r => { server.on('x', () => r(1)); setTimeout(() => r(2), 5000); });",
-  "let saved: unknown; await new Promise(r => { saved = r; setTimeout(() => r(1), 5); }); void saved;",
-  "await new Promise(r => { const keep = r; onEvent(keep); setTimeout(r, 5); });",
-  "await new Promise(r => { handlers.push(r); setTimeout(r, 5); });",
-  "const fn = await new Promise(r => { setTimeout(r, 5); return r; });",
+  "let saved: any; const p = new Promise(r => { saved = r; setTimeout(() => r(1), 5); }); ee.on('x', () => saved(2)); await p;",
+  "await new Promise(r => { const keep = r; ee.on('x', keep); setTimeout(r, 5); });",
+  "const handlers: any[] = []; const p = new Promise(r => { handlers.push(r); setTimeout(r, 5); }); ee.on('x', () => handlers.forEach(f => f())); await p;",
   // .bind is the resolver
   "await new Promise(r => { ee.once('x', r.bind(null)); setTimeout(r, 5); });",
   "await new Promise(r => { setTimeout(() => r(), 5); ee.once('x', r.bind(null, 1)); });",
   // a listener that calls it, given away
   "await new Promise(r => { ee.once('x', () => { r(); }); setTimeout(() => r(), 5); });",
-  "await new Promise(r => { handlers.x = () => r(); setTimeout(r, 5); });",
+  "const handlers: any = {}; const p = new Promise(r => { handlers.x = () => r(); setTimeout(r, 5); }); ee.on('y', () => handlers.x()); await p;",
   // aliases that are given away
   "await new Promise(r => { const a = r; ee.on('x', a); setTimeout(r, 5); });",
   "await new Promise(r => { const a = r.bind(null); ee.once('x', a); setTimeout(a, 5); });",
-  "await new Promise(r => { const a = r; const b = a; handlers.push(b); setTimeout(r, 5); });",
+  "const handlers: any[] = []; const p = new Promise(r => { const a = r; const b = a; handlers.push(b); setTimeout(r, 5); }); ee.on('x', () => handlers[0]()); await p;",
   "await new Promise(r => { let f; f = r; ee.on('x', f); setTimeout(r, 5); });",
   // the resolver sits in an object that is given
-  "await new Promise(r => { const t = setTimeout(() => r(), 5); pending.set(1, { resolve: r, timer: t }); });",
-  "await new Promise(r => { const rec = { resolve: r }; pending.set(1, rec); setTimeout(r, 5); });",
-  "await new Promise(r => { handlers.push([r]); setTimeout(r, 5); });",
+  "const pending = new Map(); const p = new Promise(r => { const t = setTimeout(() => r(), 5); pending.set(1, { resolve: r, timer: t }); }); ee.on('x', () => pending.get(1).resolve()); await p;",
+  "const pending = new Map(); const p = new Promise(r => { const rec = { resolve: r }; pending.set(1, rec); setTimeout(r, 5); }); ee.on('x', () => pending.get(1).resolve()); await p;",
+  "const handlers: any[] = []; const p = new Promise(r => { handlers.push([r]); setTimeout(r, 5); }); ee.on('x', () => handlers[0][0]()); await p;",
   // a named handler given to a listener
   "await new Promise(r => { const h = () => r(); ee.on('x', h); setTimeout(r, 5); });",
   "await new Promise(r => { function h() { r(); } ee.on('x', h); setTimeout(r, 5); });",
@@ -227,7 +242,7 @@ const ALLOWED = [
   // the same uses inside a function that is given away
   "await new Promise(r => { ee.on('x', () => { use(r); }); setTimeout(r, 5); });",
   "await new Promise(r => { const u = () => { saved = r; }; ee.on('x', u); setTimeout(r, 5); });",
-  "await new Promise(r => { handlers.x = () => r; setTimeout(r, 5); });",
+  "const handlers: any = {}; const p = new Promise(r => { handlers.x = () => r; setTimeout(r, 5); }); ee.on('y', () => handlers.x()); await p;",
   // extra timer arguments that are not the resolver
   "await new Promise(r => { setTimeout(log, 5, 'x'); r(1); });",
   "await new Promise((r, j) => { setTimeout((e) => j(e), 5000, new Error('deadline')); void r; });",
@@ -246,7 +261,7 @@ const ALLOWED = [
   // named executors: resolver given away, or no timer
   "function exec(r) { ee.on('x', r); setTimeout(r, 5); } await new Promise(exec);",
   "function exec(r) { r(1); } await new Promise(exec);",
-  "const exec = (r) => { handlers.push(r); setTimeout(() => r(), 5); }; await new Promise(exec);",
+  "const handlers: any[] = []; const exec = (r) => { handlers.push(r); setTimeout(() => r(), 5); }; const p = new Promise(exec); ee.on('x', () => handlers.forEach(f => f())); await p;",
   "await new Promise(unknownExecutor);",
   // two declarations of one name: which one runs is not knowable, so no verdict
   "function exec(r) { setTimeout(r, 5); } function exec(r) { r(); } await new Promise(exec);",
@@ -286,7 +301,7 @@ const ALLOWED = [
   "const { resolve } = Promise.withResolvers(); ee.on('x', resolve); setTimeout(resolve, 5);",
   "const { resolve } = Promise.withResolvers(); ee.on('x', () => resolve()); setTimeout(() => resolve(2), 5);",
   "const { promise, reject } = Promise.withResolvers(); setTimeout(() => reject(new Error('deadline')), 5000); await promise;",
-  "const w = Promise.withResolvers(); pending.push(w); setTimeout(w.resolve, 5);",
+  "const pending: any[] = []; const w = Promise.withResolvers(); pending.push(w); setTimeout(w.resolve, 5); ee.on('x', () => pending[0].resolve());",
   "const w = Promise.withResolvers(); ee.on('x', w.resolve); setTimeout(() => w.resolve(), 5);",
   "const w = Promise.withResolvers(); setTimeout(() => w.reject(new Error('deadline')), 5000); ee.on('x', () => w.resolve());",
   "const w = Promise.withResolvers(); setTimeout(w.reject, 5000); w.resolve(1);",
@@ -902,9 +917,10 @@ describe('sleep rule spec table', () => {
     expect(run.status).toBe(0);
   });
   // The race fallback is the one exemption: the resolver is also handed to something else.
-  // `noop(r)` is the edge of it, any call that takes the resolver counts as the handoff.
+  // A subscription (on, once, then...) or a container something other than a timer calls is the handoff;
+  // `noop(r)` is not.
   it('keeps the race-fallback exemption and names its edge', async () => {
-    expect(await specLint('new Promise((r) => { noop(r); setTimeout(r, 50); });')).toEqual([]);
+    expect((await specLint('new Promise((r) => { noop(r); setTimeout(r, 50); });')).length).toBeGreaterThan(0);
     expect(await specLint("new Promise((r) => { server.on('x', r); setTimeout(r, 5000); });")).toEqual([]);
     expect((await specLint('new Promise((r) => { setTimeout(r, 50); });')).length).toBeGreaterThan(0);
   });
