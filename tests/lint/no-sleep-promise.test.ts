@@ -5,6 +5,7 @@ import { ESLint } from 'eslint';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { SPEC_CASES_ALLOWED, SPEC_CASES_BANNED } from './spec-cases';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const eslint = new ESLint({ cwd: REPO });
@@ -1260,5 +1261,33 @@ describe('sleep rule spec table', () => {
     expect((await specLint('new Promise((r) => { noop(r); setTimeout(r, 50); });')).length).toBeGreaterThan(0);
     expect(await specLint("new Promise((r) => { server.on('x', r); setTimeout(r, 5000); });")).toEqual([]);
     expect((await specLint('new Promise((r) => { setTimeout(r, 50); });')).length).toBeGreaterThan(0);
+  });
+});
+
+// The shared spec table, every row: a shape the rule must report (by the rule id and message it names) or must
+// leave alone. A row is only left out of the loop while it is listed in OPEN, and the list shrinks as rows close.
+const OPEN = new Set<string>([
+  '3c:hole', '3d:hole', '3e:hole', '3d:hole-const',
+  '6:literal', '6:array', '6:outer',
+  '8a:nested', '8d:let-twice', '8d:let-reversed',
+  '11b:let-twice', '11b:let-reversed',
+  '12a:let-twice', '12a:let-reversed', '12a:let-append',
+  '14d:set-flag', '14d:throw-new',
+  'A15:default-overridden', 'A15:default-overridden-promise',
+]);
+describe('shared spec table', () => {
+  it.each(SPEC_CASES_BANNED.filter(r => !OPEN.has(r[0])))('%s (class %i) is reported by %s (%s)', async (_id, _cls, rule, frag, code) => {
+    const hits = await specLint(code);
+    expect(hits.map(m => m.ruleId)).toContain(rule);
+    expect(hits.find(m => m.ruleId === rule)!.message).toContain(frag);
+  });
+  it.each(SPEC_CASES_ALLOWED.filter(r => !OPEN.has(r[0])))('%s is not reported', async (_id, code) => {
+    expect((await specLint(code)).map(m => `${m.ruleId}: ${m.message}`)).toEqual([]);
+  });
+  it('has a banned row for every class 1 to 14 and no row twice', () => {
+    const have = new Set(SPEC_CASES_BANNED.map(r => r[1]));
+    for (let c = 1; c <= 14; c++) expect(have.has(c), `class ${c}`).toBe(true);
+    const ids = [...SPEC_CASES_BANNED.map(r => r[0]), ...SPEC_CASES_ALLOWED.map(r => r[0])];
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
