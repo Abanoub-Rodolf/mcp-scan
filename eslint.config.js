@@ -772,7 +772,7 @@ const noSleepPromise = {
       const v = lookup(arg);
       const def = v?.defs.length === 1 ? v.defs[0] : null;
       if (def?.type === "FunctionName") return def.node;
-      return def?.type === "Variable" && def.node.id.type === "Identifier" ? def.node.init : null;
+      return def?.type === "Variable" ? soleInit(v) : null;
     };
 
     // timers and calls in the file, and promises that are not settled by what they do alone (judged at the end)
@@ -1207,6 +1207,12 @@ const noFixedWait = {
         const c = n.callee;
         const f = inner(c);
         if (loads(c) && heldTimers(n.arguments[0])) context.report({ node: n, message: NO_TIMERS });
+        // `require.call(null, 'timers')`, `require.apply(null, ['timers'])`
+        if (f.type === "MemberExpression" && loads(f.object)) {
+          const how = keyOf(f.computed, f.property);
+          const named = how === "call" ? n.arguments[1] : how === "apply" && n.arguments[1] && inner(n.arguments[1]).type === "ArrayExpression" ? inner(n.arguments[1]).elements[0] : null;
+          if (named && TIMERS_MODULES.includes(heldModule(named))) context.report({ node: n, message: NO_TIMERS });
+        }
         // `Reflect.apply(Atomics.wait, null, [...])` runs its first argument
         const viaReflect = f.type === "MemberExpression" && keyOf(f.computed, f.property) === "apply" && inner(f.object).type === "Identifier" && inner(f.object).name === "Reflect" && !lookupIn(src, inner(f.object))?.defs.length;
         const target = viaReflect && n.arguments[0] ? inner(n.arguments[0]) : null;

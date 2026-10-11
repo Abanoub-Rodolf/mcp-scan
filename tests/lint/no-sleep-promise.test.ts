@@ -375,6 +375,9 @@ const BYPASS_BANNED: Record<string, string[]> = {
   // the timers module in the forms the first rounds did not cover
   c3: [
     "const t = module.require('timers'); void t;",
+    "const t = require.call(null, 'timers'); void t;",
+    "const t = require.apply(null, ['node:timers/promises']); void t;",
+    "const m = 'timers'; const t = require.call(null, m); void t;",
     "const t = createRequire(import.meta.url)('node:timers/promises'); void t;",
     "const t = await import('node:timers/promises').then(m => m.scheduler.wait(5)); void t;",
   ],
@@ -867,6 +870,7 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [9, "local/no-sleep-promise", "sleep promises", "export async function run(wait = setTimeout) { await new Promise((r) => wait(r, 50)); } await run(fake);"],
   [9, "local/no-sleep-promise", "sleep promises", "async function run(wait = setTimeout) { await new Promise((r) => wait(r, 50)); } use(run); await run(fake);"],
   [12, "local/no-fixed-wait", "timers in a script string (i", "async function run(s = 'setTimeout(() => 0, 5)') { await tab.evaluate(s); } await run('document.title'); await run();"],
+  [7, "local/no-sleep-promise", "sleep promises", "let after: any; after = (f: () => void) => setTimeout(f, 50); await new Promise<void>((r) => after(r));"],
   [8, "local/no-sleep-promise", "sleep promises", "const { setTimeout: wait } = globalThis; await new Promise((r) => wait(r, 50));"],
   [8, "local/no-sleep-promise", "sleep promises", "let k = 'setTimeout'; k = 'setTimeout'; await new Promise((r) => (globalThis as any)[k](r, 50));"],
   [8, "local/no-sleep-promise", "sleep promises", "let k = 'title'; k = 'setInterval'; await new Promise((r) => (globalThis as any)[k](r, 50));"],
