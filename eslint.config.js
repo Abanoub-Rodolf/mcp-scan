@@ -223,7 +223,9 @@ const noSleepPromise = {
     // `.resolve` of it is the resolver. `.reject` and `.promise` are ignored; any
     // other read (the object itself, a rest element, an unreadable key) hands it off.
     // `const { resolve } = w` and `w?.resolve` are reads of resolve like `w.resolve`.
-    // `leaks`: containers the resolver was stored in, for a timer elsewhere to run.
+    // `leaks`: containers the resolver was stored in, for a timer elsewhere to run, each with
+    // the member names that do not run it: `{ res, rej }` stored whole is run by `.res()`
+    // and not by `.rej()`, and a `withResolvers()` object is run by `.resolve()` only.
     const busy = new Set();
     const analyze = (exec, resolver, obj = false) => {
       const inside = n => n.range[0] >= exec.range[0] && n.range[1] <= exec.range[1];
@@ -232,12 +234,14 @@ const noSleepPromise = {
         for (let n = site; n && n !== exec; n = n.parent) if (FNS.has(n.type)) fns.push(n);
         return fns;
       };
-      const none = () => ({ timer: false, given: false, leaks: new Set() });
+      const none = () => ({ timer: false, given: false, leaks: [] });
       const merge = (out, x) => {
         out.timer ||= x.timer;
         out.given ||= x.given;
-        for (const v of x.leaks) out.leaks.add(v);
+        out.leaks.push(...x.leaks);
       };
+      // the same stores, now known to hold a value whose members `names` are not the resolver
+      const except = (x, names) => ({ ...x, leaks: x.leaks.map(l => ({ root: l.root, skip: new Set([...l.skip, ...names]) })) });
       const stack = new Set();
       const memo = new Map();
 
@@ -272,7 +276,7 @@ const noSleepPromise = {
           if (m.type === "VariableDeclarator" && m.init === n && m.id.type === "ObjectPattern") unpack(m, out);
           else if (holds(n, m)) out.given = true;
           else if (m.type !== "MemberExpression" || m.object !== n) {
-            merge(out, trace(id));
+            merge(out, except(trace(id), ["reject", "promise"]));
             // `const [x] = w` and the like take the object out of sight
             if (m.type === "VariableDeclarator" && m.init === n && m.id.type !== "Identifier") out.given = true;
           } else {
@@ -319,7 +323,7 @@ const noSleepPromise = {
           if (kind === "timer" || fns.some(f => fnFlow(f).timer)) out.timer = true;
           if (kind === "given" ? !fns.length || owned : kind === "call" && owned) {
             out.given = true;
-            if (root) out.leaks.add(root);
+            if (root) out.leaks.push({ root, skip: new Set() });
           }
         };
         let p = e.parent;
@@ -383,7 +387,10 @@ const noSleepPromise = {
             if (p.expressions.at(-1) === e) merge(out, trace(p));
             break;
           case "Property":
-            if (p.value === e && p.parent.type === "ObjectExpression") merge(out, trace(p.parent));
+            // `{ res, rej }` stored whole: calling `.rej` on it is not running the resolver
+            if (p.value === e && p.parent.type === "ObjectExpression") {
+              merge(out, except(trace(p.parent), p.parent.properties.filter(x => x !== p && x.type === "Property").map(x => nameOf(x.computed, x.key)).filter(k => k !== undefined && k !== nameOf(p.computed, p.key))));
+            }
             break;
           case "MemberExpression": {
             // the resolver in a container: `q[0]`, `rec.resolve`, `q.shift()`
@@ -424,20 +431,39 @@ const noSleepPromise = {
     const leaky = [];
     const settle = (node, { timer, given, leaks }) => {
       if (timer && !given) context.report({ node, message });
-      else if (leaks.size) leaky.push({ node, leaks });
+      else if (leaks.length) leaky.push({ node, leaks });
     };
-    // does a timer callback call something out of one of these containers?
-    const runs = (cb, vars) => {
+    // the member names a chain reads on its way down to its root: `pending.get(1).rej(e)` reads rej, get
+    const namesOf = n => {
+      const names = [];
+      for (n = inner(n); n.type === "MemberExpression" || n.type === "CallExpression"; n = inner(n.type === "CallExpression" ? n.callee : n.object)) {
+        if (n.type === "MemberExpression") names.push(nameOf(n.computed, n.property));
+      }
+      return names;
+    };
+    // a call that is only the start of a longer chain: `pending.get(1)` in `pending.get(1).rej(e)`
+    const continues = n => {
+      const o = outer(n);
+      const p = o.parent;
+      return (p.type === "MemberExpression" && p.object === o) || (p.type === "CallExpression" && p.callee === o);
+    };
+    // does a timer callback call something out of one of these containers? A chain that reads a
+    // name the stored value does not run under (`.rej` on `{ res, rej }`) is not it.
+    const runs = (cb, leaks) => {
       cb = inner(cb);
       const fn = cb.type === "Identifier" ? executor(cb) : null;
       const top = fn && FNS.has(fn.type) ? fn : cb;
-      if (vars.has(rootOf(top))) return true;
+      const runsAt = c => {
+        const root = rootOf(c);
+        if (!root) return false;
+        const names = namesOf(c);
+        return !BENIGN.has(names[0]) && leaks.some(l => l.root === root && !names.some(x => l.skip.has(x)));
+      };
+      if (runsAt(top)) return true;
       for (const n of nodes(top)) {
         // `for (const f of rs) f()`
-        if (n.type === "ForOfStatement" && vars.has(rootOf(n.right))) return true;
-        if (n.type !== "CallExpression") continue;
-        const c = inner(n.callee);
-        if (!BENIGN.has(c.type === "MemberExpression" ? nameOf(c.computed, c.property) : null) && vars.has(rootOf(c))) return true;
+        if (n.type === "ForOfStatement" && leaks.some(l => l.root === rootOf(n.right))) return true;
+        if (n.type === "CallExpression" && !continues(n) && runsAt(n)) return true;
       }
       return false;
     };

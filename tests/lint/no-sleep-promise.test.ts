@@ -441,6 +441,13 @@ const BYPASS_BANNED: Record<string, string[]> = {
     'const rs: Array<() => void> = []; const p = new Promise(res => { rs.push(res); }); setTimeout(() => { for (const f of rs) f(); }, 50); await p;',
     'const d: any = {}; d.p = new Promise(res => { d.resolve = res; }); setTimeout(() => d.resolve(), 50);',
     'let d; d = Promise.withResolvers(); const { resolve } = d; setTimeout(resolve, 50);',
+    // a stored { res, rej } is run through the key that holds the resolver
+    'const pending = new Map(); const p = new Promise((res, rej) => { pending.set(1, { res, rej }); void rej; }); setTimeout(() => pending.get(1).res(), 50); await p;',
+    'const pending = new Map(); const p = new Promise((res, rej) => { pending.set(1, { res, rej }); void rej; }); setTimeout(pending.get(1).res, 50); await p;',
+    'const pending = new Map(); const p = new Promise((res, rej) => { pending.set(1, { res, rej }); void rej; }); setTimeout(() => pending.forEach((v: any) => v.res()), 50); await p;',
+    'const pending = new Map(); const p = new Promise((res, rej) => { pending.set(1, { done: res, fail: rej }); void rej; }); setTimeout(() => pending.get(1).done(), 50); await p;',
+    'const pending = new Map(); const d = Promise.withResolvers<void>(); pending.set(1, d); setTimeout(() => pending.get(1).resolve(), 50); await d.promise;',
+    'const pending = new Map(); const d = Promise.withResolvers<void>(); pending.set(1, d); setTimeout(pending.get(1).resolve, 50); await d.promise;',
   ],
 };
 
@@ -497,6 +504,12 @@ const BYPASS_ALLOWED: Record<string, string[]> = {
     "const rs: Array<() => void> = []; const p = new Promise(res => { rs.push(res); }); setTimeout(() => console.log('tick'), 50); await p;",
     "const rs: Array<() => void> = []; const p = new Promise(res => { rs.push(res); }); setTimeout(() => { rs.length = 0; }, 50); await p;",
     "let saved: any; const p = new Promise(res => { saved = res; }); setTimeout(() => { throw new Error('d'); }, 50); void saved; await p;",
+    // a stored { res, rej } or withResolvers object, and the timer rejects it: a deadline guard
+    "const pending = new Map(); const p = new Promise((res, rej) => { pending.set(1, { res, rej }); }); setTimeout(() => pending.get(1).rej(new Error('timeout')), 5000); await p;",
+    "const pending = new Map(); const p = new Promise((res, rej) => { pending.set(1, { res, rej }); }); setTimeout(pending.get(1).rej, 5000); await p;",
+    "const pending = new Map(); const p = new Promise((res, rej) => { pending.set(1, { done: res, fail: rej }); }); setTimeout(() => pending.get(1).fail(new Error('timeout')), 5000); await p;",
+    "const pending = new Map(); const d = Promise.withResolvers<void>(); pending.set(1, d); setTimeout(() => pending.get(1).reject(new Error('timeout')), 5000); ee.on('x', () => pending.get(1).resolve()); await d.promise;",
+    "const pending = new Map(); const d = Promise.withResolvers<void>(); pending.set(1, d); setTimeout(() => void pending.get(1).promise, 5000); await d.promise;",
   ],
   // a property or a value that merely has the timer's name is not the timer
   c9: [
@@ -690,6 +703,7 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); const q = [d.resolve]; setTimeout(q[0], 50); await d.promise;"],
   [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); const { resolve } = d; setTimeout(resolve, 50); await d.promise;"],
   [10, "local/no-sleep-promise", "sleep promises", "const d = Promise.withResolvers<void>(); const e = d; setTimeout(e.resolve, 50); await d.promise;"],
+  [10, "local/no-sleep-promise", "sleep promises", "const pending = new Map(); const d = Promise.withResolvers<void>(); pending.set(1, d); setTimeout(() => pending.get(1).resolve(), 50); await d.promise;"],
   [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "await page.waitForTimeout(500);"],
   [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "await tab.waitForTimeout(500);"],
   [11, "local/no-fixed-wait", "fixed waitForTimeout (a call", "await getTab().waitForTimeout(500);"],
@@ -750,6 +764,8 @@ const SPEC_ALLOWED: string[] = [
   "const d = Promise.withResolvers<void>(); queueMicrotask(() => d.resolve()); await d.promise;",
   "await new Promise((r) => { globalThis['queueMicrotask'](r); });",
   "await mySched.wait(50);",
+  "const pending = new Map(); const p = new Promise((res, rej) => { pending.set(1, { res, rej }); }); setTimeout(() => pending.get(1).rej(new Error('timeout')), 5000); await p;",
+  "const pending = new Map(); const d = Promise.withResolvers<void>(); pending.set(1, d); setTimeout(() => pending.get(1).reject(new Error('timeout')), 5000); ee.on('x', () => pending.get(1).resolve()); await d.promise;",
   // a bind that names itself never reaches a timer, and must end the walk instead of overflowing the stack
   "const t = t.bind(null); t(1);",
   "function f(a = b.bind(null), b = a.bind(null)) { a(1); } f();",
