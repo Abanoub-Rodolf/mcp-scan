@@ -9,8 +9,10 @@ const NO_TIMERS = ban("imports of the timers module (timers.promises is a sleep,
 const TIMERS_MODULES = ["timers", "timers/promises"].flatMap(m => [m, `node:${m}`]);
 const TIMERS_MODULE = `/^(${TIMERS_MODULES.map(m => m.replace("/", "\\/")).join("|")})$/`;
 // a module name is a string, or a template whose first text is the name: 'timers', `timers`, `timers${x}`.
-// A hole after the name can only make timers, timers/promises or a module that is not there.
-const isTimersModule = path => `:matches([${path}.value=${TIMERS_MODULE}], [${path}.quasis.0.value.cooked=${TIMERS_MODULE}])`;
+// A hole after the name can only make timers, timers/promises or a module that is not there; after `timers/`
+// it can only make timers/promises. `timers-browserify${x}` is another package.
+const TIMERS_HEAD = "/^(node:)?timers\\/$/";
+const isTimersModule = path => `:matches([${path}.value=${TIMERS_MODULE}], [${path}.quasis.0.value.cooked=${TIMERS_MODULE}], [${path}.quasis.length>1][${path}.quasis.0.value.cooked=${TIMERS_HEAD}])`;
 // the ways to load a module by name: require, module.require, process.getBuiltinModule,
 // and the function createRequire(...) returns, called in place
 const REQUIRES = ["", ".expression", ".expressions.1", ".expressions.1.expression"].flatMap(w => [
@@ -91,7 +93,7 @@ const defaultLive = (src, f, i) => {
     const c = r.identifier.parent;
     if (c.type !== "CallExpression" || c.callee !== r.identifier) return true;
     const a = c.arguments;
-    return a.length <= i || a.slice(0, i + 1).some(x => x.type === "SpreadElement") || (a[i].type === "Identifier" && a[i].name === "undefined");
+    return a.length <= i || a.slice(0, i + 1).some(x => x.type === "SpreadElement") || (a[i].type === "Identifier" && a[i].name === "undefined") || (a[i].type === "UnaryExpression" && a[i].operator === "void");
   });
 };
 // nameOf, and a computed key that is a name written once reads as that string: `const k = "setTimeout"; o[k]`
@@ -213,7 +215,11 @@ const makeResolver = (src, leaf, state = { cuts: 0 }) => {
         if (leaf(e.name, path, !!def?.length && def[0].type !== "ImportBinding")) return true;
         if (def?.length !== 1) return false;
         const o = origin(v, def[0]);
-        if (!o?.at) return false;
+        if (!o?.at) {
+          // a let written more than once is judged by every write that can be read
+          const ws = writesOf(v);
+          return !!ws && ws.length > 1 && ws.some(w => reach(w, path, seen));
+        }
         const { at, init } = o;
         return !!(init && reach(init, [...at.path, ...path], seen)) || at.dflts.some(x => reach(x.value, [...at.path.slice(x.at), ...path], seen));
       }
@@ -304,7 +310,7 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 //   `h = { after: (f) => setTimeout(f, 50) }`), or a timer built in another module;
 // - a timer key or a script is built at runtime (`'set' + name`, a key from a call), is written in a `let`
 //   by a destructure or a loop, or is handed to a local function as an argument (`run('setTimeout(...)')`);
-// - a timer is a `let` that is written twice (`let t = setTimeout; t(r, 5); t = other`);
+// - a timer is a `let` one of whose writes is a destructure (`let w; ({ setTimeout: w } = globalThis); w = other`);
 // - a timer, `Atomics.wait` or `scheduler.wait` is passed on as a plain value (`run(setTimeout)`, `run(Atomics.wait)`;
 //   behind a cast it is reported), or a page script is a call result (`const s = mk(); page.evaluate(s)`);
 // - a `Promise.withResolvers()` bag is returned from a local function (`const d = mk()`), or kept in a class
@@ -1110,7 +1116,10 @@ const noFixedWait = {
       for (let i = 0; i < 8 && a; i++) {
         a = inner(a);
         if (a.type === "Literal") return a.value;
-        if (a.type === "TemplateLiteral") return a.quasis[0].value.cooked;
+        if (a.type === "TemplateLiteral") {
+          const head = a.quasis[0].value.cooked;
+          return a.expressions.length && /^(node:)?timers\/$/.test(head) ? "timers" : head;
+        }
         a = a.type === "Identifier" ? soleInit(lookupIn(src, a)) : null;
         if (!a) return undefined;
       }
@@ -1123,7 +1132,13 @@ const noFixedWait = {
       const name = c.type === "Identifier" ? c.name : c.type === "MemberExpression" ? keyOf(c.computed, c.property) : undefined;
       return made ? name === "createRequire" : name === "require" || name === "getBuiltinModule";
     };
-    const heldTimers = a => a && inner(a).type === "Identifier" && TIMERS_MODULES.includes(heldModule(a));
+    const heldTimers = a => {
+      if (!a || inner(a).type !== "Identifier") return false;
+      if (TIMERS_MODULES.includes(heldModule(a))) return true;
+      // a let written more than once names the module if any write does
+      const ws = writesOf(lookupIn(src, inner(a)));
+      return !!ws && ws.length > 1 && ws.some(w => TIMERS_MODULES.includes(heldModule(w)));
+    };
     const timerWord = new RegExp([...TIMERS].join("|"));
     const mentionsTimer = a => timerWord.test(textOf(a));
     const timers = makeResolver(src, timerLeaf);

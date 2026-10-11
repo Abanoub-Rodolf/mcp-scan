@@ -155,8 +155,8 @@ export const SPEC_CASES_BANNED: Array<[string, number, string, string, string]> 
   ["4e:param", 4, "local/no-sleep-promise", "sleep promises", "async function run({ Promise: P } = globalThis) { await new P((r) => setTimeout(r, 50)); } await run();"],
   ["4e:reflect-assign", 4, "local/no-sleep-promise", "sleep promises", "let P; ({ Promise: P } = globalThis); await Reflect.construct(P, [(r: () => void) => setTimeout(r, 50)]);"],
   ["5:swapped", 5, "local/no-sleep-promise", "sleep promises", "const after = (a: unknown, f: unknown) => { void a; setTimeout(f as () => void, 50); }; await new Promise<void>((r) => { after(r, 0); after(0, r); });"],
-  ["6:literal", 6, "local/no-sleep-promise", "sleep promises", "await new Promise((r, rej) => { const o = { r }; setTimeout(() => { o.r(); void rej; }, 50); });"],
-  ["6:array", 6, "local/no-sleep-promise", "sleep promises", "await new Promise((r, rej) => { const a = [r]; setTimeout(() => { a[0](); void rej; }, 50); });"],
+  ["6:literal", 6, "local/no-sleep-promise", "sleep promises", "await new Promise((r, rej) => { const o = { r }; setTimeout(() => { o.r(); rej(new Error('late')); }, 50); });"],
+  ["6:array", 6, "local/no-sleep-promise", "sleep promises", "await new Promise((r, rej) => { const a = [r]; setTimeout(() => { a[0](); rej(new Error('late')); }, 50); });"],
   ["6:wrapper", 6, "local/no-sleep-promise", "sleep promises", "await new Promise((r, rej) => { const go = () => { r(); }; setTimeout(() => { go(); rej(new Error('late')); }, 50); });"],
   ["6:outer", 6, "local/no-sleep-promise", "sleep promises", "let ok = () => undefined; const late = (j: (e: Error) => void) => { ok(); void j; }; await new Promise((r, rej) => { ok = r; setTimeout(() => late(rej), 50); });"],
   ["8a:cast2", 8, "local/no-sleep-promise", "sleep promises", "const { setTimeout: wait } = globalThis as unknown as Window; await new Promise((r) => wait(r, 50));"],
@@ -198,6 +198,15 @@ export const SPEC_CASES_BANNED: Array<[string, number, string, string, string]> 
   ["14f:local-decl", 14, "local/no-fixed-wait", "busy-waits on the clock", "function now() { return performance.now(); } const end = now() + 500; while (now() < end) {}"],
   ["14f:local-guard", 14, "local/no-fixed-wait", "busy-waits on the clock", "const start = Date.now(); function el() { return Date.now() - start; } while (true) { if (el() > 500) break; }"],
   ["14f:local-var", 14, "local/no-fixed-wait", "busy-waits on the clock", "const now = () => Date.now(); const end = now() + 5; let t = 0; while (true) { t = now(); if (t > end) break; }"],
+  ["12a:param-undefined", 12, "local/no-fixed-wait", "timers in a script string", "async function run(s = 'new Promise((r) => setTimeout(r, 500))') { await tab.evaluate(s); } await run(undefined);"],
+  ["4a:default-undefined", 4, "local/no-sleep-promise", "sleep promises", "async function run(P = Promise, ms = 0) { await new P((r) => setTimeout(r, ms)); } await run(undefined, 50);"],
+  ["8a:default-void", 8, "local/no-sleep-promise", "sleep promises", "function run({ setTimeout: wait } = globalThis) { return new Promise((r) => wait(r, 50)); } run(void 0);"],
+  ["14f:alias", 14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; const now = Date.now; while (now() < end) {}"],
+  ["14f:alias-bind", 14, "local/no-fixed-wait", "busy-waits on the clock", "const end = performance.now() + 500; const now = performance.now.bind(performance); while (now() < end) {}"],
+  ["14f:alias-destructured", 14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; const { now } = Date; while (now() < end) {}"],
+  ["10i:let-reassigned", 10, "local/no-sleep-promise", "sleep promises", "let mk: any = null; mk = Promise.withResolvers.bind(Promise); const d = mk(); setTimeout(d.resolve, 50); await d.promise;"],
+  ["10i:let-reversed", 10, "local/no-sleep-promise", "sleep promises", "let mk: any = Promise.withResolvers.bind(Promise); mk = null; const d = mk(); setTimeout(d.resolve, 50); await d.promise;"],
+  ["3d:let-reversed", 3, "local/no-fixed-wait", "imports of the timers module", "let m = './x'; m = 'timers'; const t = await import(m); void t;"],
 ];
 
 export const SPEC_CASES_ALLOWED: Array<[string, string]> = [
@@ -263,4 +272,7 @@ export const SPEC_CASES_ALLOWED: Array<[string, string]> = [
   ["A7:local-counter", "let n = 0; const tick = () => { n++; return n; }; while (tick() < 5) {}"],
   ["A7:local-stamps", "const stamp = () => Date.now(); const s: number[] = []; for (let i = 0; i < 3; i++) s[i] = stamp(); use(s);"],
   ["A7:local-clock-outside", "const t0 = Date.now(); const dt = () => Date.now() - t0; const a = dt(); use(a);"],
+  ["A15:default-null", "async function run(s = 'setTimeout(() => 0, 5)') { await tab.evaluate(s); } await run(null);"],
+  ["A7:alias-stamps", "const stamp = Date.now; const s: number[] = []; for (let i = 0; i < 3; i++) s[i] = stamp(); use(s);"],
+  ["A15:module-head", "const t = await import(`timers-browserify${x}`); void t; const u = require(`timers-browserify${y}`); void u;"],
 ];
