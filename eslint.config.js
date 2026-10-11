@@ -544,7 +544,8 @@ const noSleepPromise = {
         return out;
       };
       // A variable stands for the value it holds: follow every read of it.
-      const follow = v => {
+      // `via`: the keys down the value the variable holds to the resolver (`const o = { r }` holds it at ["r"])
+      const follow = (v, via = []) => {
         const out = none();
         if (!v || stack.has(v)) return out;
         stack.add(v);
@@ -553,7 +554,7 @@ const noSleepPromise = {
           for (const ref of v.references) {
             if (ref.isWriteOnly()) continue;
             if (objs.has(v)) bagRead(ref.identifier, out);
-            else merge(out, trace(ref.identifier));
+            else merge(out, trace(ref.identifier, via));
           }
         }
         stack.delete(v);
@@ -671,12 +672,12 @@ const noSleepPromise = {
           case "AssignmentExpression": {
             if (p.right !== e) break;
             const v = p.left.type === "Identifier" ? lookup(p.left) : null;
-            if (v?.defs[0] && inside(v.defs[0].name)) merge(out, follow(sameObj(e, v)));
+            if (v?.defs[0] && inside(v.defs[0].name)) merge(out, follow(sameObj(e, v), via));
             else hit("store", p, rootOf(p.left) ? [{ root: rootOf(p.left), skip: new Set() }] : []);
             break;
           }
           case "VariableDeclarator":
-            if (p.init === e && p.id.type === "Identifier") merge(out, follow(sameObj(e, declared(p, v => v.name === p.id.name))));
+            if (p.init === e && p.id.type === "Identifier") merge(out, follow(sameObj(e, declared(p, v => v.name === p.id.name)), via));
             break;
           case "ReturnStatement":
             hit("use", p);
@@ -700,7 +701,9 @@ const noSleepPromise = {
             // the resolver in a container: `q[0]`, `rec.resolve`, `q.shift()`
             const name = nameOf(p.computed, p.property);
             if (p.object !== e || INERT.has(name)) break;
-            if (p.parent.type !== "CallExpression" || p.parent.callee !== p) merge(out, trace(p));
+            if (p.parent.type !== "CallExpression" || p.parent.callee !== p) merge(out, trace(p, via.length && String(name) === String(via[0]) ? via.slice(1) : []));
+            // `o.r()` where `o = { r }`: the call runs what the literal holds under that key
+            else if (via.length && String(name) === String(via[0])) merge(out, trace(p, via.slice(1)));
             else if (TAKES.has(name)) merge(out, trace(p.parent));
             else if (ITER.has(name)) {
               // `[r].forEach((f) => setTimeout(f, 50))`: the callback gets each element
