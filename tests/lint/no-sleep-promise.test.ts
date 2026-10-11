@@ -993,6 +993,10 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; (() => { while (true) { if (Date.now() > end) return; } })();"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "for (let t = Date.now(); t < end; t = Date.now()) {}"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "let n = 0; while (n < 3) { const t = Date.now(); if (t > end) { break; } n++; }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; let t = Date.now(); while (t < end) { t = Date.now(); }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; let t = 0; do { t = Date.now(); } while (t < end);"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; let ok = true; while (ok) { ok = Date.now() < end; }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = performance.now() + 500; let t = 0; for (; t < end; ) { t = performance.now(); }"],
 ];
 
 const SPEC_ALLOWED: string[] = [
@@ -1060,6 +1064,9 @@ const SPEC_ALLOWED: string[] = [
   "let last = 0; for (let i = 0; i < 3; i++) { last = Date.now(); } use(last);",
   "let late = 0; for (let i = 0; i < 3; i++) { if (Date.now() > deadline) late++; } use(late);",
   "let n = 0; let t = 0; while (n < 3) { t = performance.now(); n++; } use(t);",
+  "let t = Date.now(); while (t < end) { t = Date.now(); await check(); }",
+  "let ok = true; while (ok) { ok = next(); }",
+  "let t = 0; let n = 0; while (t < end) { n++; t = n * 2; }",
   "for (let i = 0; i < 10; i++) { for (const x of xs) { if (Date.now() > end) break; } }",
   "for (let i = 0; i < 10; i++) { if (Date.now() > end) break; work(i); }",
   "await page.evaluate((s: string) => s, 'setTimeout');",

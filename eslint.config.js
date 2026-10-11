@@ -1080,7 +1080,8 @@ const noFixedWait = {
       const test = node.test && inner(node.test);
       const forever = !test || (test.type === "Literal" && !!test.value);
       const guard = ifsOf(node.body).some(x => clockTest(x.test, node.body) && (leaves(x.consequent) || (x.alternate && leaves(x.alternate))));
-      const clocked = forever ? [...nodes(node.body)].some(isClock) : [...nodes(test), ...(node.update ? nodes(node.update) : [])].some(isClock) || guard;
+      // `while (t < end) { t = Date.now(); }`: the test reads a name the body sets from the clock
+      const clocked = forever ? [...nodes(node.body)].some(isClock) : [...nodes(test), ...(node.update ? nodes(node.update) : [])].some(isClock) || guard || clockTest(test, node.body);
       if (!clocked) return;
       const rest = [node.body, node.update].filter(Boolean).flatMap(x => [...nodes(x)]);
       if (!rest.some(n => !isClock(n) && /^(Await|Yield|Call|New|TaggedTemplate|Import)/.test(n.type))) flag(node, "busy-waits on the clock");
