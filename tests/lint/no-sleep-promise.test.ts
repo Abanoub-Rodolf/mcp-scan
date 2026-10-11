@@ -863,6 +863,27 @@ describe('sleep rule spec table', () => {
     expect(rows.length, 'a row that only this rule reports').toBeGreaterThan(0);
     expect(await specLint(rows[0], { off: id })).toEqual([]);
   });
+  // Cost: the end-of-file judgment is promises x timers x callback size, and a helper that calls
+  // another helper twice is 2^n, unless each is computed once
+  it('lints 200 stored resolvers against 200 timers within 3 s', async () => {
+    const lines = ['const rs: Array<() => void> = [];'];
+    for (let i = 0; i < 200; i++) lines.push(`const p${i} = new Promise<void>((res) => { rs.push(res); });`);
+    for (let i = 0; i < 200; i++) lines.push(`setTimeout(() => { ${Array.from({ length: 25 }, (_, j) => `step${j}(${i}, log);`).join(' ')} }, 50);`);
+    lines.push('await Promise.all([p0, p1]);');
+    const t0 = Date.now();
+    expect(await specLint(lines.join('\n'))).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(3000);
+    // and the same file does report once a timer runs the container
+    expect((await specLint(lines.join('\n') + '\nsetTimeout(() => rs.forEach((f) => f()), 50);')).length).toBeGreaterThan(0);
+  });
+  it('analyzes a helper that calls the next helper twice once per helper', async () => {
+    const lines = ['function h0(f: () => void) { setTimeout(f, 5); }'];
+    for (let i = 1; i <= 22; i++) lines.push(`function h${i}(f: () => void) { h${i - 1}(f); h${i - 1}(f); }`);
+    lines.push('await new Promise<void>((r) => h22(r));');
+    const t0 = Date.now();
+    expect((await specLint(lines.join('\n'))).length).toBeGreaterThan(0);
+    expect(Date.now() - t0).toBeLessThan(3000);
+  });
   // Per-branch walking must not turn a chain of `a1 = a0 ?? a0` into 2^n steps
   it('walks a doubling chain of aliases once', async () => {
     const chain = Array.from({ length: 24 }, (_, i) => `const a${i + 1} = a${i} ?? a${i};`).join(' ');

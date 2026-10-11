@@ -143,6 +143,7 @@ const noSleepPromise = {
     // `seen` is the walk that led here, one branch at a time: `o.a ?? o.b` reads `o` twice,
     // under two keys, and a node that merely finished earlier is no cycle. A false that no
     // cycle cut short stays true for the file, so a chain of `a1 = a0 ?? a0` is walked once.
+    // `cuts` counts every walk a cycle ended early, here and in the helper analysis below.
     let cuts = 0;
     const known = new Map();
     const timerAt = (e, path, seen) => {
@@ -227,6 +228,7 @@ const noSleepPromise = {
     // the member names that do not run it: `{ res, rej }` stored whole is run by `.res()`
     // and not by `.rej()`, and a `withResolvers()` object is run by `.resolve()` only.
     const busy = new Set();
+    const helpers = new Map();
     const analyze = (exec, resolver, obj = false) => {
       const inside = n => n.range[0] >= exec.range[0] && n.range[1] <= exec.range[1];
       const fnsOf = site => {
@@ -305,10 +307,16 @@ const noSleepPromise = {
         const i = call.arguments.indexOf(arg);
         const first = fn && FNS.has(fn.type) ? fn.params[i] : null;
         const param = first?.type === "AssignmentPattern" ? first.left : first;
-        if (param?.type !== "Identifier" || busy.has(fn)) return null;
+        if (param?.type !== "Identifier") return null;
+        if (busy.has(fn)) { cuts++; return null; }
+        // one helper and one parameter answer the same for every caller, unless a recursion cut the answer short
+        const key = `${fn.range}|${i}`;
+        if (helpers.has(key)) return helpers.get(key);
         busy.add(fn);
+        const before = cuts;
         const r = analyze(fn, declared(fn, v => v.defs.some(d => d.type === "Parameter" && d.name === param)));
         busy.delete(fn);
+        if (cuts === before) helpers.set(key, r);
         return r;
       };
 
@@ -447,26 +455,44 @@ const noSleepPromise = {
       const p = o.parent;
       return (p.type === "MemberExpression" && p.object === o) || (p.type === "CallExpression" && p.callee === o);
     };
-    // does a timer callback call something out of one of these containers? A chain that reads a
-    // name the stored value does not run under (`.rej` on `{ res, rej }`) is not it.
-    const runs = (cb, leaks) => {
-      cb = inner(cb);
-      const fn = cb.type === "Identifier" ? executor(cb) : null;
-      const top = fn && FNS.has(fn.type) ? fn : cb;
-      const runsAt = c => {
-        const root = rootOf(c);
-        if (!root) return false;
-        const names = namesOf(c);
-        return !BENIGN.has(names[0]) && leaks.some(l => l.root === root && !names.some(x => l.skip.has(x)));
+    // What the timer callbacks of the file call, by container: every chain that starts at a
+    // variable, as the member names it reads. Built once, so a promise that stored its resolver
+    // costs a lookup and not a walk of every callback.
+    let ran = null;
+    const ranOf = () => {
+      if (ran) return ran;
+      ran = new Map();
+      const add = (root, names) => {
+        const k = names.join(".");
+        if (!ran.has(root)) ran.set(root, new Map());
+        ran.get(root).set(k, names);
       };
-      if (runsAt(top)) return true;
-      for (const n of nodes(top)) {
-        // `for (const f of rs) f()`
-        if (n.type === "ForOfStatement" && leaks.some(l => l.root === rootOf(n.right))) return true;
-        if (n.type === "CallExpression" && !continues(n) && runsAt(n)) return true;
+      const tops = new Set();
+      for (const a of timers) {
+        const cb = a[0] && inner(a[0]);
+        if (!cb) continue;
+        const fn = cb.type === "Identifier" ? executor(cb) : null;
+        tops.add(fn && FNS.has(fn.type) ? fn : cb);
+      }
+      for (const top of tops) {
+        const chain = c => { const root = rootOf(c); if (root) add(root, namesOf(c)); };
+        chain(top);
+        for (const n of nodes(top)) {
+          // `for (const f of rs) f()`
+          if (n.type === "ForOfStatement") { const root = rootOf(n.right); if (root) add(root, []); }
+          if (n.type === "CallExpression" && !continues(n)) chain(n);
+        }
+      }
+      return ran;
+    };
+    // does a timer call something out of one of these containers? A chain that reads a name the
+    // stored value does not run under (`.rej` on `{ res, rej }`) is not it.
+    const runs = leaks => leaks.some(l => {
+      for (const names of ranOf().get(l.root)?.values() ?? []) {
+        if (!BENIGN.has(names[0]) && !names.some(x => l.skip.has(x))) return true;
       }
       return false;
-    };
+    });
     // a promise executor: `new P(exec)`, `super(exec)` in a subclass, `Reflect.construct(P, [exec])`
     const check = (node, arg) => {
       const exec = executor(arg && inner(arg));
@@ -516,7 +542,7 @@ const noSleepPromise = {
         if (v) settle(node, analyze(scopeOf(d), v, obj));
       },
       "Program:exit"() {
-        for (const { node, leaks } of leaky) if (timers.some(a => a[0] && runs(a[0], leaks))) context.report({ node, message });
+        for (const { node, leaks } of leaky) if (runs(leaks)) context.report({ node, message });
       },
     };
   },
