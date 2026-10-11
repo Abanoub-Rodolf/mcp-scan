@@ -823,7 +823,7 @@ describe('local/no-sleep-promise and the timers/promises ban', () => {
   });
 });
 
-// Spec table (~/.claude/reference/no-sleep-rule-spec.md): one row per bypass, linted at the top level of a
+// Spec table (the shared spec): one row per bypass, linted at the top level of a
 // tests/*.ts file with the repo's real config. Columns: class, the rule id that must report it, a fragment
 // of its message, the snippet. Classes 1 to 14 each need a row, and each rule id is muted once below to
 // prove its rows depend on it.
@@ -1189,16 +1189,37 @@ async function specLint(code: string, opts: { file?: string; off?: string } = {}
   return res.messages.filter(m => m.ruleId && SPEC_IDS.includes(m.ruleId));
 }
 
-// Fastest of up to three runs: a loaded runner stalls one run, a slow walk slows all of them. `done` ends
-// the loop early once the best time is good enough, so a failing walk is not run three times over.
-async function fastest(code: string, done: (best: number) => boolean = () => false): Promise<number> {
+// Cost is rule time from ESLint's own stats, best of five: parsing and the other rules are linear and would hide a slow
+// walk, and a loaded runner stalls one run but not all five. Each shape is timed at two sizes and the ratio is bounded,
+// so a slow machine moves both sides and a walk that grows too fast moves one.
+const COST_IDS = new Set(['local/no-sleep-promise', 'local/no-fixed-wait']);
+const timed = new ESLint({ cwd: REPO, stats: true });
+async function ruleMs(code: string): Promise<number> {
+  const [res] = await timed.lintText(code, { filePath: path.join(REPO, 'tests/snippet.test.ts') });
+  expect(res.messages.filter(m => m.fatal), 'parse').toEqual([]);
+  let total = 0;
+  for (const pass of res.stats?.times.passes ?? []) {
+    for (const [id, t] of Object.entries(pass.rules ?? {})) if (COST_IDS.has(id)) total += t.total;
+  }
+  return total;
+}
+// `limit`: with one, the best of five only has to get under it, so the loop ends on the first run that does, and on the first
+// run twenty times past it (noise does not do that, an exponential walk does, and it is not run five times over).
+async function bestMs(code: string, limit?: number): Promise<number> {
   let best = Infinity;
-  for (let i = 0; i < 3 && !done(best); i++) {
-    const t0 = performance.now();
-    await specLint(code);
-    best = Math.min(best, performance.now() - t0);
+  for (let i = 0; i < 5; i++) {
+    best = Math.min(best, await ruleMs(code));
+    if (limit !== undefined && (best <= limit || best > 20 * limit)) break;
   }
   return best;
+}
+async function expectGrowth(name: string, make: (n: number) => string, small: number, opts: { factor?: number; bound?: number } = {}) {
+  const { factor = 4, bound = 28 } = opts;
+  await ruleMs(make(small));
+  // a floor on the base: a sub-0.2 ms run is timer noise
+  const base = Math.max(await bestMs(make(small)), 0.2);
+  const big = await bestMs(make(small * factor), base * bound);
+  expect(big / base, `${name}: ${base.toFixed(2)} ms at ${small}, ${big.toFixed(2)} ms at ${small * factor}`).toBeLessThan(bound);
 }
 
 describe('sleep rule spec table', () => {
@@ -1252,9 +1273,7 @@ describe('sleep rule spec table', () => {
       return lines.join('\n');
     };
     expect(await specLint(stored(100))).toEqual([]);
-    const t100 = await fastest(stored(100));
-    const t400 = await fastest(stored(400), ms => ms < 8 * t100);
-    expect(t400 / t100).toBeLessThan(8);
+    await expectGrowth('stored resolvers', stored, 100, { bound: 8 });
     // and the same file does report once a timer runs the container
     expect((await specLint(stored(100) + '\nsetTimeout(() => rs.forEach((f) => f()), 50);')).length).toBeGreaterThan(0);
   });
@@ -1268,9 +1287,7 @@ describe('sleep rule spec table', () => {
       return lines.join('\n');
     };
     expect((await specLint(run(100))).length).toBe(100);
-    const t100 = await fastest(run(100));
-    const t400 = await fastest(run(400), ms => ms < 8 * t100);
-    expect(t400 / t100).toBeLessThan(8);
+    await expectGrowth('every stored resolver judged', run, 100, { bound: 8 });
   });
   it('analyzes a helper that calls the next helper twice once per helper', async () => {
     const helpers = (n: number) => {
@@ -1279,9 +1296,7 @@ describe('sleep rule spec table', () => {
       lines.push(`await new Promise<void>((r) => h${n}(r));`);
       return lines.join('\n');
     };
-    const t16 = await fastest(helpers(16));
-    const t20 = await fastest(helpers(20), ms => ms < 4 * t16 + 50);
-    expect(t20).toBeLessThan(4 * t16 + 50);
+    await expectGrowth('helper calls the next twice', helpers, 6);
     expect((await specLint(helpers(200))).length).toBeGreaterThan(0);
   });
   // each level of a nest is judged once, so the count does not depend on how deep it goes
@@ -1299,37 +1314,33 @@ describe('sleep rule spec table', () => {
       return `declare function a0(f: () => void): void;\nawait new Promise<void>((r) => { ${body} setTimeout(r, 50); });`;
     };
     expect((await specLint(nest(12))).length).toBe(1);
-    const t12 = await fastest(nest(12));
-    const t24 = await fastest(nest(24), ms => ms < 4 * t12 + 50);
-    expect(t24).toBeLessThan(4 * t12 + 50);
+    await expectGrowth('nested callbacks', nest, 6);
   });
   // Per-branch walking must not turn a chain of `a1 = a0 ?? a0` into 2^n steps
   it('walks a doubling chain of aliases once', async () => {
     const chain = (n: number, head: string) => `const a0 = ${head}; ${Array.from({ length: n }, (_, i) => `const a${i + 1} = a${i} ?? a${i};`).join(' ')} await new Promise((r) => a${n}(r, 50));`;
-    const t16 = await fastest(chain(16, 'other'));
-    const t20 = await fastest(chain(20, 'other'), ms => ms < 4 * t16 + 50);
-    expect(t20).toBeLessThan(4 * t16 + 50);
+    await expectGrowth('doubling alias chain', n => chain(n, 'other'), 5);
     expect(await specLint(chain(200, 'other'))).toEqual([]);
     expect(await specLint(chain(200, 'setTimeout'))).not.toEqual([]);
   });
   // The text of a script held in a name is read once per name: `s1 = s0 + s0` doubles the walk at every level
   it('reads a doubling chain of script texts once', async () => {
     const chain = (n: number, head: string) => `const s0 = '${head}'; ${Array.from({ length: n }, (_, i) => `const s${i + 1} = s${i} + s${i};`).join(' ')} await page.evaluate(s${n});`;
-    const t16 = await fastest(chain(16, 'document.title'));
-    const t20 = await fastest(chain(20, 'document.title'), ms => ms < 4 * t16 + 50);
-    expect(t20).toBeLessThan(4 * t16 + 50);
+    await expectGrowth('doubling script-text chain', n => chain(n, 'document.title'), 5);
     expect(await specLint(chain(200, 'document.title'))).toEqual([]);
     expect(await specLint(chain(200, 'setTimeout(() => 0, 5)'))).not.toEqual([]);
   });
-  // 200 reverse assignments and 200 calls into a 200-line helper (spec 5.9)
-  it('lints a 200-step reverse assignment chain and 200 calls into a long helper in under a second', async () => {
-    const decl = Array.from({ length: 200 }, (_, i) => `let c${i}: any;`).join(' ');
-    const asg = Array.from({ length: 199 }, (_, i) => `c${198 - i} = c${199 - i};`).join(' ');
-    const helper = `function long(f: () => void) { ${Array.from({ length: 200 }, (_, i) => `log(${i}, f);`).join(' ')} }`;
-    const calls = Array.from({ length: 200 }, () => 'long(() => undefined);').join(' ');
-    const code = `${decl} c199 = Promise.withResolvers<void>(); ${asg} setTimeout(c0.resolve, 5); ${helper} ${calls}`;
-    expect((await specLint(code)).length).toBeGreaterThan(0);
-    expect(await fastest(code, ms => ms < 1000)).toBeLessThan(1000);
+  // N reverse assignments and N calls into an N-line helper (spec 5.9)
+  it('lints a reverse assignment chain and calls into a long helper in time that grows with the file', async () => {
+    const make = (n: number) => {
+      const decl = Array.from({ length: n }, (_, i) => `let c${i}: any;`).join(' ');
+      const asg = Array.from({ length: n - 1 }, (_, i) => `c${n - 2 - i} = c${n - 1 - i};`).join(' ');
+      const helper = `function long(f: () => void) { ${Array.from({ length: n }, (_, i) => `log(${i}, f);`).join(' ')} }`;
+      const calls = Array.from({ length: n }, () => 'long(() => undefined);').join(' ');
+      return `${decl} c${n - 1} = Promise.withResolvers<void>(); ${asg} setTimeout(c0.resolve, 5); ${helper} ${calls}`;
+    };
+    expect((await specLint(make(200))).length).toBeGreaterThan(0);
+    await expectGrowth('reverse chain and long helper', make, 50);
   });
   // A crash inside a rule aborts the lint for every file, so the exit code is what matters here
   it.each([
@@ -1345,9 +1356,84 @@ describe('sleep rule spec table', () => {
   // A subscription (on, once, then...) or a container something other than a timer calls is the handoff;
   // `noop(r)` is not.
   it('keeps the race-fallback exemption and names its edge', async () => {
-    expect((await specLint('new Promise((r) => { noop(r); setTimeout(r, 50); });')).length).toBeGreaterThan(0);
+    expect((await specLint('new Promise((r) => { noop(r); setTimeout(r, 50); });')).map(m => m.ruleId)).toEqual(['local/no-sleep-promise']);
     expect(await specLint("new Promise((r) => { server.on('x', r); setTimeout(r, 5000); });")).toEqual([]);
-    expect((await specLint('new Promise((r) => { setTimeout(r, 50); });')).length).toBeGreaterThan(0);
+    expect((await specLint('new Promise((r) => { setTimeout(r, 50); });')).map(m => m.ruleId)).toEqual(['local/no-sleep-promise']);
+  });
+});
+
+// Helpers, clock functions, aliases and callbacks that call each other. Each shape is a ring where function i calls
+// i+1 and i+2 (modulo N), so every function sits on many cycles; a walk that is cut short at a cycle and then
+// forgotten is exponential in N, and so is one that is cut at a function instead of at the question it was asked.
+// The sizes keep a walk without its memo to a few seconds, so a regression fails the ratio instead of hanging.
+describe('lint cost on cyclic graphs', () => {
+  const R = <T,>(n: number, f: (i: number) => T) => Array.from({ length: n }, (_, i) => f(i));
+  const PROMISE = 'local/no-sleep-promise';
+  const API = 'local/no-fixed-wait';
+  const others = (n: number, i: number) => R(n, j => j).filter(j => j !== i);
+  // Spec 5.9, third shape: m_i returns m_{i+1}() + m_{i+2}(), the last two read the clock. Without the clock
+  // memo the number of walks is Fibonacci in N.
+  const clockChain = (n: number) =>
+    [...R(n + 2, i => (i >= n ? `function m${i}() { return Date.now(); }` : `function m${i}() { return m${i + 1}() + m${i + 2}(); }`)), 'while (m0() < 500) {}'].join('\n');
+  const clockRing = (clock: boolean) => (n: number) =>
+    [...R(n, i => `function m${i}() { return ${clock && i === n - 1 ? 'Date.now() + ' : ''}m${(i + 1) % n}() + m${(i + 2) % n}(); }`), 'while (m0() < 500) {}'].join('\n');
+  const clockComplete = (n: number) =>
+    [...R(n, i => `function m${i}() { return ${i === n - 1 ? 'Date.now() + ' : ''}${others(n, i).map(j => `m${j}()`).join(' + ')}; }`), 'while (m0() < 500) {}'].join('\n');
+  const helperRing = (timer: boolean) => (n: number) =>
+    [...R(n, i => `function h${i}(f: () => void) { h${(i + 1) % n}(f); h${(i + 2) % n}(f); ${timer && i === n - 1 ? 'setTimeout(f, 5);' : ''} }`), 'await new Promise<void>((r) => h0(r));'].join('\n');
+  const helperComplete = (n: number) =>
+    [...R(n, i => `function h${i}(f: () => void) { ${others(n, i).map(j => `h${j}(f);`).join(' ')} ${i === n - 1 ? 'setTimeout(f, 5);' : ''} }`), 'await new Promise<void>((r) => h0(r));'].join('\n');
+  const aliasRing = (n: number) =>
+    [...R(n, i => `const a${i}: any = a${(i + 1) % n} ?? a${(i + 2) % n}${i === n - 1 ? ' ?? setTimeout' : ''};`), 'await new Promise((r) => a0(r, 50));'].join('\n');
+  const returnRing = (n: number) =>
+    [...R(n, i => `function k${i}(): any { return c ? k${(i + 1) % n}() : k${(i + 2) % n}()${i === n - 1 ? ' ?? setTimeout' : ''}; }`), 'await new Promise((r) => k0()(r, 50));'].join('\n');
+  const callbackRing = (n: number) =>
+    ['await new Promise<void>((r) => {', ...R(n, i => `  const g${i} = () => { g${(i + 1) % n}(); g${(i + 2) % n}(); ${i === n - 1 ? 'r();' : ''} };`), '  setTimeout(g0, 5);', '});'].join('\n');
+  // `a1 = a0 ?? a0` N times in the executor, the last one handed to a timer: every name is read twice
+  const resolverDoubling = (n: number) =>
+    ['await new Promise<void>((r) => {', '  const a0 = r;', ...R(n, i => `  const a${i + 1} = a${i} ?? a${i};`), `  setTimeout(a${n}, 5);`, '});'].join('\n');
+  const textRing = (n: number) =>
+    [...R(n, i => `const s${i}: string = s${(i + 1) % n} + s${(i + 2) % n}${i === n - 1 ? " + 'setTimeout(() => 0, 5)'" : ''};`), 'await page.evaluate(s0);'].join('\n');
+
+  // [name, source for N, small N, rules that report it at 4N, ratio bound]. A ring of N has 2N edges and a
+  // complete graph N^2, so 2x the nodes is 4x the edges: that bound is 16, not the 28 of a 4x file.
+  const SHAPES: Array<[string, (n: number) => string, number, string[], number?]> = [
+    ['clock functions in a Fibonacci chain', clockChain, 4, [API]],
+    ['clock functions that call the next two, one reads the clock', clockRing(true), 6, [API]],
+    ['clock functions that call the next two, none reads the clock', clockRing(false), 6, []],
+    ['helpers that pass the resolver to the next two, one sets a timer', helperRing(true), 6, [PROMISE]],
+    ['helpers that pass the resolver to the next two, no timer', helperRing(false), 6, []],
+    ['resolver aliases that fall back to the next two', aliasRing, 6, [PROMISE]],
+    ['functions that return the next two', returnRing, 6, [PROMISE]],
+    ['callbacks that call the next two, the last resolves', callbackRing, 6, [PROMISE]],
+    ['script texts built from the next two', textRing, 6, [API]],
+    ['resolver aliases that each read the one before twice', resolverDoubling, 5, [PROMISE]],
+  ];
+  it.each(SHAPES)('grows under 28x for 4x the nodes: %s', async (name, make, small, ids, bound) => {
+    expect((await specLint(make(small * 4))).map(m => m.ruleId), name).toEqual(ids);
+    await expectGrowth(name, make, small, { bound });
+  }, 120_000);
+
+  // Complete graphs are the densest case: every function calls every other.
+  const COMPLETE: Array<[string, (n: number) => string, string[]]> = [
+    ['clock functions that call each other', clockComplete, [API]],
+    ['helpers that pass the resolver to each other', helperComplete, [PROMISE]],
+  ];
+  it.each(COMPLETE)('grows under 16x for 2x the nodes: %s', async (name, make, ids) => {
+    expect((await specLint(make(10))).map(m => m.ruleId), name).toEqual(ids);
+    await expectGrowth(name, make, 5, { factor: 2, bound: 16 });
+  }, 120_000);
+
+  // What the cycles mean. A clock read anywhere on a cycle makes every function that reaches it a clock function,
+  // and a cycle with no read is not one; a parameter handed to a recursive call lands in the slot it is passed to.
+  it.each([
+    ['a clock read on a cycle', 'function a() { return c ? b() : Date.now(); }\nfunction b() { return a() + 1; }\nwhile (a() < 500) {}', [API]],
+    ['no clock read on a cycle', 'function a() { return c ? b() : 1; }\nfunction b() { return a() + 1; }\nwhile (a() < 500) {}', []],
+    ['the resolver swapped into the timer slot by the recursion', 'function h(f: () => void, g: () => void) { if (c) h(g, f); else setTimeout(g, 5); }\nawait new Promise<void>((r) => h(r, noop));', [PROMISE]],
+    ['the resolver kept out of the timer slot by the recursion', 'function h(f: () => void, g: () => void) { if (c) h(f, g); setTimeout(g, 5); }\nawait new Promise<void>((r) => h(r, noop));', []],
+    ['the resolver in the timer slot of a swapping recursion', 'function h(f: () => void, g: () => void) { if (c) h(g, f); setTimeout(g, 5); }\nawait new Promise<void>((r) => h(noop, r));', [PROMISE]],
+  ])('cycles: %s', async (_name, code, ids) => {
+    expect((await specLint(code)).map(m => m.ruleId)).toEqual(ids);
   });
 });
 
