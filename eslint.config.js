@@ -210,9 +210,9 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 //   that code outside every timer callback calls (`handlers.push(r)` plus `handlers.forEach(f => f())` in a
 //   listener), is a timeout fallback in a race on a real signal, so it passes. Any other read (`noop(r)`,
 //   `expect(r)`, `return r`, a store nobody calls) is not a handoff. A call inside an `if (false)` or `false &&`
-//   branch does not count; a condition the rule cannot fold does. A `Promise.withResolvers()` object held in an
-//   array, object or logical expression counts as handed off without checking who calls it. Rewrite such a test
-//   as a deadline guard that rejects to get strictness.
+//   branch does not count; a condition the rule cannot fold does. A `Promise.withResolvers()` object spread into
+//   another value, or put in a literal that is handed to a call (`run({ d })`), counts as handed off. Rewrite such a
+//   test as a deadline guard that rejects to get strictness.
 // Accepted false positives: a timer callback that calls anything rooted at a container the resolver was
 // stored in (other than `clear`, `delete`, `has`) counts as running it; any `.waitForTimeout` on any object
 // is reported, and a script string that merely names setTimeout is reported.
@@ -230,6 +230,28 @@ const noSleepPromise = {
       return n.type === "Identifier" ? lookup(n) : null;
     };
     const state = { cuts: 0 };
+    // `const e = { a: [d] }`: the variable and the keys leading from it to the object `n` sits in, or
+    // null when the literal is not the whole init of a const (then it is handed to someone)
+    const boxOf = n => {
+      const path = [];
+      for (;;) {
+        const p = n.parent;
+        if (p.type === "ArrayExpression") {
+          const i = p.elements.indexOf(n);
+          if (p.elements.slice(0, i).some(x => x?.type === "SpreadElement")) return null;
+          path.unshift(i);
+          n = outer(p);
+        } else if (p.type === "Property" && p.value === n && p.parent.type === "ObjectExpression") {
+          const k = nameOf(p.computed, p.key);
+          if (k === undefined) return null;
+          path.unshift(k);
+          n = outer(p.parent);
+        } else break;
+      }
+      const d = n.parent;
+      if (!path.length || d.type !== "VariableDeclarator" || d.init !== n || d.id.type !== "Identifier" || d.parent.kind !== "const") return null;
+      return { v: declared(d, x => x.name === d.id.name), path };
+    };
     const timerLeaf = (name, path) => (!path.length && TIMERS.has(name)) || (path.length === 1 && GLOBALS.has(name) && TIMERS.has(path[0]));
     const { isFn: isTimerFn, methodOn } = makeResolver(src, timerLeaf, state);
     // `f.apply(this, list)` and `Reflect.apply(f, this, list)`: the function, whether it is a
@@ -269,7 +291,9 @@ const noSleepPromise = {
     // and not by `.rej()`, and a `withResolvers()` object is run by `.resolve()` only.
     const busy = new Set();
     const helpers = new Map();
-    const analyze = (exec, resolver, obj = false) => {
+    // `bag`: a withResolvers object kept inside a literal, a variable's property or a class field, as the
+    // variables and key paths it can be read through (`roots`) and the member nodes that already read it (`reads`).
+    const analyze = (exec, resolver, obj = false, bag = null) => {
       const inside = n => n.range[0] >= exec.range[0] && n.range[1] <= exec.range[1];
       const fnsOf = site => {
         const fns = [];
@@ -300,10 +324,11 @@ const noSleepPromise = {
 
       // variables that hold the withResolvers object itself, not one of its functions
       const objs = new Set(obj ? [resolver] : []);
-      const sameObj = (e, v) => { const u = inner(e); if (u.type === "Identifier" && objs.has(lookup(u))) objs.add(v); return v; };
-      // `w || o`, `c ? w : o`, `{ w }`, `[w]`, `{ ...w }` hold w without being w: treat as a handoff
-      const holds = (n, p) => p.type === "LogicalExpression" || p.type === "ArrayExpression" || p.type === "SpreadElement"
-        || (p.type === "ConditionalExpression" && p.test !== n) || (p.type === "Property" && p.parent.type === "ObjectExpression");
+      // member reads that are the object itself (`e.d` where `e = { d }`)
+      const bagNodes = new Set();
+      // variables that hold the object inside a literal, by the keys that lead to it: `const e = { a: [d] }` is e at ["a", 0]
+      const boxes = new Map();
+      const sameObj = (e, v) => { const u = inner(e); if ((u.type === "Identifier" && objs.has(lookup(u))) || bagNodes.has(u)) objs.add(v); return v; };
       // `const { resolve: r, promise } = w`: r is the resolver, promise and reject are not
       // it, and a rest element or a key we cannot read could be anything.
       const unpack = (decl, out) => {
@@ -315,29 +340,67 @@ const noSleepPromise = {
           else out.given = true;
         }
       };
+      // One read of the object itself (`id`): what it is used for decides whether the resolver is given away
+      const bagRead = (id, out) => {
+        const n = outer(id);
+        const m = n.parent;
+        if (m.type === "VariableDeclarator" && m.init === n && m.id.type === "ObjectPattern") unpack(m, out);
+        else if (m.type === "LogicalExpression" || (m.type === "ConditionalExpression" && m.test !== n)) {
+          // `const x = w || o`: x may be w
+          const top = outer(m);
+          const d = top.parent;
+          if (d.type === "VariableDeclarator" && d.init === top && d.id.type === "Identifier") {
+            const v = declared(d, x => x.name === d.id.name);
+            objs.add(v);
+            merge(out, follow(v));
+          } else out.given = true;
+        } else if (m.type === "ArrayExpression" || (m.type === "Property" && m.parent.type === "ObjectExpression")) {
+          // `{ w }`, `[w]`: kept in a const literal the file reads later, or handed over
+          const b = boxOf(n);
+          if (b) { boxes.set(b.v, b.path); merge(out, follow(b.v)); } else out.given = true;
+        } else if (m.type === "SpreadElement") out.given = true;
+        else if (m.type !== "MemberExpression" || m.object !== n) {
+          merge(out, except(trace(id), ["reject", "promise"]));
+          // `const [x] = w` and the like take the object out of sight
+          if (m.type === "VariableDeclarator" && m.init === n && m.id.type !== "Identifier") out.given = true;
+        } else {
+          const k = nameOf(m.computed, m.property);
+          if (k === "reject" || k === "promise") return;
+          // `w?.resolve` is a read of resolve; a key we cannot read is a handoff
+          if (k === "resolve") merge(out, trace(m.parent.type === "ChainExpression" ? m.parent : m));
+          else out.given = true;
+        }
+      };
+      // A variable that holds the object inside a literal: its reads down the keys are reads of the object
+      const followBox = v => {
+        const out = none();
+        for (const ref of v.references) {
+          if (ref.isWriteOnly()) continue;
+          let node = outer(ref.identifier);
+          let hit = true;
+          for (const key of boxes.get(v)) {
+            const p = node.parent;
+            const k = p.type === "MemberExpression" && p.object === node ? keyOf(p.computed, p.property) : undefined;
+            if (k !== undefined && String(k) === String(key)) node = outer(p);
+            else { hit = k === undefined ? false : null; break; }
+          }
+          // another key of the literal reads something else; any other use of the literal could reach the object
+          if (hit === false) out.given = true;
+          else if (hit) { bagNodes.add(inner(node)); bagRead(node, out); }
+        }
+        return out;
+      };
       // A variable stands for the value it holds: follow every read of it.
       const follow = v => {
         const out = none();
         if (!v || stack.has(v)) return out;
         stack.add(v);
-        for (const ref of v.references) {
-          if (ref.isWriteOnly()) continue;
-          const id = ref.identifier;
-          if (!objs.has(v)) { merge(out, trace(id)); continue; }
-          const n = outer(id);
-          const m = n.parent;
-          if (m.type === "VariableDeclarator" && m.init === n && m.id.type === "ObjectPattern") unpack(m, out);
-          else if (holds(n, m)) out.given = true;
-          else if (m.type !== "MemberExpression" || m.object !== n) {
-            merge(out, except(trace(id), ["reject", "promise"]));
-            // `const [x] = w` and the like take the object out of sight
-            if (m.type === "VariableDeclarator" && m.init === n && m.id.type !== "Identifier") out.given = true;
-          } else {
-            const k = nameOf(m.computed, m.property);
-            if (k === "reject" || k === "promise") continue;
-            // `w?.resolve` is a read of resolve; a key we cannot read is a handoff
-            if (k === "resolve") merge(out, trace(m.parent.type === "ChainExpression" ? m.parent : m));
-            else out.given = true;
+        if (boxes.has(v)) merge(out, followBox(v));
+        else {
+          for (const ref of v.references) {
+            if (ref.isWriteOnly()) continue;
+            if (objs.has(v)) bagRead(ref.identifier, out);
+            else merge(out, trace(ref.identifier));
           }
         }
         stack.delete(v);
@@ -516,7 +579,11 @@ const noSleepPromise = {
         }
         return out;
       };
-      return follow(resolver);
+      if (!bag) return follow(resolver);
+      const out = none();
+      for (const [v, path] of bag.roots) { boxes.set(v, path); merge(out, follow(v)); }
+      for (const r of bag.reads) { bagNodes.add(inner(r)); bagRead(r, out); }
+      return out;
     };
     const scopeOf = n => { while (n.parent && !FNS.has(n.type)) n = n.parent; return n; };
     // the executor: inline, a function declaration, or a const holding a function
@@ -642,15 +709,22 @@ const noSleepPromise = {
           if (list?.type === "ArrayExpression") check(node, list.elements[0]);
         }
         // `const { resolve } = Promise.withResolvers()`, `const w = Promise.withResolvers()`,
-        // and the same assigned later: `w = Promise.withResolvers()`, `({ resolve } = ...)`
+        // and the same assigned later: `w = Promise.withResolvers()`, `({ resolve } = ...)`;
+        // or kept in a literal (`{ d: ... }`)
         if (how !== "withResolvers" || c.type !== "MemberExpression") return;
         const top = outer(node);
         const d = top.parent;
         let id = null;
         let obj = false;
+        let bag = null;
         if (d.type === "VariableDeclarator" && d.init === top) id = d.id;
         else if (d.type === "AssignmentExpression" && d.right === top && d.operator === "=") id = d.left;
-        else return;
+        else {
+          const b = boxOf(top);
+          if (b) bag = { exec: scopeOf(top), roots: [[b.v, b.path]], reads: [] };
+        }
+        if (bag) return settle(node, analyze(bag.exec, null, true, bag));
+        if (!id) return;
         let v = null;
         if (id.type === "Identifier") {
           v = d.type === "VariableDeclarator" ? declared(d, x => x.name === id.name) : lookup(id);
