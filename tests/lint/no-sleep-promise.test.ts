@@ -273,7 +273,6 @@ const ALLOWED = [
   // defaulted resolver parameter, handed off
   "await new Promise((r = noop) => { ee.on('x', r); setTimeout(r, 5); });",
   "await new Promise((r = noop) => { setTimeout(() => { throw new Error('d'); }, 5); r(1); });",
-  // not a plain parameter: no single resolver name to follow
   // spread arguments that are not the resolver, or a handed-off resolver
   "await new Promise(r => { setTimeout(go, 5, ...[1, 2]); r(1); });",
   "await new Promise(r => { setTimeout(go, 5, ...rest); r(1); });",
