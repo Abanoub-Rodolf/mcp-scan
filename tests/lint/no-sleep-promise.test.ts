@@ -1134,6 +1134,18 @@ async function specLint(code: string, opts: { file?: string; off?: string } = {}
   return res.messages.filter(m => m.ruleId && SPEC_IDS.includes(m.ruleId));
 }
 
+// Fastest of up to three runs: a loaded runner stalls one run, a slow walk slows all of them. `done` ends
+// the loop early once the best time is good enough, so a failing walk is not run three times over.
+async function fastest(code: string, done: (best: number) => boolean = () => false): Promise<number> {
+  let best = Infinity;
+  for (let i = 0; i < 3 && !done(best); i++) {
+    const t0 = performance.now();
+    await specLint(code);
+    best = Math.min(best, performance.now() - t0);
+  }
+  return best;
+}
+
 describe('sleep rule spec table', () => {
   it.each(SPEC_BANNED)('class %i is reported by %s (%s): %s', async (_c, id, frag, code) => {
     const hits = await specLint(code);
@@ -1206,6 +1218,19 @@ describe('sleep rule spec table', () => {
     const t0 = Date.now();
     expect((await specLint(`await ${code}`)).length).toBe(1);
     expect(Date.now() - t0).toBeLessThan(1500);
+  });
+  // A resolver called under N nested callbacks is judged once per callback, not once per path to it: without
+  // the memo on a function's flow the cost doubles with every level.
+  it('judges a resolver under nested callbacks once per callback', async () => {
+    const nest = (n: number) => {
+      let body = 'r();';
+      for (let i = 0; i < n; i++) body = `a0(() => { ${body} });`;
+      return `declare function a0(f: () => void): void;\nawait new Promise<void>((r) => { ${body} setTimeout(r, 50); });`;
+    };
+    expect((await specLint(nest(12))).length).toBe(1);
+    const t12 = await fastest(nest(12));
+    const t24 = await fastest(nest(24), ms => ms < 4 * t12 + 50);
+    expect(t24).toBeLessThan(4 * t12 + 50);
   });
   // Per-branch walking must not turn a chain of `a1 = a0 ?? a0` into 2^n steps
   it('walks a doubling chain of aliases once', async () => {
