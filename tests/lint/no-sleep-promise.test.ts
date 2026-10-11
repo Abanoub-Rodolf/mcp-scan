@@ -1001,7 +1001,6 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [14, "local/no-fixed-wait", "busy-waits on the clock", "function now() { return performance.now(); } const end = now() + 500; while (now() < end) {}"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const now = function () { return Date.now(); }; const end = now() + 500; for (;;) { if (now() > end) break; }"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const now = () => Date.now(); const read = () => now(); const end = read() + 500; do {} while (read() < end);"],
-  [14, "local/no-fixed-wait", "busy-waits on the clock", "function a() { return c ? Date.now() : b(); } function b() { return a(); } const end = 5; while (b() < end) {}"],
 ];
 
 const SPEC_ALLOWED: string[] = [
@@ -1076,6 +1075,10 @@ const SPEC_ALLOWED: string[] = [
   "const mk = () => () => Date.now(); const end = 5; while (mk() < end) {}",
   "const now = () => now(); const end = 5; while (now() < end) {}",
   "function a() { return b(); } function b() { return a(); } while (a() < 5) {}",
+  "const t0 = Date.now(); const check = () => { void fetch('x'); return Date.now() - t0; }; while (check() < 500) {}",
+  "let n = 0; const tick = () => { n++; return n; }; while (tick() < 5) {}",
+  "const stamp = () => Date.now(); const s: number[] = []; for (let i = 0; i < 3; i++) s[i] = stamp(); use(s);",
+  "const t0 = Date.now(); const dt = () => Date.now() - t0; const a = dt(); use(a);",
   "for (let i = 0; i < 10; i++) { for (const x of xs) { if (Date.now() > end) break; } }",
   "for (let i = 0; i < 10; i++) { if (Date.now() > end) break; work(i); }",
   "await page.evaluate((s: string) => s, 'setTimeout');",

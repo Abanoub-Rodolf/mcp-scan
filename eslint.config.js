@@ -934,6 +934,8 @@ const WAITS = [
   [onHost((name, path, local) => name === "Atomics" && !local && path.length === 1 && /^wait(Async)?$/.test(String(path[0]))), "Atomics.wait (it blocks for a fixed time)"],
   [onHost((name, path, local) => name === "scheduler" && !local && path.length === 1 && path[0] === "wait"), "scheduler.wait"],
 ];
+// what makes a pass of a loop, or a call of a function, more than a clock read
+const WORK = /^(Await|Yield|Call|New|TaggedTemplate|Import)/;
 const SCRIPT_RUNNERS = new Set(["evaluate", "evaluateHandle", "waitForFunction", "addInitScript", "$eval", "$$eval"]);
 // a clock read: `Date.now`, `performance.now`, in any of the spellings the timers have (host object,
 // quoted key, alias, destructure, comma, `?.`); `new Date()` with no argument is the current time too
@@ -1057,7 +1059,9 @@ const noFixedWait = {
       if (reading.has(f)) { clockCuts++; return false; }
       reading.add(f);
       const before = clockCuts;
-      const r = clock.returned(f).some(x => !FNS.has(x.type) && [...nodes(x, false)].some(isClock));
+      // a function that also awaits or calls something else does work: a loop on it is a poll
+      const own = n => (FNS.has(n.type) ? [] : [...nodes(n, false)]);
+      const r = clock.returned(f).some(x => own(x).some(isClock)) && own(f.body).every(x => isClock(x) || !WORK.test(x.type));
       reading.delete(f);
       if (clockCuts === before) clockFns.set(f, r);
       return r;
@@ -1102,7 +1106,7 @@ const noFixedWait = {
       const clocked = forever ? [...nodes(node.body)].some(isClock) : [...nodes(test), ...(node.update ? nodes(node.update) : [])].some(isClock) || guard || clockTest(test, node.body);
       if (!clocked) return;
       const rest = [node.body, node.update].filter(Boolean).flatMap(x => [...nodes(x)]);
-      if (!rest.some(n => !isClock(n) && /^(Await|Yield|Call|New|TaggedTemplate|Import)/.test(n.type))) flag(node, "busy-waits on the clock");
+      if (!rest.some(n => !isClock(n) && WORK.test(n.type))) flag(node, "busy-waits on the clock");
     };
     return {
       MemberExpression(n) {
