@@ -1170,6 +1170,7 @@ describe('sleep rule spec table', () => {
   it.each([
     'const t = t.bind(null); t(1);\n',
     'function f(a = b.bind(null), b = a.bind(null)) { a(1); }\nf();\n',
+    'const [a] = [b.bind(null)], b = a.bind(null);\na(1);\n',
   ])('exits 0 on a bind that names itself: %s', code => {
     const run = spawnSync(process.execPath, [path.join(REPO, 'node_modules/eslint/bin/eslint.js'), '--stdin', '--stdin-filename', 'tests/snippet.test.ts'], { cwd: REPO, input: code, encoding: 'utf8' });
     expect(run.stdout + run.stderr).toBe('');
