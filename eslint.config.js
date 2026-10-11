@@ -1024,7 +1024,10 @@ const noFixedWait = {
         const f = inner(c);
         if (loads(c) && heldTimers(n.arguments[0])) context.report({ node: n, message: NO_TIMERS });
         for (const [w, what] of waits) if (w.isFn(f) || w.methodOn(f, "call") || w.methodOn(f, "apply")) flag(n, what);
-        if (c.type === "MemberExpression" && SCRIPT_RUNNERS.has(keyOf(c.computed, c.property)) && n.arguments.slice(0, 2).some(mentionsTimer)) {
+        const runner = c.type === "MemberExpression" ? keyOf(c.computed, c.property) : undefined;
+        // the script is the first argument, except for `$eval(selector, script)`; later arguments are data
+        const script = n.arguments[runner === "$eval" || runner === "$$eval" ? 1 : 0];
+        if (SCRIPT_RUNNERS.has(runner) && script && mentionsTimer(script)) {
           flag(n, "timers in a script string (it runs in the browser, where the sleep rule cannot see it)");
         }
       },
