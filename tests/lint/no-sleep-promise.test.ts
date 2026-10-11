@@ -997,6 +997,11 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; let t = 0; do { t = Date.now(); } while (t < end);"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; let ok = true; while (ok) { ok = Date.now() < end; }"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = performance.now() + 500; let t = 0; for (; t < end; ) { t = performance.now(); }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const start = Date.now(); const elapsed = () => Date.now() - start; while (elapsed() < 500) {}"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "function now() { return performance.now(); } const end = now() + 500; while (now() < end) {}"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const now = function () { return Date.now(); }; const end = now() + 500; for (;;) { if (now() > end) break; }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const now = () => Date.now(); const read = () => now(); const end = read() + 500; do {} while (read() < end);"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "function a() { return c ? Date.now() : b(); } function b() { return a(); } const end = 5; while (b() < end) {}"],
 ];
 
 const SPEC_ALLOWED: string[] = [
@@ -1067,6 +1072,10 @@ const SPEC_ALLOWED: string[] = [
   "let t = Date.now(); while (t < end) { t = Date.now(); await check(); }",
   "let ok = true; while (ok) { ok = next(); }",
   "let t = 0; let n = 0; while (t < end) { n++; t = n * 2; }",
+  "function now() { return Date.now(); } const stamps: number[] = []; for (let i = 0; i < 3; i++) stamps[i] = now(); use(stamps);",
+  "const mk = () => () => Date.now(); const end = 5; while (mk() < end) {}",
+  "const now = () => now(); const end = 5; while (now() < end) {}",
+  "function a() { return b(); } function b() { return a(); } while (a() < 5) {}",
   "for (let i = 0; i < 10; i++) { for (const x of xs) { if (Date.now() > end) break; } }",
   "for (let i = 0; i < 10; i++) { if (Date.now() > end) break; work(i); }",
   "await page.evaluate((s: string) => s, 'setTimeout');",

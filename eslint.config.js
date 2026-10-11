@@ -66,11 +66,12 @@ const keyIn = (src, computed, k) => {
   const init = soleInit(lookupIn(src, k));
   return init ? nameOf(true, inner(init)) : undefined;
 };
-function* nodes(n) {
+// `into` false stays inside one function: the nodes of a nested function are not the outer function's
+function* nodes(n, into = true) {
   yield n;
   for (const [k, v] of Object.entries(n)) {
     if (k === "parent") continue;
-    for (const c of Array.isArray(v) ? v : [v]) if (c && typeof c.type === "string") yield* nodes(c);
+    for (const c of Array.isArray(v) ? v : [v]) if (c && typeof c.type === "string" && (into || !FNS.has(c.type))) yield* nodes(c, into);
   }
 }
 // calls that keep their argument in a container someone else can reach later
@@ -236,7 +237,7 @@ const makeResolver = (src, leaf, state = { cuts: 0 }) => {
     const c = inner(callee);
     return c.type === "MemberExpression" && nameOf(c.computed, c.property) === how && reach(c.object, [], seen);
   };
-  return { reach, isFn, methodOn };
+  return { reach, isFn, methodOn, fnOf, returned };
 };
 
 // Logging a value does not take ownership of it.
@@ -1046,6 +1047,21 @@ const noFixedWait = {
     const mentionsTimer = a => timerWord.test(textOf(a));
     const timers = makeResolver(src, timerLeaf);
     const clock = makeResolver(src, clockLeaf);
+    // does a function declared in the file hand back a clock read: `const now = () => Date.now()`. A name
+    // in the middle of a call cycle answers false for that walk, and the answer is kept only when no cycle cut it.
+    const clockFns = new Map();
+    const reading = new Set();
+    let clockCuts = 0;
+    const readsClock = f => {
+      if (clockFns.has(f)) return clockFns.get(f);
+      if (reading.has(f)) { clockCuts++; return false; }
+      reading.add(f);
+      const before = clockCuts;
+      const r = clock.returned(f).some(x => !FNS.has(x.type) && [...nodes(x, false)].some(isClock));
+      reading.delete(f);
+      if (clockCuts === before) clockFns.set(f, r);
+      return r;
+    };
     const isClock = n => {
       if (n.type === "NewExpression") {
         const c = inner(n.callee);
@@ -1054,6 +1070,8 @@ const noFixedWait = {
       if (n.type !== "CallExpression") return false;
       const f = inner(n.callee);
       if (clock.isFn(f) || clock.methodOn(f, "call") || clock.methodOn(f, "apply")) return true;
+      const g = clock.fnOf(f);
+      if (g && readsClock(g)) return true;
       // `new Date().getTime()`
       return f.type === "MemberExpression" && ["getTime", "valueOf"].includes(keyOf(f.computed, f.property)) && isClock(inner(f.object));
     };
