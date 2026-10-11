@@ -1432,6 +1432,7 @@ describe('lint cost on cyclic graphs', () => {
     ['the resolver swapped into the timer slot by the recursion', 'function h(f: () => void, g: () => void) { if (c) h(g, f); else setTimeout(g, 5); }\nawait new Promise<void>((r) => h(r, noop));', [PROMISE]],
     ['the resolver kept out of the timer slot by the recursion', 'function h(f: () => void, g: () => void) { if (c) h(f, g); setTimeout(g, 5); }\nawait new Promise<void>((r) => h(r, noop));', []],
     ['the resolver in the timer slot of a swapping recursion', 'function h(f: () => void, g: () => void) { if (c) h(g, f); setTimeout(g, 5); }\nawait new Promise<void>((r) => h(noop, r));', [PROMISE]],
+    ['a script text that reaches a timer word only through a cycle of lets', "let s0: string = `${s4}x`;\ns0 = s1 + s5;\nlet s1: string = 'set' + s3;\nlet s2: string = `${s4}x`;\nlet s3: string = s2 + 'Timeout';\nlet s4: string = 'Timeout';\ns4 = s1 + 'Timeout';\nawait page.evaluate(s0);", [API]],
   ])('cycles: %s', async (_name, code, ids) => {
     expect((await specLint(code)).map(m => m.ruleId)).toEqual(ids);
   });
