@@ -1086,6 +1086,14 @@ const noFixedWait = {
         const viaReflect = f.type === "MemberExpression" && keyOf(f.computed, f.property) === "apply" && inner(f.object).type === "Identifier" && inner(f.object).name === "Reflect" && !lookupIn(src, inner(f.object))?.defs.length;
         const target = viaReflect && n.arguments[0] ? inner(n.arguments[0]) : null;
         for (const [w, what] of waits) if (w.isFn(f) || w.methodOn(f, "call") || w.methodOn(f, "apply") || (target && (w.isFn(target) || w.methodOn(target, "call") || w.methodOn(target, "apply")))) flag(n, what);
+        // `run(setTimeout as never)` hands the timer on behind a cast; `expect(setTimeout as X)` and a
+        // restore (`vi.stubGlobal('setTimeout', orig as never)`) do not
+        const callee = c.type === "MemberExpression" ? keyOf(c.computed, c.property) : c.type === "Identifier" ? c.name : undefined;
+        const first = n.arguments[0];
+        const names = first && first.type === "Literal" && TIMERS.has(first.value);
+        if (callee !== "expect" && callee !== "mocked" && !names) {
+          for (const a of n.arguments) if (/^TS(As|TypeAssertion|Satisfies)/.test(a.type) && timers.isFn(a)) flag(a, "timers turned into text or passed on as a value (the sleep is hidden from this rule)");
+        }
         const runner = c.type === "MemberExpression" ? keyOf(c.computed, c.property) : undefined;
         // the script is the first argument, except for `$eval(selector, script)`; later arguments are data
         const script = n.arguments[runner === "$eval" || runner === "$$eval" ? 1 : 0];
