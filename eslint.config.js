@@ -73,6 +73,27 @@ const writesOf = v => {
 };
 // the keys that make a call a sleep; a name written more than once reads as the first of these it ever holds
 const SLEEP_KEYS = new Set(["setTimeout", "setInterval", "waitForTimeout"]);
+// Does a parameter's default ever apply? Only when some call in the file leaves the argument out. A function
+// that is exported, passed on as a value or never called keeps its default (the caller is somewhere we cannot see).
+const defaultLive = (src, f, i) => {
+  let d = f;
+  if (f.type !== "FunctionDeclaration") {
+    if (f.parent.type !== "VariableDeclarator" || f.parent.init !== f || f.parent.id.type !== "Identifier") return true;
+    d = f.parent;
+  }
+  const v = src.getDeclaredVariables(d).find(x => x.defs.some(def => def.node === d));
+  if (!v) return true;
+  const top = d.type === "VariableDeclarator" ? d.parent : d;
+  if (top.parent.type.startsWith("Export")) return true;
+  const calls = v.references.filter(r => !r.isWrite());
+  if (!calls.length) return true;
+  return calls.some(r => {
+    const c = r.identifier.parent;
+    if (c.type !== "CallExpression" || c.callee !== r.identifier) return true;
+    const a = c.arguments;
+    return a.length <= i || a.slice(0, i + 1).some(x => x.type === "SpreadElement") || (a[i].type === "Identifier" && a[i].name === "undefined");
+  });
+};
 // nameOf, and a computed key that is a name written once reads as that string: `const k = "setTimeout"; o[k]`
 const keyIn = (src, computed, k) => {
   const name = nameOf(computed, k);
@@ -142,8 +163,11 @@ const makeResolver = (src, leaf, state = { cuts: 0 }) => {
   // written once (its init, or one assignment, a destructuring one included), or a parameter.
   const origin = (v, d) => {
     if (d.type === "Parameter") {
-      const pat = d.node.params?.find(x => x.range[0] <= d.name.range[0] && d.name.range[1] <= x.range[1]);
+      const i = d.node.params?.findIndex(x => x.range[0] <= d.name.range[0] && d.name.range[1] <= x.range[1]);
+      const pat = d.node.params?.[i];
       const at = pat && locate(pat, d.name);
+      // the parameter's own default is the first one found
+      if (at && pat.type === "AssignmentPattern" && !defaultLive(src, d.node, i)) at.dflts = at.dflts.slice(1);
       return at && { init: null, at };
     }
     if (d.type !== "Variable") return null;
@@ -1005,7 +1029,7 @@ const noFixedWait = {
     const paramDefault = v => {
       const d = v?.defs.length === 1 && v.defs[0].type === "Parameter" ? v.defs[0] : null;
       const p = d?.name.parent;
-      return p?.type === "AssignmentPattern" && p.left === d.name && FNS.has(p.parent.type) && !v.references.some(r => r.isWrite() && !r.init) ? p.right : null;
+      return p?.type === "AssignmentPattern" && p.left === d.name && FNS.has(p.parent.type) && !v.references.some(r => r.isWrite() && !r.init) && defaultLive(src, p.parent, p.parent.params.indexOf(p)) ? p.right : null;
     };
     // a function handed to the page as the script: inline, or a name declared in the file
     const scriptFn = a => {

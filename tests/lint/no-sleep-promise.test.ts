@@ -862,6 +862,11 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [6, "local/no-sleep-promise", "sleep promises", "await new Promise((r) => { const a = [[r]]; setTimeout(() => a[0][0](), 50); });"],
   [6, "local/no-sleep-promise", "sleep promises", "let ok = () => undefined; const late = (j: (e: Error) => void) => { ok(); void j; }; await new Promise((r, rej) => { ok = r; setTimeout(() => late(rej), 50); });"],
   [6, "local/no-sleep-promise", "sleep promises", "let ok = () => undefined; function a() { b(); } function b() { ok(); } await new Promise((r) => { ok = r; setTimeout(a, 50); });"],
+  [9, "local/no-sleep-promise", "sleep promises", "async function run(wait = setTimeout) { await new Promise((r) => wait(r, 50)); } await run(fake); await run();"],
+  [9, "local/no-sleep-promise", "sleep promises", "const run = async (wait = setTimeout) => new Promise((r) => wait(r, 50)); await run(undefined);"],
+  [9, "local/no-sleep-promise", "sleep promises", "export async function run(wait = setTimeout) { await new Promise((r) => wait(r, 50)); } await run(fake);"],
+  [9, "local/no-sleep-promise", "sleep promises", "async function run(wait = setTimeout) { await new Promise((r) => wait(r, 50)); } use(run); await run(fake);"],
+  [12, "local/no-fixed-wait", "timers in a script string (i", "async function run(s = 'setTimeout(() => 0, 5)') { await tab.evaluate(s); } await run('document.title'); await run();"],
   [8, "local/no-sleep-promise", "sleep promises", "const { setTimeout: wait } = globalThis; await new Promise((r) => wait(r, 50));"],
   [8, "local/no-sleep-promise", "sleep promises", "let k = 'setTimeout'; k = 'setTimeout'; await new Promise((r) => (globalThis as any)[k](r, 50));"],
   [8, "local/no-sleep-promise", "sleep promises", "let k = 'title'; k = 'setInterval'; await new Promise((r) => (globalThis as any)[k](r, 50));"],
@@ -1141,6 +1146,8 @@ const SPEC_ALLOWED: string[] = [
   "let t = setTimeout; t = other; await new Promise((r) => t(r, 50));",
   "let k = 'setTimeout'; k = 'other'; const { [k]: wait } = globalThis; use(wait);",
   "let k = 'title'; k = 'url'; await (page as any)[k]();",
+  "async function run(wait = setTimeout) { await new Promise((r) => wait(r, 50)); } await run(fake);",
+  "const run = async (s = 'setTimeout(() => 0, 5)') => { await tab.evaluate(s); }; await run('document.title'); await run(other);",
   "let ok = () => undefined; const late = () => { ok(); }; await new Promise((r) => { ok = r; ee.on('x', () => late()); setTimeout(() => late(), 50); });",
   "let ok = () => undefined; const late = () => { ok(); }; await new Promise((r) => { ok = r; ee.on('x', late); setTimeout(() => other(), 50); });",
   "let ok = () => undefined; const never = () => { ok(); }; await new Promise((r) => { ok = r; ee.on('x', () => never()); setTimeout(() => other(), 50); });",
@@ -1303,17 +1310,14 @@ describe('sleep rule spec table', () => {
 });
 
 // The shared spec table, every row: a shape the rule must report (by the rule id and message it names) or must
-// leave alone. A row is only left out of the loop while it is listed in OPEN, and the list shrinks as rows close.
-const OPEN = new Set<string>([
-  'A15:default-overridden', 'A15:default-overridden-promise',
-]);
+// leave alone.
 describe('shared spec table', () => {
-  it.each(SPEC_CASES_BANNED.filter(r => !OPEN.has(r[0])))('%s (class %i) is reported by %s (%s)', async (_id, _cls, rule, frag, code) => {
+  it.each(SPEC_CASES_BANNED)('%s (class %i) is reported by %s (%s)', async (_id, _cls, rule, frag, code) => {
     const hits = await specLint(code);
     expect(hits.map(m => m.ruleId)).toContain(rule);
     expect(hits.find(m => m.ruleId === rule)!.message).toContain(frag);
   });
-  it.each(SPEC_CASES_ALLOWED.filter(r => !OPEN.has(r[0])))('%s is not reported', async (_id, code) => {
+  it.each(SPEC_CASES_ALLOWED)('%s is not reported', async (_id, code) => {
     expect((await specLint(code)).map(m => `${m.ruleId}: ${m.message}`)).toEqual([]);
   });
   it('has a banned row for every class 1 to 14 and no row twice', () => {
