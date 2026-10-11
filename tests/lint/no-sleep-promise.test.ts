@@ -534,6 +534,41 @@ BYPASS_ALLOWED.c10 = [
   'const end = Date.now() + 500; while (Date.now() < end) { await check(); }',
 ];
 
+// One row per name in the rule's own lists, so dropping a name from BENIGN, TAKES or INERT, or an
+// alternative from the busy-loop test, fails here instead of passing quietly.
+BYPASS_BANNED.c11 = [
+  // TAKES: an element taken out of a container is the resolver
+  'await new Promise(r => { const q = [r]; setTimeout(q.shift()!, 5); });',
+  'await new Promise(r => { const q = [r]; setTimeout(q.pop()!, 5); });',
+  'await new Promise(r => { const q = [r]; setTimeout(q.at(0)!, 5); });',
+  // INERT: reading a member of the resolver that is not the resolver hands nothing off
+  "await new Promise(r => { ee.on('x', r.length); setTimeout(r, 5); });",
+  "await new Promise(r => { ee.on('x', r.name); setTimeout(r, 5); });",
+  "await new Promise(r => { ee.on('x', r.toString); setTimeout(r, 5); });",
+  "await new Promise(r => { ee.on('x', r.call); setTimeout(r, 5); });",
+  "await new Promise(r => { ee.on('x', r.apply); setTimeout(r, 5); });",
+  "await new Promise(r => { ee.on('x', r.bind); setTimeout(r, 5); });",
+  // the second argument of a script runner is the script
+  "await page.$eval('#x', '(el) => new Promise((r) => setTimeout(r, 5))');",
+  // an optional call to withResolvers is still withResolvers
+  'const d = Promise.withResolvers?.(); setTimeout(d.resolve, 50); await d.promise;',
+];
+BYPASS_ALLOWED.c11 = [
+  // BENIGN: a timer that empties or asks about the container does not run what is in it
+  'const rs = new Set<() => void>(); const p = new Promise<void>(res => { rs.add(res); }); setTimeout(() => { rs.clear(); }, 50); await p;',
+  'const rs = new Map(); const p = new Promise(res => { rs.set(1, res); }); setTimeout(() => { rs.delete(1); }, 50); await p;',
+  'const rs = new Map(); const p = new Promise(res => { rs.set(1, res); }); setTimeout(() => { if (rs.has(1)) log(); }, 50); await p;',
+  // a loop whose body awaits, yields, calls or builds something is a poll, whichever one it is
+  'const end = Date.now() + 500; while (Date.now() < end) { await pending; }',
+  'const end = Date.now() + 500; function* g() { while (Date.now() < end) { yield 1; } } void g;',
+  'const end = Date.now() + 500; while (Date.now() < end) { check(); }',
+  'const end = Date.now() + 500; while (Date.now() < end) { new Foo(); }',
+  'const end = Date.now() + 500; while (Date.now() < end) { tag`x`; }',
+  "const end = Date.now() + 500; while (Date.now() < end) { import('x'); }",
+  // the update clause runs on every pass too
+  'const end = Date.now() + 500; for (; Date.now() < end; check()) {}',
+];
+
 const BYPASS_STATIC: string[] = [
   "import timers = require('node:timers');\nvoid timers;\n",
   "import timers = require('timers/promises');\nvoid timers;\n",
