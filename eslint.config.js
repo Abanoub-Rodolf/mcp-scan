@@ -588,9 +588,20 @@ const noSleepPromise = {
       };
       // A variable stands for the value it holds: follow every read of it.
       // `via`: the keys down the value the variable holds to the resolver (`const o = { r }` holds it at ["r"])
+      // An answer is kept when no walk beneath it was cut short by a cycle (`cuts` did not move), per helper round
+      // while one is running because a helper still being worked out answers differently from round to round.
+      // `a1 = a0 ?? a0` written N times reads each name twice: without the memo that is 2^N walks.
+      const kept = new Map();
+      let cuts = 0;
       const follow = (v, via = []) => {
         const out = none();
-        if (!v || stack.has(v)) return out;
+        if (!v) return out;
+        if (stack.has(v)) { cuts++; return out; }
+        const mem = round ? (round.kept ??= new Map()) : kept;
+        const key = `${v.name}@${v.identifiers[0]?.range}|${via.join(",")}`;
+        const hit = mem.get(key);
+        if (hit && hit.n === (round?.n ?? 0)) return { timer: hit.r.timer, given: hit.r.given, leaks: [...hit.r.leaks] };
+        const before = cuts;
         stack.add(v);
         if (boxes.has(v)) merge(out, followBox(v));
         else {
@@ -601,11 +612,14 @@ const noSleepPromise = {
           }
         }
         stack.delete(v);
+        const seenLeak = new Set();
+        out.leaks = out.leaks.filter(l => { const k = `${rootIds.get(l.root) ?? rootIds.set(l.root, rootIds.size).get(l.root)}:${[...l.skip].sort()}`; return !seenLeak.has(k) && seenLeak.add(k); });
+        if (cuts === before) mem.set(key, { n: round?.n ?? 0, r: { timer: out.timer, given: out.given, leaks: [...out.leaks] } });
         return out;
       };
       // A function runs on a timer or is given away; its calls count the same way.
       const fnFlow = f => {
-        if (memo.has(f)) return memo.get(f) ?? none();
+        if (memo.has(f)) { if (memo.get(f) === null) cuts++; return memo.get(f) ?? none(); }
         memo.set(f, null);
         const r = f.type === "FunctionDeclaration" ? follow(declared(f, v => v.defs.some(d => d.type === "FunctionName"))) : trace(f);
         memo.set(f, r);
@@ -639,7 +653,7 @@ const noSleepPromise = {
           let h = round.open.get(key);
           if (h?.round === round.n) {
             // asked again while it is being worked out: the cycle closes here
-            if (h.running) round.cut = true;
+            if (h.running) { round.cut = true; cuts++; }
             return h.r;
           }
           if (!h) round.open.set(key, h = { r: none(), round: 0, running: false });
