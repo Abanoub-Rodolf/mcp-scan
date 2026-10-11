@@ -613,6 +613,35 @@ BYPASS_ALLOWED.c12 = [
   'Atomics.notify(new Int32Array(new SharedArrayBuffer(4)), 0, 1);',
 ];
 
+// A busy loop is found by the clock read, not by one spelling of it
+BYPASS_BANNED.c13 = [
+  'const end = Date.now() + 500; for (;;) { if (Date.now() >= end) break; }',
+  'const end = Date.now() + 500; while (true) { if (Date.now() >= end) break; }',
+  'const end = Date.now() + 500; while (1) { if (Date.now() >= end) break; }',
+  'const end = Date.now() + 500; do { if (Date.now() >= end) break; } while (true);',
+  'const end = Date.now() + 500; do {} while (Date.now() < end);',
+  "const end = Date['now']() + 500; while (Date['now']() < end) {}",
+  'const end = performance.now() + 500; while (globalThis.performance.now() < end) {}',
+  'const end = Date.now() + 500; while (globalThis.Date.now() < end) {}',
+  'const end = Date.now() + 500; while (Date?.now() < end) {}',
+  'const end = Date.now() + 500; while ((0, Date.now)() < end) {}',
+  'const now = Date.now; const end = now() + 500; while (now() < end) {}',
+  'const { now } = Date; const end = now() + 500; while (now() < end) {}',
+  'const end = Date.now() + 500; while (Date.now.call(Date) < end) {}',
+  'const end = +new Date() + 500; while (+new Date() < end) {}',
+  'const end = +new Date() + 500; for (;;) { if (+new Date() >= end) break; }',
+  'const end = new Date().getTime() + 500; while (new Date().getTime() < end) {}',
+  'const end = new Date().getTime() + 500; for (;;) { if (new Date().getTime() >= end) break; }',
+];
+BYPASS_ALLOWED.c13 = [
+  // the loop does something else on each pass, or reads no clock, or the clock is the file's own
+  'const end = Date.now() + 500; while (true) { if (Date.now() >= end) break; await tick(); }',
+  'const end = Date.now() + 500; for (;;) { if (Date.now() >= end) break; check(); }',
+  'while (true) { if (done()) break; }',
+  'const Date = fake(); while (Date.now() < 5) {}',
+  'const end = new Date(0).getTime(); while (new Date(1).getTime() < end) {}',
+];
+
 const BYPASS_STATIC: string[] = [
   "import timers = require('node:timers');\nvoid timers;\n",
   "import timers = require('timers/promises');\nvoid timers;\n",

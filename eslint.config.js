@@ -195,8 +195,9 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 //   container (`const [f] = rs; f()`), or sits behind `this.` or an undeclared name;
 // - `Promise.withResolvers()` is kept on a property (`this.d = Promise.withResolvers()`);
 // - the timers module is loaded through a stored `createRequire(...)` result (`const req = createRequire(u); req('timers')`);
-// - a clock busy-wait calls something (`while (Date.now() < end) { check(); }` is a poll) or reads another
-//   clock (`process.hrtime`);
+// - a clock busy-wait calls something (`while (Date.now() < end) { check(); }` is a poll), reads a clock the
+//   rule does not know (`process.hrtime`, `Number(new Date())`, `performance.timeOrigin`), or loops on a
+//   condition other than the clock or a constant (`while (!done) { if (Date.now() > end) break; }`);
 // - the race fallback, which is the one exemption kept: a resolver also handed to a subscription (`on`, `once`,
 //   `addListener`, `prependListener`, `addEventListener`, `then`, `finally`, `subscribe`), or stored in a container
 //   that code outside every timer callback calls (`handlers.push(r)` plus `handlers.forEach(f => f())` in a
@@ -630,7 +631,9 @@ const WAITS = [
   [onHost((name, path, local) => name === "scheduler" && !local && path.length === 1 && path[0] === "wait"), "scheduler.wait"],
 ];
 const SCRIPT_RUNNERS = new Set(["evaluate", "evaluateHandle", "waitForFunction", "addInitScript", "$eval", "$$eval"]);
-const NOW = new Set(["Date.now", "performance.now"]);
+// a clock read: `Date.now`, `performance.now`, in any of the spellings the timers have (host object,
+// quoted key, alias, destructure, comma, `?.`); `new Date()` with no argument is the current time too
+const clockLeaf = onHost((name, path, local) => !local && path.length === 1 && path[0] === "now" && (name === "Date" || name === "performance"));
 const noFixedWait = {
   meta: { type: "problem", schema: [] },
   create(context) {
@@ -645,11 +648,27 @@ const noFixedWait = {
       if (a.type === "ObjectExpression") return a.properties.some(x => x.type === "Property" && mentionsTimer(x.value));
       return false;
     };
+    const clock = makeResolver(src, clockLeaf);
+    const isClock = n => {
+      if (n.type === "NewExpression") {
+        const c = inner(n.callee);
+        return c.type === "Identifier" && c.name === "Date" && !n.arguments.length && !src.getScope(n).set.get("Date")?.defs.length;
+      }
+      if (n.type !== "CallExpression") return false;
+      const f = inner(n.callee);
+      if (clock.isFn(f) || clock.methodOn(f, "call") || clock.methodOn(f, "apply")) return true;
+      // `new Date().getTime()`
+      return f.type === "MemberExpression" && ["getTime", "valueOf"].includes(keyOf(f.computed, f.property)) && isClock(inner(f.object));
+    };
+    // A busy loop reads the clock in its test, or loops forever on a clock read in its body, and
+    // does nothing else on a pass: no await, yield, call, new or import besides the clock read itself.
     const busy = node => {
-      const clock = n => n.type === "CallExpression" && n.callee.type === "MemberExpression" && NOW.has(`${n.callee.object.name}.${n.callee.property.name}`);
-      if (![...nodes(node.test ?? node)].some(clock)) return;
+      const test = node.test && inner(node.test);
+      const forever = !test || (test.type === "Literal" && !!test.value);
+      const clocked = forever ? [...nodes(node.body)].some(isClock) : [...nodes(test)].some(isClock);
+      if (!clocked) return;
       const rest = [node.body, node.update].filter(Boolean).flatMap(x => [...nodes(x)]);
-      if (!rest.some(n => /^(Await|Yield|Call|New|TaggedTemplate|Import)/.test(n.type))) flag(node, "busy-waits on the clock");
+      if (!rest.some(n => !isClock(n) && /^(Await|Yield|Call|New|TaggedTemplate|Import)/.test(n.type))) flag(node, "busy-waits on the clock");
     };
     return {
       MemberExpression(n) {
