@@ -255,31 +255,34 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 // `pending.set(k, r)`) is a sleep when a timer in the file calls something out of
 // that same container.
 // Known gaps (an AST rule, not a dataflow engine). A sleep still gets through when:
-// - the resolver reaches a timer through a helper that is not a function declared in this file
-//   (imported, a method like `h.after(r)`, `this.after(r)`), or the timer is built in another module;
-// - the timer is `let` or reassigned (`let t = setTimeout; t(r, 5)`), or reached through a computed key
-//   the file does not spell out (`globalThis[k](r, 5)` with k from a call);
-// - a timer, a script, `Atomics.wait` or `scheduler.wait` is passed on as a value (`run(setTimeout as never)`,
-//   `run(Atomics.wait)`), or its name is built at runtime (`'set' + name`); a script string is read through
-//   consts, templates, `String.raw`, `+`, `.concat` and an array `.join`, and nothing past a call result,
-//   a `let` or a parameter;
-// - the resolver is wrapped in a literal that is kept in a variable first (`const o = { f: r }; after(o)`),
-//   or walked by `reduce` or a `for...of` over a literal instead of `forEach`, `map` and the like;
-// - the resolver is run as `r['call']()` or handed over as `setTimeout(r.call, 5)`;
+// - the resolver reaches a timer through an imported helper, a method helper (`h.after(r)` with
+//   `h = { after: (f) => setTimeout(f, 50) }`), or a timer built in another module;
+// - a timer key or a script is held in a `let` written more than once, is built at runtime
+//   (`'set' + name`, a key from a call), or is handed to a local function as an argument (`run('setTimeout(...)')`);
+// - a timer is a `let` that is written twice (`let t = setTimeout; t(r, 5); t = other`), or the host is reached
+//   through itself (`globalThis.globalThis.setTimeout`, `window.self.setTimeout`);
+// - a timer, `Atomics.wait` or `scheduler.wait` is passed on as a plain value (`run(setTimeout)`, `run(Atomics.wait)`;
+//   behind a cast it is reported), or a page script is a call result (`const s = mk(); page.evaluate(s)`);
+// - a `Promise.withResolvers()` bag is returned from a local function (`const d = mk()`), or kept in a class
+//   field and read through an instance outside the class (`new A().d.resolve()`);
+// - a resolver is walked by `reduce` or a `for...of` over a literal instead of `forEach`, `map` and the like;
 // - a stored resolver (`rs.push(r)`, `rs[0] = r`) is run by a timer without a call rooted at the same
 //   container (`const [f] = rs; f()`), or sits behind `this.` or an undeclared name;
-// - a bag kept in a class field is read through an instance outside the class (`new A().d.resolve()`);
-// - the timers module is loaded through a stored `createRequire(...)` result (`const req = createRequire(u); req('timers')`);
-// - a clock busy-wait calls something (`while (Date.now() < end) { check(); }` is a poll), or reads a clock the
-//   rule does not know (`process.hrtime`, `Number(new Date())`, `performance.timeOrigin`);
-// - the race fallback, which is the one exemption kept: a resolver also handed to a subscription (`on`, `once`,
-//   `addListener`, `prependListener`, `addEventListener`, `then`, `finally`, `subscribe`), or stored in a container
-//   that code outside every timer callback calls (`handlers.push(r)` plus `handlers.forEach(f => f())` in a
-//   listener), is a timeout fallback in a race on a real signal, so it passes. Any other read (`noop(r)`,
-//   `expect(r)`, `return r`, a store nobody calls) is not a handoff. A call inside an `if (false)` or `false &&`
-//   branch does not count; a condition the rule cannot fold does. A `Promise.withResolvers()` object spread into
-//   another value, or put in a literal that is handed to a call (`run({ d })`), counts as handed off. Rewrite such a
-//   test as a deadline guard that rejects to get strictness.
+// - the timers module is loaded through a stored `createRequire(...)` result (`const req = createRequire(u); req('timers')`),
+//   or `module.require('timers')`;
+// - a clock busy-wait calls something (`while (Date.now() < end) { check(); }` is a poll), or reads
+//   a clock the rule does not know (`process.hrtime()`);
+// - the race fallback, which is the one exemption kept (row 4x:race): a resolver also handed to a subscription
+//   (`on`, `once`, `addListener`, `prependListener`, `prependOnceListener`, `addEventListener`, `then`,
+//   `finally`, `subscribe`), or stored in a container that code outside every timer callback runs
+//   (`handlers.push(r)` plus `handlers.forEach(f => f())` in a listener), is a timeout fallback in a race on a
+//   real signal, so it passes. Any other read (`noop(r)`, `expect(r)`, `return r`, a store nobody runs) is not
+//   a handoff. A call inside an `if (false)` or `false &&` branch does not count; a condition the rule cannot
+//   fold does. A `Promise.withResolvers()` object spread into another value, or put in a literal that is handed
+//   to a call (`run({ d })`), counts as handed off. Rewrite such a test as a deadline guard that rejects to get
+//   strictness.
+// Classes 11 and 12 (`waitForTimeout`, page scripts) are N/A for mcp-scan, which has no browser driver; the
+// rule still reports them.
 // Accepted false positives: a timer callback that calls anything rooted at a container the resolver was
 // stored in (other than `clear`, `delete`, `has`) counts as running it; any `.waitForTimeout` on any object
 // is reported, and a script string that merely names setTimeout is reported.
