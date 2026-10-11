@@ -1,5 +1,5 @@
-// The shared harness table of ~/.claude/reference/no-sleep-rule-spec.md, one row per shape: id, class, the rule id that
-// must report it, a fragment of its message, the snippet. Linted by no-sleep-promise.test.ts with the repo's real config.
+// The shared spec's harness table, one row per shape: id, class, the rule id that must report it,
+// a fragment of its message, the snippet. Linted by no-sleep-promise.test.ts with the repo's real config.
 // The race fallback (4x:race) is the one shape this repo allows on purpose; its edge is pinned in that test file.
 export const SPEC_CASES_BANNED: Array<[string, number, string, string, string]> = [
   ["1:setInterval parity", 1, "local/no-sleep-promise", "sleep promises", "await new Promise<void>((r) => { const id = setInterval(() => { clearInterval(id); r(); }, 50); });"],
