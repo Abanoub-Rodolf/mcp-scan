@@ -816,7 +816,7 @@ const noSleepPromise = {
     };
     return {
       NewExpression(node) {
-        check(node, node.arguments[0]);
+        if (isPromiseCtor(node.callee)) check(node, node.arguments[0]);
       },
       ForOfStatement(node) {
         calls.push(node);
@@ -826,14 +826,17 @@ const noSleepPromise = {
         const c = inner(node.callee);
         const args = timerArgs(node);
         if (args) timers.push(args);
-        if (c.type === "Super") return check(node, node.arguments[0]);
+        if (c.type === "Super") {
+          const cls = classOf(node);
+          return cls?.superClass && isPromiseCtor(cls.superClass) ? check(node, node.arguments[0]) : undefined;
+        }
         const how = c.type === "MemberExpression" ? nameOf(c.computed, c.property) : c.name;
         // `promisify(setTimeout)` is a sleep helper; so is `util.promisify(t)` for any alias t
         if (how === "promisify" && node.arguments[0] && isTimerFn(node.arguments[0])) {
           context.report({ node, message: ban("promisified timers") });
         } else if (how === "construct" && c.object?.name === "Reflect") {
           const list = node.arguments[1] && arrayOf(node.arguments[1]);
-          if (list) check(node, list.elements[0]);
+          if (list) { if (isPromiseCtor(node.arguments[0])) check(node, list.elements[0]); }
           // a Promise built from a list the lint cannot read hides its executor
           else if (node.arguments.length > 1 && isPromiseCtor(node.arguments[0])) {
             context.report({ node, message: ban("Reflect.construct(Promise, ...) with a list the lint cannot read (spell the executor out in an array literal)") });
