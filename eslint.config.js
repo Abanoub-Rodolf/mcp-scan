@@ -252,6 +252,10 @@ const noSleepPromise = {
       if (!path.length || d.type !== "VariableDeclarator" || d.init !== n || d.id.type !== "Identifier" || d.parent.kind !== "const") return null;
       return { v: declared(d, x => x.name === d.id.name), path };
     };
+    // `Promise.withResolvers`, however it is reached: through an alias, destructured, bound, or any `x.withResolvers`
+    const wr = makeResolver(src, (name, path, local) => !local && name === "Promise" && path.length === 1 && path[0] === "withResolvers");
+    const isWR = c => (c.type === "MemberExpression" && nameOf(c.computed, c.property) === "withResolvers") || wr.isFn(c) || wr.methodOn(c, "call") || wr.methodOn(c, "apply")
+      || (c.type === "CallExpression" && wr.methodOn(c.callee, "bind"));
     const timerLeaf = (name, path) => (!path.length && TIMERS.has(name)) || (path.length === 1 && GLOBALS.has(name) && TIMERS.has(path[0]));
     const { isFn: isTimerFn, methodOn } = makeResolver(src, timerLeaf, state);
     // `f.apply(this, list)` and `Reflect.apply(f, this, list)`: the function, whether it is a
@@ -711,7 +715,7 @@ const noSleepPromise = {
         // `const { resolve } = Promise.withResolvers()`, `const w = Promise.withResolvers()`,
         // and the same assigned later: `w = Promise.withResolvers()`, `({ resolve } = ...)`;
         // or kept in a literal (`{ d: ... }`)
-        if (how !== "withResolvers" || c.type !== "MemberExpression") return;
+        if (!isWR(c)) return;
         const top = outer(node);
         const d = top.parent;
         let id = null;
