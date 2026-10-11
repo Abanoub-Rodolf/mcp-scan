@@ -266,9 +266,8 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 //   container (`const [f] = rs; f()`), or sits behind `this.` or an undeclared name;
 // - a bag kept in a class field is read through an instance outside the class (`new A().d.resolve()`);
 // - the timers module is loaded through a stored `createRequire(...)` result (`const req = createRequire(u); req('timers')`);
-// - a clock busy-wait calls something (`while (Date.now() < end) { check(); }` is a poll), reads a clock the
-//   rule does not know (`process.hrtime`, `Number(new Date())`, `performance.timeOrigin`), or loops on a
-//   condition other than the clock or a constant (`while (!done) { if (Date.now() > end) break; }`);
+// - a clock busy-wait calls something (`while (Date.now() < end) { check(); }` is a poll), or reads a clock the
+//   rule does not know (`process.hrtime`, `Number(new Date())`, `performance.timeOrigin`);
 // - the race fallback, which is the one exemption kept: a resolver also handed to a subscription (`on`, `once`,
 //   `addListener`, `prependListener`, `addEventListener`, `then`, `finally`, `subscribe`), or stored in a container
 //   that code outside every timer callback calls (`handlers.push(r)` plus `handlers.forEach(f => f())` in a
@@ -978,12 +977,30 @@ const noFixedWait = {
       // `new Date().getTime()`
       return f.type === "MemberExpression" && ["getTime", "valueOf"].includes(keyOf(f.computed, f.property)) && isClock(inner(f.object));
     };
-    // A busy loop reads the clock in its test, or loops forever on a clock read in its body, and
-    // does nothing else on a pass: no await, yield, call, new or import besides the clock read itself.
+    // Does `n` leave the loop it sits in: a `return`, or a `break` that is not for a loop or switch inside it?
+    const leaves = (n, nested = false) => {
+      if (FNS.has(n.type)) return false;
+      if (n.type === "ReturnStatement" || (n.type === "BreakStatement" && (n.label || !nested))) return true;
+      const inLoop = nested || /^(For|While|DoWhile|Switch)/.test(n.type);
+      return Object.entries(n).some(([k, v]) => k !== "parent" && (Array.isArray(v) ? v : [v]).some(c => c && typeof c.type === "string" && leaves(c, inLoop)));
+    };
+    // the `if` statements of one loop's own body: not those of a function or a loop inside it
+    const ifsOf = n => {
+      if (FNS.has(n.type) || /^(For|While|DoWhile|Switch)/.test(n.type)) return [];
+      const own = n.type === "IfStatement" ? [n] : [];
+      return own.concat(...Object.entries(n).flatMap(([k, v]) => k === "parent" ? [] : (Array.isArray(v) ? v : [v]).filter(c => c && typeof c.type === "string").map(ifsOf)));
+    };
+    // A loop test that is fed by a clock read: `Date.now() > end`, or `t > end` where the loop body sets t from the clock
+    const clockTest = (test, body) => [...nodes(test)].some(x => isClock(x)
+      || (x.type === "Identifier" && lookupIn(src, x)?.references.some(r => r.isWrite() && r.writeExpr && r.identifier.range[0] >= body.range[0] && r.identifier.range[1] <= body.range[1] && [...nodes(r.writeExpr)].some(isClock))));
+    // A busy loop reads the clock in its test or update, or in a body `if` that leaves the loop, or loops
+    // forever on a clock read in its body, and does nothing else on a pass: no await, yield, call, new or
+    // import besides the clock read itself. A loop that only records the time is no wait.
     const busy = node => {
       const test = node.test && inner(node.test);
       const forever = !test || (test.type === "Literal" && !!test.value);
-      const clocked = forever ? [...nodes(node.body)].some(isClock) : [...nodes(test)].some(isClock);
+      const guard = ifsOf(node.body).some(x => clockTest(x.test, node.body) && (leaves(x.consequent) || (x.alternate && leaves(x.alternate))));
+      const clocked = forever ? [...nodes(node.body)].some(isClock) : [...nodes(test), ...(node.update ? nodes(node.update) : [])].some(isClock) || guard;
       if (!clocked) return;
       const rest = [node.body, node.update].filter(Boolean).flatMap(x => [...nodes(x)]);
       if (!rest.some(n => !isClock(n) && /^(Await|Yield|Call|New|TaggedTemplate|Import)/.test(n.type))) flag(node, "busy-waits on the clock");

@@ -948,6 +948,14 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = performance.now() + 500; for (; performance.now() < end; );"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; let n = 0; while (Date.now() < end) { n++; }"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; while (end > Date.now());"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "let done = false; const end = Date.now() + 500; while (!done) { if (Date.now() > end) break; }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; while (1) { if (Date.now() > end) break; }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; for (let i = 0; i < 10; i++) { if (Date.now() > end) break; }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; while (true) { const t = Date.now(); if (t > end) break; }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; let t = 0; for (;;) { t = performance.now(); if (t > end) { break; } }"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; (() => { while (true) { if (Date.now() > end) return; } })();"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "for (let t = Date.now(); t < end; t = Date.now()) {}"],
+  [14, "local/no-fixed-wait", "busy-waits on the clock", "let n = 0; while (n < 3) { const t = Date.now(); if (t > end) { break; } n++; }"],
 ];
 
 const SPEC_ALLOWED: string[] = [
@@ -981,6 +989,12 @@ const SPEC_ALLOWED: string[] = [
   "const d = Promise.withResolvers<void>(); setTimeout(() => d.reject(new Error('late')), 50); await d.promise.catch(() => undefined);",
   "const d = Promise.withResolvers<void>(); queueMicrotask(() => d.resolve()); await d.promise;",
   "await new Promise((r) => { globalThis['queueMicrotask'](r); });",
+  "const stamps: number[] = []; for (let i = 0; i < 3; i++) stamps[i] = Date.now(); use(stamps);",
+  "let last = 0; for (let i = 0; i < 3; i++) { last = Date.now(); } use(last);",
+  "let late = 0; for (let i = 0; i < 3; i++) { if (Date.now() > deadline) late++; } use(late);",
+  "let n = 0; let t = 0; while (n < 3) { t = performance.now(); n++; } use(t);",
+  "for (let i = 0; i < 10; i++) { for (const x of xs) { if (Date.now() > end) break; } }",
+  "for (let i = 0; i < 10; i++) { if (Date.now() > end) break; work(i); }",
   "await mySched.wait(50);",
   "const pending = new Map(); const p = new Promise((res, rej) => { pending.set(1, { res, rej }); }); setTimeout(() => pending.get(1).rej(new Error('timeout')), 5000); await p;",
   "const pending = new Map(); const d = Promise.withResolvers<void>(); pending.set(1, d); setTimeout(() => pending.get(1).reject(new Error('timeout')), 5000); ee.on('x', () => pending.get(1).resolve()); await d.promise;",
