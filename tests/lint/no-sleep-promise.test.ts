@@ -961,6 +961,15 @@ describe('sleep rule spec table', () => {
   it.each(SPEC_ALLOWED)('allows: %s', async code => {
     expect((await specLint(code)).map(m => `${m.ruleId}: ${m.message}`)).toEqual([]);
   });
+  // One report per promise, however the walk got to its answer: a memoized answer that was cut short by a
+  // cycle must not be reused for the next promise that reaches the same alias or helper.
+  it.each([
+    "const a: any = b ?? setTimeout; const b: any = a; await new Promise((r) => a(r, 50)); await new Promise((r) => b(r, 50));",
+    "function a(f: () => void) { if (c) b(f); setTimeout(f, 50); } function b(f: () => void) { a(f); } await new Promise((r) => a(r)); await new Promise((r) => b(r));",
+  ])('reports each of two promises on a cyclic alias or helper: %s', async code => {
+    const hits = await specLint(code);
+    expect(hits.map(m => m.ruleId)).toEqual(['local/no-sleep-promise', 'local/no-sleep-promise']);
+  });
   it('has a row for every class 1 to 14', () => {
     const have = new Set(SPEC_BANNED.map(r => r[0]));
     for (let c = 1; c <= 14; c++) expect(have.has(c), `class ${c}`).toBe(true);
