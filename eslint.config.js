@@ -320,6 +320,30 @@ const noSleepPromise = {
     const wr = makeResolver(src, (name, path, local) => !local && name === "Promise" && path.length === 1 && path[0] === "withResolvers");
     const isWR = c => (c.type === "MemberExpression" && nameOf(c.computed, c.property) === "withResolvers") || wr.isFn(c) || wr.methodOn(c, "call") || wr.methodOn(c, "apply")
       || (c.type === "CallExpression" && wr.methodOn(c.callee, "bind"));
+    // `Promise`, or a class that extends it, however it is reached: an alias, a cast, `globalThis.Promise`, a destructure
+    const promise = makeResolver(src, onHost((name, path, local) => !local && name === "Promise" && !path.length));
+    const superOf = e => {
+      e = inner(e);
+      if (e.type === "ClassExpression" || e.type === "ClassDeclaration") return e.superClass;
+      const v = e.type === "Identifier" ? lookup(e) : null;
+      const d = v?.defs.length === 1 ? v.defs[0] : null;
+      if (d?.type === "ClassName") return d.node.superClass;
+      const init = d?.type === "Variable" ? soleInit(v) : null;
+      return init && inner(init).type === "ClassExpression" ? inner(init).superClass : null;
+    };
+    const isPromiseCtor = e => {
+      for (let i = 0; e && i < 8; i++, e = superOf(e)) if (promise.isFn(inner(e))) return true;
+      return false;
+    };
+    // an array literal, or a name written once that holds one
+    const arrayOf = e => {
+      for (let i = 0; e && i < 8; i++) {
+        e = inner(e);
+        if (e.type === "ArrayExpression") return e;
+        e = e.type === "Identifier" ? soleInit(lookup(e)) : null;
+      }
+      return null;
+    };
     // the class a `this` belongs to, and the class's own variables (a static member is read through them)
     const classOf = n => { while (n && n.type !== "ClassBody") n = n.parent; return n?.parent; };
     const classVars = cls => {
@@ -808,8 +832,12 @@ const noSleepPromise = {
         if (how === "promisify" && node.arguments[0] && isTimerFn(node.arguments[0])) {
           context.report({ node, message: ban("promisified timers") });
         } else if (how === "construct" && c.object?.name === "Reflect") {
-          const list = node.arguments[1] && inner(node.arguments[1]);
-          if (list?.type === "ArrayExpression") check(node, list.elements[0]);
+          const list = node.arguments[1] && arrayOf(node.arguments[1]);
+          if (list) check(node, list.elements[0]);
+          // a Promise built from a list the lint cannot read hides its executor
+          else if (node.arguments.length > 1 && isPromiseCtor(node.arguments[0])) {
+            context.report({ node, message: ban("Reflect.construct(Promise, ...) with a list the lint cannot read (spell the executor out in an array literal)") });
+          }
         }
         // `const { resolve } = Promise.withResolvers()`, `const w = Promise.withResolvers()`,
         // and the same assigned later: `w = Promise.withResolvers()`, `({ resolve } = ...)`;
