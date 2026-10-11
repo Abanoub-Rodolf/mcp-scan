@@ -13,7 +13,9 @@ const eslint = new ESLint({ cwd: REPO });
 // ids of the sleep-ban rules that fired.
 async function bannedFile(source: string): Promise<string[]> {
   const [res] = await eslint.lintText(source, { filePath: path.join(REPO, 'tests/snippet.test.ts') });
-  const ids = ['local/no-sleep-promise', 'no-restricted-syntax', 'no-restricted-imports'];
+  // a snippet that does not parse reports nothing, so an allowed row would pass for the wrong reason
+  expect(res.messages.filter(m => m.fatal), 'parse').toEqual([]);
+  const ids = ['local/no-sleep-promise', 'local/no-fixed-wait', 'no-restricted-syntax', 'no-restricted-imports'];
   return res.messages.filter(m => m.ruleId && ids.includes(m.ruleId)).map(m => m.ruleId!);
 }
 const banned = (code: string) => bannedFile(`async function t() {\n${code}\n}\nvoid t;\n`);
@@ -522,6 +524,16 @@ const BYPASS_ALLOWED: Record<string, string[]> = {
   ],
 };
 
+// waits that never build a promise are reported by their own rule, and the tables above see it too
+BYPASS_BANNED.c10 = [
+  'await page.waitForTimeout(500);',
+  'const end = Date.now() + 500; while (Date.now() < end) {}',
+];
+BYPASS_ALLOWED.c10 = [
+  "await page.waitForSelector('#x');",
+  'const end = Date.now() + 500; while (Date.now() < end) { await check(); }',
+];
+
 const BYPASS_STATIC: string[] = [
   "import timers = require('node:timers');\nvoid timers;\n",
   "import timers = require('timers/promises');\nvoid timers;\n",
@@ -604,6 +616,9 @@ describe('local/no-sleep-promise and the timers/promises ban', () => {
     const [res] = await eslint.lintText("import { setImmediate } from 'node:timers';\nvoid setImmediate;\n", { filePath: path.join(REPO, 'tests/snippet.test.ts') });
     const msg = res.messages.find(m => m.ruleId === 'no-restricted-imports')?.message ?? '';
     expect(msg).toMatch(/global .*setImmediate/);
+  });
+  it('refuses a snippet that does not parse', async () => {
+    await expect(banned('const = ;')).rejects.toThrow('parse');
   });
   it('lets an unrelated module through', async () => {
     expect(await banned("await import('node:path'); require('timersx'); require('xtimers');")).toEqual([]);
