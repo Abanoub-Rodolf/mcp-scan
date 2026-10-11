@@ -1073,6 +1073,7 @@ const SPEC_ALLOWED: string[] = [
   "let n = 0; let t = 0; while (n < 3) { t = performance.now(); n++; } use(t);",
   "let t = Date.now(); while (t < end) { t = Date.now(); await check(); }",
   "let ok = true; while (ok) { ok = next(); }",
+  "while (!stopped) { if (Date.now() > end) missing = 1; }",
   "let done = false; let other = 0; while (!done) { if (Date.now() > end) other = 1; done = ok(); }",
   "const end = Date.now() + 500; while (true) { if (Date.now() > end) throw new Error('late'); work(); }",
   "let t = 0; let n = 0; while (t < end) { n++; t = n * 2; }",

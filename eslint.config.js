@@ -1102,7 +1102,7 @@ const noFixedWait = {
       const test = node.test && inner(node.test);
       const forever = !test || (test.type === "Literal" && !!test.value);
       // a clock guard also ends the loop by setting a name the test reads: `while (!done) { if (Date.now() > end) done = true; }`
-      const tested = new Set(test ? [...nodes(test)].filter(x => x.type === "Identifier").map(x => lookupIn(src, x)) : []);
+      const tested = new Set(test ? [...nodes(test)].filter(x => x.type === "Identifier").map(x => lookupIn(src, x)).filter(Boolean) : []);
       const sets = n => [...nodes(n)].some(a => a.type === "AssignmentExpression" && a.left.type === "Identifier" && tested.has(lookupIn(src, a.left)));
       const exits = n => leaves(n) || sets(n);
       const guard = ifsOf(node.body).some(x => clockTest(x.test, node.body) && (exits(x.consequent) || (x.alternate && exits(x.alternate))));
