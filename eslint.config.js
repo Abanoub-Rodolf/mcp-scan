@@ -80,6 +80,10 @@ const INERT = new Set(["length", "name", "toString", "call", "apply", "bind"]);
 const TAKES = new Set(["shift", "pop", "at"]);
 // calls on a stored-resolver container that do not run what is in it
 const BENIGN = new Set(["clear", "delete", "has"]);
+// calls on a container that take something out of it (or build a new container from it): only a later
+// call on the result runs what was stored. Anything else a container answers with is a number, a boolean or text.
+const LOOKS = new Set(["get", "find", "findLast", "at", "shift", "pop", "values", "entries", "slice", "filter", "flat", "splice", "concat", "toSorted", "toReversed", "sort", "reverse"]);
+const PLAIN = new Set(["keys", "indexOf", "lastIndexOf", "includes", "join", "toString", "toJSON", "valueOf", "findIndex", "findLastIndex"]);
 // array methods that hand each element to a callback as its first argument
 const ITER = new Set(["forEach", "map", "filter", "some", "every", "find", "findLast", "findIndex", "flatMap"]);
 // calls that subscribe the resolver to something that will run it later: the real signal of a race
@@ -797,10 +801,41 @@ const noSleepPromise = {
         if (ts.some(t => n.range[0] >= t.range[0] && n.range[1] <= t.range[1])) continue;
         const root = rootOf(n.type === "ForOfStatement" ? n.right : n);
         if (!root || (n.type === "CallExpression" && continues(n))) continue;
+        if (n.type === "ForOfStatement" ? !loopRuns(n) : !runsElement(n)) continue;
         if (!called.has(root)) called.set(root, []);
         called.get(root).push(n.type === "ForOfStatement" ? [] : namesOf(n));
       }
       return called;
+    };
+    // is `f` a function that calls its first parameter, as `(f) => f()` or `({ res }) => res()`?
+    const callsParam = f => {
+      if (!f || !FNS.has(f.type) || !f.params[0]) return false;
+      const p = f.params[0];
+      return src.getDeclaredVariables(f).some(v => v.defs.some(d => d.type === "Parameter" && d.name.range[0] >= p.range[0] && d.name.range[1] <= p.range[1]) && ranAsFn(v));
+    };
+    const ranAsFn = v => v.references.some(r => {
+      const id = r.identifier;
+      const p = id.parent;
+      return (p.type === "CallExpression" && p.callee === id)
+        || (p.type === "MemberExpression" && p.object === id && ["call", "apply"].includes(nameOf(p.computed, p.property)) && p.parent.type === "CallExpression" && p.parent.callee === p);
+    });
+    // does this call run something taken out of the container at its root? `q[0]()`, `m.get(1).res(e)`,
+    // `rs.shift()()`, `rs.forEach(f => f())`; not `expect(m.get(1))`, `m.keys()` or `rs.indexOf(f)`
+    const runsElement = call => {
+      const chain = [];
+      for (let n = inner(call); n.type === "MemberExpression" || n.type === "CallExpression"; n = inner(n.type === "CallExpression" ? n.callee : n.object)) chain.push(n);
+      chain.reverse();
+      const i = chain.findIndex(x => x.type === "CallExpression");
+      const m = chain[i - 1];
+      const name = m?.type === "MemberExpression" ? nameOf(m.computed, m.property) : undefined;
+      if (typeof name === "string" && ITER.has(name)) return callsParam(executor(call.arguments[0] && inner(call.arguments[0])));
+      if (typeof name === "string" && LOOKS.has(name)) return chain.slice(i + 1).some(x => x.type === "CallExpression");
+      return !(typeof name === "string" && PLAIN.has(name));
+    };
+    // `for (const f of rs) f()`
+    const loopRuns = n => {
+      const vs = n.left.type === "VariableDeclaration" ? src.getDeclaredVariables(n.left) : n.left.type === "Identifier" ? [lookup(n.left)] : [];
+      return vs.some(v => v && ranAsFn(v));
     };
     const handedOff = leaks => leaks.some(l => (calledOf().get(l.root) ?? []).some(names => !STORES.has(names[0]) && !BENIGN.has(names[0]) && !names.some(x => l.skip.has(x))));
     // a promise executor: `new P(exec)`, `super(exec)` in a subclass, `Reflect.construct(P, [exec])`
