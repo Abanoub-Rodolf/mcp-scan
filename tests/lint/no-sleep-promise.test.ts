@@ -584,6 +584,35 @@ BYPASS_ALLOWED.c11 = [
   'const end = Date.now() + 500; for (; Date.now() < end; check()) {}',
 ];
 
+// Atomics.wait and scheduler.wait are found by name wherever the file keeps them
+BYPASS_BANNED.c12 = [
+  'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);',
+  'globalThis.Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);',
+  "Atomics['wait'](new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);",
+  'const { wait } = Atomics; wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);',
+  'const A = Atomics; A.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);',
+  '(0, Atomics.wait)(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);',
+  'Atomics.wait.call(Atomics, new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);',
+  'Atomics.wait.apply(Atomics, [new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50]);',
+  'Atomics.wait.bind(Atomics, new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)();',
+  'await Atomics.waitAsync(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50).value;',
+  "await scheduler['wait'](50);",
+  'const { wait } = scheduler; await wait(50);',
+  'const s = scheduler; await s.wait(50);',
+  'await globalThis.scheduler.wait(50);',
+  'await (0, scheduler.wait)(50);',
+  'await scheduler.wait.call(scheduler, 50);',
+  'const { wait: w } = globalThis.scheduler; await w(50);',
+];
+BYPASS_ALLOWED.c12 = [
+  // somebody else's scheduler, and a scheduler the file builds itself
+  'await app.scheduler.wait(job);',
+  'const scheduler = makeSched(); await scheduler.wait(job);',
+  'function run(scheduler: any) { return scheduler.wait(job); } void run;',
+  'const Atomics = fake(); Atomics.wait(1);',
+  'Atomics.notify(new Int32Array(new SharedArrayBuffer(4)), 0, 1);',
+];
+
 const BYPASS_STATIC: string[] = [
   "import timers = require('node:timers');\nvoid timers;\n",
   "import timers = require('timers/promises');\nvoid timers;\n",
@@ -722,8 +751,8 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [3, "no-restricted-syntax", "imports of the timers module", "const t = await import('timers/promises'); void t;"],
   [3, "no-restricted-syntax", "imports of the timers module", "const t = process.getBuiltinModule('node:timers'); void t;"],
   [3, "no-restricted-imports", "imports of the timers module", "import { scheduler } from 'node:timers/promises'; await scheduler.wait(50);"],
-  [3, "no-restricted-syntax", "scheduler.wait", "await (globalThis as any).scheduler.wait(50);"],
-  [3, "no-restricted-syntax", "scheduler.wait", "await scheduler.wait(50);"],
+  [3, "local/no-fixed-wait", "scheduler.wait", "await (globalThis as any).scheduler.wait(50);"],
+  [3, "local/no-fixed-wait", "scheduler.wait", "await scheduler.wait(50);"],
   [3, "local/no-sleep-promise", "promisified timers", "import { promisify } from 'node:util'; await promisify(setTimeout)(50);"],
   [4, "local/no-sleep-promise", "sleep promises", "const P = Promise; await new P((r) => setTimeout(r, 50));"],
   [4, "local/no-sleep-promise", "sleep promises", "await new globalThis.Promise((r) => setTimeout(r, 50));"],
@@ -788,8 +817,8 @@ const SPEC_BANNED: Array<[number, string, string, string]> = [
   [12, "local/no-fixed-wait", "timers in a script string (i", "await page.evaluate('(ms) => new Promise((r) => setTimeout(r, ms))', 500);"],
   [12, "local/no-fixed-wait", "timers in a script string (i", "await page.addInitScript({ content: 'setTimeout(() => undefined, 5)' });"],
   [12, "local/no-fixed-wait", "timers in a script string (i", "await page.evaluate(`new Promise((r) => setTimeout(r, ${ms}))`);"],
-  [13, "no-restricted-syntax", "Atomics.wait (it blocks for ", "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);"],
-  [13, "no-restricted-syntax", "Atomics.wait (it blocks for ", "await Atomics.waitAsync(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500).value;"],
+  [13, "local/no-fixed-wait", "Atomics.wait (it blocks for ", "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);"],
+  [13, "local/no-fixed-wait", "Atomics.wait (it blocks for ", "await Atomics.waitAsync(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500).value;"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; while (Date.now() < end) {}"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = Date.now() + 500; do {} while (Date.now() < end);"],
   [14, "local/no-fixed-wait", "busy-waits on the clock", "const end = performance.now() + 500; for (; performance.now() < end; );"],

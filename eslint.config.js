@@ -188,8 +188,8 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 //   (imported, a method like `h.after(r)`, `this.after(r)`), or the timer is built in another module;
 // - the timer is `let` or reassigned (`let t = setTimeout; t(r, 5)`), or reached through a computed key
 //   the file does not spell out (`globalThis[k](r, 5)` with k from a call);
-// - a timer or a script is passed on as a value (`run(setTimeout as never)`), or its name is built at
-//   runtime (`'set' + 'Timeout'`, a script string joined from parts);
+// - a timer, a script, `Atomics.wait` or `scheduler.wait` is passed on as a value (`run(setTimeout as never)`,
+//   `run(Atomics.wait)`), or its name is built at runtime (`'set' + 'Timeout'`, a script string joined from parts);
 // - the resolver is run as `r['call']()` or handed over as `setTimeout(r.call, 5)`;
 // - a stored resolver (`rs.push(r)`, `rs[0] = r`) is run by a timer without a call rooted at the same
 //   container (`const [f] = rs; f()`), or sits behind `this.` or an undeclared name;
@@ -619,6 +619,16 @@ const noSleepPromise = {
 // waitForTimeout (any receiver, destructured, passed on, quoted or const key), a
 // timer inside a script string handed to the browser, and a busy loop on the clock
 // (no await and no call in its body, so it only burns the thread until the time is up).
+// `Atomics.wait` blocks the thread for a fixed time, `scheduler.wait` is the timers/promises sleep.
+// Both are found through the same alias following as the timers: `globalThis.Atomics.wait`,
+// `Atomics['wait']`, `const { wait } = Atomics`, `const A = Atomics`, `(0, Atomics.wait)(...)`.
+// A name the file declares itself (`const scheduler = makeSched()`) is no host object, and
+// `app.scheduler.wait(job)` is somebody else's scheduler.
+const onHost = leaf => (name, path, local) => leaf(name, path, local) || (GLOBALS.has(name) && !local && path.length > 0 && leaf(path[0], path.slice(1), false));
+const WAITS = [
+  [onHost((name, path, local) => name === "Atomics" && !local && path.length === 1 && /^wait(Async)?$/.test(String(path[0]))), "Atomics.wait (it blocks for a fixed time)"],
+  [onHost((name, path, local) => name === "scheduler" && !local && path.length === 1 && path[0] === "wait"), "scheduler.wait"],
+];
 const SCRIPT_RUNNERS = new Set(["evaluate", "evaluateHandle", "waitForFunction", "addInitScript", "$eval", "$$eval"]);
 const NOW = new Set(["Date.now", "performance.now"]);
 const noFixedWait = {
@@ -627,6 +637,7 @@ const noFixedWait = {
     const src = context.sourceCode;
     const keyOf = (computed, k) => keyIn(src, computed, k);
     const flag = (node, what) => context.report({ node, message: ban(what) });
+    const waits = WAITS.map(([leaf, what]) => [makeResolver(src, leaf), what]);
     // text of a script argument: a string, a template, or an object holding one (`{ content }`)
     const mentionsTimer = a => {
       if (a.type === "Literal") return typeof a.value === "string" && /set(Timeout|Interval)/.test(a.value);
@@ -649,6 +660,8 @@ const noFixedWait = {
       },
       CallExpression(n) {
         const c = n.callee;
+        const f = inner(c);
+        for (const [w, what] of waits) if (w.isFn(f) || w.methodOn(f, "call") || w.methodOn(f, "apply")) flag(n, what);
         if (c.type === "MemberExpression" && SCRIPT_RUNNERS.has(keyOf(c.computed, c.property)) && n.arguments.slice(0, 2).some(mentionsTimer)) {
           flag(n, "timers in a script string (it runs in the browser, where the sleep rule cannot see it)");
         }
@@ -693,15 +706,6 @@ export default [
         paths: TIMERS_MODULES.map(name => ({ name, message: NO_TIMERS })),
       }],
       "no-restricted-syntax": ["error",
-        {
-          selector: "CallExpression[callee.object.name='Atomics'][callee.property.name=/^wait(Async)?$/]",
-          message: ban("Atomics.wait (it blocks for a fixed time)"),
-        },
-        {
-          // scheduler.wait(ms) is the timers/promises sleep, also reachable as a global in some runtimes
-          selector: "CallExpression[callee.property.name='wait']:matches([callee.object.name='scheduler'], [callee.object.property.name='scheduler'], [callee.object.property.value='scheduler'])",
-          message: ban("scheduler.wait"),
-        },
         {
           selector: `ImportExpression${isTimersModule("source")}`,
           message: NO_TIMERS,
