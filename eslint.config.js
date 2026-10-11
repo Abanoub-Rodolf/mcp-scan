@@ -138,7 +138,7 @@ const timerLeaf = (name, path) => {
 // The scope manager's view of a value: does `e`, read down `path`, end at a host function that
 // `leaf(name, path, local)` accepts? Follows consts, destructuring, objects, arrays, defaults,
 // `??`/`||`/ternary and `.bind`. `local` is true for a name the file declares itself.
-const makeResolver = (src, leaf, state = { cuts: 0 }) => {
+const makeResolver = (src, leaf) => {
   const lookup = node => lookupIn(src, node);
   const keyOf = (computed, k) => keyIn(src, computed, k);
   // Where is `pat` bound to `name`: the keys leading to it, and the defaults on the way, each with how many
@@ -188,22 +188,28 @@ const makeResolver = (src, leaf, state = { cuts: 0 }) => {
   // `globalThis.setTimeout`, `self["setInterval"]`, `{ wait: setTimeout }.wait`,
   // `[setTimeout][0]`, `a ?? setTimeout`, `setTimeout.bind(null)`, or a name that
   // is only ever one of those: a const, a destructured const, a parameter default.
-  // `seen` is the walk that led here, one branch at a time: `o.a ?? o.b` reads `o` twice,
-  // under two keys, and a node that merely finished earlier is no cycle. A false that no
-  // cycle cut short stays true for the file, so a chain of `a1 = a0 ?? a0` is walked once.
-  // `state.cuts` counts every walk a cycle ended early, here and in the helper analysis.
-  
+  // The names and keys form a graph and this asks whether a timer is reachable in it, so one
+  // question is one depth-first search with one `seen` set: every (node, path) is entered once, a
+  // cycle simply ends, and the file never pays for the number of routes to a node. A `true` is
+  // always kept (it names a real route). A search that found nothing has visited only nodes that
+  // reach nothing, so all of them are kept as `false`; a search that stopped on a hit says nothing
+  // about the nodes it left open.
   const known = new Map();
   const reach = (e, path, seen) => {
     e = inner(e);
     const key = `${e.type}${e.range}|${path}`;
     if (known.has(key)) return known.get(key);
-    if (seen.has(key)) { state.cuts++; return false; }
+    if (seen.has(key)) return false;
     seen.add(key);
-    const before = state.cuts;
     const r = walk(e, path, seen);
-    seen.delete(key);
-    if (r || state.cuts === before) known.set(key, r);
+    if (r) known.set(key, true);
+    return r;
+  };
+  // one question: its own `seen`, and a miss settles every node it visited
+  const ask = f => {
+    const seen = new Set();
+    const r = f(seen);
+    if (!r) for (const k of seen) known.set(k, false);
     return r;
   };
   const walk = (e, path, seen) => {
@@ -280,12 +286,12 @@ const makeResolver = (src, leaf, state = { cuts: 0 }) => {
     walkBody(f.body);
     return out;
   };
-  const isFn = c => reach(c, [], new Set());
-  // `t.call`, `t.apply`, `t.bind` where t is a timer. `seen` carries the walk that
-  // got here, so `const t = t.bind(null)` ends instead of starting over.
-  const methodOn = (callee, how, seen = new Set()) => {
+  const isFn = c => ask(seen => reach(c, [], seen));
+  // `t.call`, `t.apply`, `t.bind` where t is a timer. Inside a walk, `seen` is the walk's own set.
+  const methodOn = (callee, how, seen) => {
     const c = inner(callee);
-    return c.type === "MemberExpression" && nameOf(c.computed, c.property) === how && reach(c.object, [], seen);
+    if (c.type !== "MemberExpression" || nameOf(c.computed, c.property) !== how) return false;
+    return seen ? reach(c.object, [], seen) : ask(s => reach(c.object, [], s));
   };
   return { reach, isFn, methodOn, fnOf, returned };
 };
@@ -352,7 +358,6 @@ const noSleepPromise = {
       for (n = inner(n); n.type === "MemberExpression" || n.type === "CallExpression"; n = inner(n.type === "CallExpression" ? n.callee : n.object));
       return n.type === "Identifier" ? lookup(n) : null;
     };
-    const state = { cuts: 0 };
     // `const e = { a: [d] }`: the variable and the keys leading from it to the object `n` sits in, or
     // null when the literal is not the whole init of a const (then it is handed to someone)
     const boxOf = n => {
@@ -438,7 +443,7 @@ const noSleepPromise = {
       const cls = n.type === "ThisExpression" ? classOf(n) : null;
       return cls ? { exec: scopeOf(cls), roots: [], reads: thisReads(cls, path) } : null;
     };
-    const { isFn: isTimerFn, methodOn } = makeResolver(src, timerLeaf, state);
+    const { isFn: isTimerFn, methodOn } = makeResolver(src, timerLeaf);
     // `f.apply(this, list)` and `Reflect.apply(f, this, list)`: the function, whether it is a
     // timer, and which argument holds the list
     const applyTarget = call => {
@@ -474,8 +479,13 @@ const noSleepPromise = {
     // `leaks`: containers the resolver was stored in, for a timer elsewhere to run, each with
     // the member names that do not run it: `{ res, rej }` stored whole is run by `.res()`
     // and not by `.rej()`, and a `withResolvers()` object is run by `.resolve()` only.
-    const busy = new Set();
+    // What each helper declared in the file does with a parameter, by function and parameter: the same answer
+    // for every caller. Helpers that call each other (or themselves) are answered together, see `helperFlow`.
     const helpers = new Map();
+    let round = null;
+    const rootIds = new Map();
+    // two answers are the same when they ask the same of the file: the flags and the set of stores
+    const sig = x => `${+x.timer}${+x.given}${[...new Set(x.leaks.map(l => `${rootIds.get(l.root) ?? rootIds.set(l.root, rootIds.size).get(l.root)}:${[...l.skip].sort()}`))].sort()}`;
     // `bag`: a withResolvers object kept inside a literal, a variable's property or a class field, as the
     // variables and key paths it can be read through (`roots`) and the member nodes that already read it (`reads`).
     const analyze = (exec, resolver, obj = false, bag = null) => {
@@ -615,20 +625,45 @@ const noSleepPromise = {
         return null;
       };
       // What a helper declared in this file does with parameter `i`, or null when `fn` is not one
-      // (imported, a method, already being analyzed). `via`: where in that argument the resolver sits.
+      // (imported, a method). `via`: where in that argument the resolver sits. Helpers that call each
+      // other, or themselves, answer each other: the outermost question runs rounds, in which a helper
+      // still being worked out answers with what the last round found (nothing, at first), until a round
+      // changes nothing. Every helper is worked out once per round, so the cost is the size of the cycle
+      // times the rounds, and the answers are the same wherever they were asked from.
       const helperFlow = (fn, i, via = []) => {
         const param = fn && FNS.has(fn.type) ? bindAt(fn.params[i], via) : null;
         if (!param) return null;
-        if (busy.has(fn)) { state.cuts++; return null; }
-        // one helper and one parameter answer the same for every caller, unless a recursion cut the answer short
         const key = `${fn.range}|${param.range}`;
         if (helpers.has(key)) return helpers.get(key);
-        busy.add(fn);
-        const before = state.cuts;
-        const r = analyze(fn, declared(fn, v => v.defs.some(d => d.type === "Parameter" && d.name === param)));
-        busy.delete(fn);
-        if (state.cuts === before) helpers.set(key, r);
-        return r;
+        const work = () => {
+          let h = round.open.get(key);
+          if (h?.round === round.n) {
+            // asked again while it is being worked out: the cycle closes here
+            if (h.running) round.cut = true;
+            return h.r;
+          }
+          if (!h) round.open.set(key, h = { r: none(), round: 0, running: false });
+          h.round = round.n;
+          h.running = true;
+          const r = analyze(fn, declared(fn, v => v.defs.some(d => d.type === "Parameter" && d.name === param)));
+          h.running = false;
+          if (sig(r) !== sig(h.r)) round.changed = true;
+          return (h.r = r);
+        };
+        if (round) return work();
+        round = { n: 0, open: new Map(), cut: false, changed: false };
+        try {
+          do {
+            round.n++;
+            round.cut = false;
+            round.changed = false;
+            work();
+          } while (round.cut && round.changed && round.n < 64);
+          for (const [k, h] of round.open) helpers.set(k, h.r);
+          return round.open.get(key).r;
+        } finally {
+          round = null;
+        }
       };
       // ...for a call, as `after(r)`, `after.call(null, r)`, `after.bind(null, r)`
       const helperCall = (call, arg, via) => {
@@ -1054,10 +1089,16 @@ const noFixedWait = {
     const setsTimer = f => [...nodes(f.body)].some(x => x.type === "CallExpression" && (timers.isFn(inner(x.callee)) || timers.methodOn(inner(x.callee), "call") || timers.methodOn(inner(x.callee), "apply")));
     const textOf = top => {
       const unknown = "\0";
-      // a name's text is the same wherever it is read, unless a cycle cut the walk short
+      // A name's text is the same wherever it is read, unless a cycle cut the walk short: a name inside
+      // a ring reads as unknown where the ring closes, so what it holds depends on where the walk began.
+      // Those answers are not kept while the walk is small, because the next route to the name may read
+      // more. A ring of names has a route per path, so once a script has cost `SPEND` visits the cut answers
+      // are kept too, and every name is read at most once more.
+      const SPEND = 2000;
       const memo = new Map();
       const active = new Set();
       let cuts = 0;
+      let visits = 0;
       const go = e => {
         e = inner(e);
         switch (e.type) {
@@ -1090,10 +1131,11 @@ const noFixedWait = {
             if (memo.has(v)) return memo.get(v);
             if (active.has(v)) { cuts++; return unknown; }
             active.add(v);
+            visits++;
             const before = cuts;
             const t = given.map(go).join(unknown).slice(0, CAP);
             active.delete(v);
-            if (cuts === before) memo.set(v, t);
+            if (cuts === before || visits > SPEND) memo.set(v, t);
             return t;
           }
           case "CallExpression": {
@@ -1143,24 +1185,78 @@ const noFixedWait = {
     const mentionsTimer = a => timerWord.test(textOf(a));
     const timers = makeResolver(src, timerLeaf);
     const clock = makeResolver(src, clockLeaf);
-    // does a function declared in the file hand back a clock read: `const now = () => Date.now()`. A name
-    // in the middle of a call cycle answers false for that walk, and the answer is kept only when no cycle cut it.
+    // Does a function declared in the file hand back a clock read, and do nothing else: `const now = () => Date.now()`.
+    // A function that also awaits or calls something else does work, so a loop on it is a poll; a call to
+    // another clock function is no other work. Functions that call each other are decided together: one
+    // that returns a clock read only if some function it calls does is a clock when one of them reaches
+    // a real read (found from the reads outward), and every one of them does nothing else (found by
+    // striking out the ones that do). The call graph is walked once per function, whatever its shape.
+    const own = n => (FNS.has(n.type) ? [] : [...nodes(n, false)]);
     const clockFns = new Map();
-    const reading = new Set();
-    let clockCuts = 0;
-    const readsClock = f => {
-      if (clockFns.has(f)) return clockFns.get(f);
-      if (reading.has(f)) { clockCuts++; return false; }
-      reading.add(f);
-      const before = clockCuts;
-      // a function that also awaits or calls something else does work: a loop on it is a poll
-      const own = n => (FNS.has(n.type) ? [] : [...nodes(n, false)]);
-      const r = clock.returned(f).some(x => own(x).some(isClock)) && own(f.body).every(x => isClock(x) || !WORK.test(x.type));
-      reading.delete(f);
-      if (clockCuts === before) clockFns.set(f, r);
-      return r;
+    const bodies = new Map();
+    const bodyOf = f => {
+      let b = bodies.get(f);
+      if (!b) {
+        const rets = clock.returned(f).flatMap(own);
+        const all = own(f.body);
+        const calls = new Set();
+        for (const x of [...rets, ...all]) {
+          const g = x.type === "CallExpression" ? clock.fnOf(inner(x.callee)) : null;
+          if (g) calls.add(g);
+        }
+        bodies.set(f, b = { rets, all, calls });
+      }
+      return b;
     };
-    const isClock = n => {
+    const solveClocks = group => {
+      const together = new Set(group);
+      const reads = new Map(group.map(f => [f, false]));
+      const pure = new Map(group.map(f => [f, true]));
+      const readOf = g => (together.has(g) ? reads.get(g) : clockFns.get(g) ?? false);
+      const cleanOf = g => (together.has(g) ? reads.get(g) && pure.get(g) : clockFns.get(g) ?? false);
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const f of group) {
+          if (!reads.get(f) && bodyOf(f).rets.some(x => clockWith(x, readOf))) { reads.set(f, true); grew = true; }
+        }
+      }
+      for (let shrank = true; shrank;) {
+        shrank = false;
+        for (const f of group) {
+          if (pure.get(f) && !bodyOf(f).all.every(x => clockWith(x, cleanOf) || !WORK.test(x.type))) { pure.set(f, false); shrank = true; }
+        }
+      }
+      for (const f of group) clockFns.set(f, reads.get(f) && pure.get(f));
+    };
+    // Tarjan over the functions `root` reaches: a group is solved once everything it calls is
+    const settleClocks = root => {
+      const index = new Map();
+      const low = new Map();
+      const stack = [];
+      const strong = f => {
+        index.set(f, index.size);
+        low.set(f, index.get(f));
+        stack.push(f);
+        for (const g of bodyOf(f).calls) {
+          if (clockFns.has(g)) continue;
+          if (!index.has(g)) {
+            strong(g);
+            low.set(f, Math.min(low.get(f), low.get(g)));
+          } else if (stack.includes(g)) low.set(f, Math.min(low.get(f), index.get(g)));
+        }
+        if (low.get(f) !== index.get(f)) return;
+        const group = stack.splice(stack.indexOf(f));
+        solveClocks(group);
+      };
+      strong(root);
+    };
+    const readsClock = f => {
+      if (!clockFns.has(f)) settleClocks(f);
+      return clockFns.get(f);
+    };
+    const isClock = n => clockWith(n, readsClock);
+    // `readsFn` answers for a function of the file; the solver gives its own while a group is open
+    const clockWith = (n, readsFn) => {
       if (n.type === "NewExpression") {
         const c = inner(n.callee);
         return c.type === "Identifier" && c.name === "Date" && !n.arguments.length && !src.getScope(n).set.get("Date")?.defs.length;
@@ -1169,9 +1265,9 @@ const noFixedWait = {
       const f = inner(n.callee);
       if (clock.isFn(f) || clock.methodOn(f, "call") || clock.methodOn(f, "apply")) return true;
       const g = clock.fnOf(f);
-      if (g && readsClock(g)) return true;
+      if (g && readsFn(g)) return true;
       // `new Date().getTime()`
-      return f.type === "MemberExpression" && ["getTime", "valueOf"].includes(keyOf(f.computed, f.property)) && isClock(inner(f.object));
+      return f.type === "MemberExpression" && ["getTime", "valueOf"].includes(keyOf(f.computed, f.property)) && clockWith(inner(f.object), readsFn);
     };
     // Does `n` leave the loop it sits in: a `return`, or a `break` that is not for a loop or switch inside it?
     const leaves = (n, nested = false) => {
