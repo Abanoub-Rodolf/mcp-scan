@@ -71,6 +71,103 @@ const BENIGN = new Set(["clear", "delete", "has"]);
 // calls that subscribe the resolver to something that will run it later: the real signal of a race
 const SUBSCRIBES = new Set(["on", "once", "addListener", "prependListener", "prependOnceListener", "addEventListener", "then", "finally", "subscribe"]);
 
+// The scope manager's view of a value: does `e`, read down `path`, end at a host function that
+// `leaf(name, path, local)` accepts? Follows consts, destructuring, objects, arrays, defaults,
+// `??`/`||`/ternary and `.bind`. `local` is true for a name the file declares itself.
+const makeResolver = (src, leaf, state = { cuts: 0 }) => {
+  const lookup = node => lookupIn(src, node);
+  const keyOf = (computed, k) => keyIn(src, computed, k);
+  // Where is `pat` bound to `name`: the keys leading to it, and a default value
+  // that applies to it directly. `{ a: [, b = 1] }` finds b at ["a", 1] with 1.
+  const locate = (pat, name, path = [], dflt = null) => {
+    if (pat.type === "Identifier") return pat === name ? { path, dflt } : null;
+    if (pat.type === "AssignmentPattern") return locate(pat.left, name, path, pat.right);
+    if (pat.type === "ObjectPattern") {
+      for (const p of pat.properties) {
+        const k = p.type === "Property" ? keyOf(p.computed, p.key) : undefined;
+        const r = k === undefined ? null : locate(p.value, name, [...path, k]);
+        if (r) return r;
+      }
+    } else if (pat.type === "ArrayPattern") {
+      for (const [i, el] of pat.elements.entries()) {
+        const r = el && el.type !== "RestElement" ? locate(el, name, [...path, i]) : null;
+        if (r) return r;
+      }
+    }
+    return null;
+  };
+  // Does the value of `e`, read down `path`, hold a timer? `setTimeout`,
+  // `globalThis.setTimeout`, `self["setInterval"]`, `{ wait: setTimeout }.wait`,
+  // `[setTimeout][0]`, `a ?? setTimeout`, `setTimeout.bind(null)`, or a name that
+  // is only ever one of those: a const, a destructured const, a parameter default.
+  // `seen` is the walk that led here, one branch at a time: `o.a ?? o.b` reads `o` twice,
+  // under two keys, and a node that merely finished earlier is no cycle. A false that no
+  // cycle cut short stays true for the file, so a chain of `a1 = a0 ?? a0` is walked once.
+  // `state.cuts` counts every walk a cycle ended early, here and in the helper analysis.
+  
+  const known = new Map();
+  const reach = (e, path, seen) => {
+    e = inner(e);
+    const key = `${e.type}${e.range}|${path}`;
+    if (known.has(key)) return known.get(key);
+    if (seen.has(key)) { state.cuts++; return false; }
+    seen.add(key);
+    const before = state.cuts;
+    const r = walk(e, path, seen);
+    seen.delete(key);
+    if (r || state.cuts === before) known.set(key, r);
+    return r;
+  };
+  const walk = (e, path, seen) => {
+    switch (e.type) {
+      case "Identifier": {
+        const def = lookup(e)?.defs;
+        // a name the file declares itself is no host object, but an import is the real thing
+        if (leaf(e.name, path, !!def?.length && def[0].type !== "ImportBinding")) return true;
+        if (def?.length !== 1) return false;
+        let pat, init;
+        if (def[0].type === "Variable" && def[0].parent.kind === "const") ({ id: pat, init } = def[0].node);
+        else if (def[0].type === "Parameter") pat = def[0].node.params?.find(x => x.range[0] <= def[0].name.range[0] && def[0].name.range[1] <= x.range[1]);
+        const at = pat && locate(pat, def[0].name);
+        if (!at) return false;
+        return !!(init && reach(init, [...at.path, ...path], seen)) || !!(at.dflt && reach(at.dflt, path, seen));
+      }
+      case "MemberExpression": {
+        const k = keyOf(e.computed, e.property);
+        return k !== undefined && reach(e.object, [k, ...path], seen);
+      }
+      case "ObjectExpression":
+        if (!path.length) return false;
+        // the last property that names the key wins; a spread could hide any key
+        for (const p of [...e.properties].reverse()) {
+          if (p.type !== "Property") return false;
+          if (String(nameOf(p.computed, p.key)) === String(path[0])) return reach(p.value, path.slice(1), seen);
+        }
+        return false;
+      case "ArrayExpression": {
+        const i = path[0];
+        if (typeof i !== "number" || i >= e.elements.length || e.elements.slice(0, i + 1).some(x => !x || x.type === "SpreadElement")) return false;
+        return reach(e.elements[i], path.slice(1), seen);
+      }
+      case "LogicalExpression":
+        return reach(e.left, path, seen) || reach(e.right, path, seen);
+      case "ConditionalExpression":
+        return reach(e.consequent, path, seen) || reach(e.alternate, path, seen);
+      case "CallExpression":
+        return !path.length && methodOn(e.callee, "bind", seen);
+    }
+    return false;
+  };
+  const isFn = c => reach(c, [], new Set());
+  // `t.call`, `t.apply`, `t.bind` where t is a timer. `seen` carries the walk that
+  // got here, so `const t = t.bind(null)` ends instead of starting over.
+  const methodOn = (callee, how, seen = new Set()) => {
+    const c = inner(callee);
+    return c.type === "MemberExpression" && nameOf(c.computed, c.property) === how && reach(c.object, [], seen);
+  };
+  return { reach, isFn, methodOn };
+};
+
 // Logging a value does not take ownership of it.
 const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.name === "console";
 
@@ -118,100 +215,14 @@ const noSleepPromise = {
     const src = context.sourceCode;
     const declared = (node, pick) => src.getDeclaredVariables(node).find(pick);
     const lookup = node => lookupIn(src, node);
-    const keyOf = (computed, k) => keyIn(src, computed, k);
     // the variable at the root of `a`, `a.b[0]`, `a.get(1)()`
     const rootOf = n => {
       for (n = inner(n); n.type === "MemberExpression" || n.type === "CallExpression"; n = inner(n.type === "CallExpression" ? n.callee : n.object));
       return n.type === "Identifier" ? lookup(n) : null;
     };
-    // Where is `pat` bound to `name`: the keys leading to it, and a default value
-    // that applies to it directly. `{ a: [, b = 1] }` finds b at ["a", 1] with 1.
-    const locate = (pat, name, path = [], dflt = null) => {
-      if (pat.type === "Identifier") return pat === name ? { path, dflt } : null;
-      if (pat.type === "AssignmentPattern") return locate(pat.left, name, path, pat.right);
-      if (pat.type === "ObjectPattern") {
-        for (const p of pat.properties) {
-          const k = p.type === "Property" ? keyOf(p.computed, p.key) : undefined;
-          const r = k === undefined ? null : locate(p.value, name, [...path, k]);
-          if (r) return r;
-        }
-      } else if (pat.type === "ArrayPattern") {
-        for (const [i, el] of pat.elements.entries()) {
-          const r = el && el.type !== "RestElement" ? locate(el, name, [...path, i]) : null;
-          if (r) return r;
-        }
-      }
-      return null;
-    };
-    // Does the value of `e`, read down `path`, hold a timer? `setTimeout`,
-    // `globalThis.setTimeout`, `self["setInterval"]`, `{ wait: setTimeout }.wait`,
-    // `[setTimeout][0]`, `a ?? setTimeout`, `setTimeout.bind(null)`, or a name that
-    // is only ever one of those: a const, a destructured const, a parameter default.
-    // `seen` is the walk that led here, one branch at a time: `o.a ?? o.b` reads `o` twice,
-    // under two keys, and a node that merely finished earlier is no cycle. A false that no
-    // cycle cut short stays true for the file, so a chain of `a1 = a0 ?? a0` is walked once.
-    // `cuts` counts every walk a cycle ended early, here and in the helper analysis below.
-    let cuts = 0;
-    const known = new Map();
-    const timerAt = (e, path, seen) => {
-      e = inner(e);
-      const key = `${e.type}${e.range}|${path}`;
-      if (known.has(key)) return known.get(key);
-      if (seen.has(key)) { cuts++; return false; }
-      seen.add(key);
-      const before = cuts;
-      const r = walk(e, path, seen);
-      seen.delete(key);
-      if (r || cuts === before) known.set(key, r);
-      return r;
-    };
-    const walk = (e, path, seen) => {
-      switch (e.type) {
-        case "Identifier": {
-          if (!path.length && TIMERS.has(e.name)) return true;
-          if (path.length === 1 && GLOBALS.has(e.name)) return TIMERS.has(path[0]);
-          const def = lookup(e)?.defs;
-          if (def?.length !== 1) return false;
-          let pat, init;
-          if (def[0].type === "Variable" && def[0].parent.kind === "const") ({ id: pat, init } = def[0].node);
-          else if (def[0].type === "Parameter") pat = def[0].node.params?.find(x => x.range[0] <= def[0].name.range[0] && def[0].name.range[1] <= x.range[1]);
-          const at = pat && locate(pat, def[0].name);
-          if (!at) return false;
-          return !!(init && timerAt(init, [...at.path, ...path], seen)) || !!(at.dflt && timerAt(at.dflt, path, seen));
-        }
-        case "MemberExpression": {
-          const k = keyOf(e.computed, e.property);
-          return k !== undefined && timerAt(e.object, [k, ...path], seen);
-        }
-        case "ObjectExpression":
-          if (!path.length) return false;
-          // the last property that names the key wins; a spread could hide any key
-          for (const p of [...e.properties].reverse()) {
-            if (p.type !== "Property") return false;
-            if (String(nameOf(p.computed, p.key)) === String(path[0])) return timerAt(p.value, path.slice(1), seen);
-          }
-          return false;
-        case "ArrayExpression": {
-          const i = path[0];
-          if (typeof i !== "number" || i >= e.elements.length || e.elements.slice(0, i + 1).some(x => !x || x.type === "SpreadElement")) return false;
-          return timerAt(e.elements[i], path.slice(1), seen);
-        }
-        case "LogicalExpression":
-          return timerAt(e.left, path, seen) || timerAt(e.right, path, seen);
-        case "ConditionalExpression":
-          return timerAt(e.consequent, path, seen) || timerAt(e.alternate, path, seen);
-        case "CallExpression":
-          return !path.length && methodOn(e.callee, "bind", seen);
-      }
-      return false;
-    };
-    const isTimerFn = c => timerAt(c, [], new Set());
-    // `t.call`, `t.apply`, `t.bind` where t is a timer. `seen` carries the walk that
-    // got here, so `const t = t.bind(null)` ends instead of starting over.
-    const methodOn = (callee, how, seen = new Set()) => {
-      const c = inner(callee);
-      return c.type === "MemberExpression" && nameOf(c.computed, c.property) === how && timerAt(c.object, [], seen);
-    };
+    const state = { cuts: 0 };
+    const timerLeaf = (name, path) => (!path.length && TIMERS.has(name)) || (path.length === 1 && GLOBALS.has(name) && TIMERS.has(path[0]));
+    const { isFn: isTimerFn, methodOn } = makeResolver(src, timerLeaf, state);
     // What a timer call hands the timer, as `(callback, ms, ...args)`, or null when the
     // call is no timer: `t(cb, 5)`, `t.call(this, cb, 5)`, `t.apply(this, [cb, 5])`,
     // `t.bind(this)(cb, 5)`, `(0, t)(cb, 5)`.
@@ -326,15 +337,15 @@ const noSleepPromise = {
         const first = fn && FNS.has(fn.type) ? fn.params[i] : null;
         const param = first?.type === "AssignmentPattern" ? first.left : first;
         if (param?.type !== "Identifier") return null;
-        if (busy.has(fn)) { cuts++; return null; }
+        if (busy.has(fn)) { state.cuts++; return null; }
         // one helper and one parameter answer the same for every caller, unless a recursion cut the answer short
         const key = `${fn.range}|${i}`;
         if (helpers.has(key)) return helpers.get(key);
         busy.add(fn);
-        const before = cuts;
+        const before = state.cuts;
         const r = analyze(fn, declared(fn, v => v.defs.some(d => d.type === "Parameter" && d.name === param)));
         busy.delete(fn);
-        if (cuts === before) helpers.set(key, r);
+        if (state.cuts === before) helpers.set(key, r);
         return r;
       };
 
