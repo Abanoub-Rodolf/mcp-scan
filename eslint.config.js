@@ -59,12 +59,28 @@ const soleInit = v => {
   const a = ws[0].identifier.parent;
   return a.type === "AssignmentExpression" && a.operator === "=" && a.left === ws[0].identifier ? a.right : null;
 };
+// Every expression a let/var is given, by its init, `=` or `+=`: the values the lint can read when a name is
+// written more than once. A write of another shape (a destructure, `for...of`, `++`) is left out.
+const writesOf = v => {
+  const def = v?.defs.length === 1 && v.defs[0].type === "Variable" ? v.defs[0] : null;
+  if (!def || def.parent.kind === "const" || def.node.id.type !== "Identifier") return null;
+  const out = def.node.init ? [def.node.init] : [];
+  for (const r of v.references) {
+    const a = r.identifier.parent;
+    if (r.isWrite() && !r.init && a.type === "AssignmentExpression" && a.left === r.identifier && (a.operator === "=" || a.operator === "+=")) out.push(a.right);
+  }
+  return out;
+};
+// the keys that make a call a sleep; a name written more than once reads as the first of these it ever holds
+const SLEEP_KEYS = new Set(["setTimeout", "setInterval", "waitForTimeout"]);
 // nameOf, and a computed key that is a name written once reads as that string: `const k = "setTimeout"; o[k]`
 const keyIn = (src, computed, k) => {
   const name = nameOf(computed, k);
   if (name !== undefined || !computed || k.type !== "Identifier") return name;
-  const init = soleInit(lookupIn(src, k));
-  return init ? nameOf(true, inner(init)) : undefined;
+  const v = lookupIn(src, k);
+  const init = soleInit(v);
+  if (init) return nameOf(true, inner(init));
+  return writesOf(v)?.map(x => nameOf(true, inner(x))).find(x => SLEEP_KEYS.has(x));
 };
 // `into` false stays inside one function: the nodes of a nested function are not the outer function's
 function* nodes(n, into = true) {
@@ -262,8 +278,8 @@ const isConsole = c => c.callee.type === "MemberExpression" && c.callee.object.n
 // Known gaps (an AST rule, not a dataflow engine). A sleep still gets through when:
 // - the resolver reaches a timer through an imported helper, a method helper (`h.after(r)` with
 //   `h = { after: (f) => setTimeout(f, 50) }`), or a timer built in another module;
-// - a timer key or a script is held in a `let` written more than once, is built at runtime
-//   (`'set' + name`, a key from a call), or is handed to a local function as an argument (`run('setTimeout(...)')`);
+// - a timer key or a script is built at runtime (`'set' + name`, a key from a call), is written in a `let`
+//   by a destructure or a loop, or is handed to a local function as an argument (`run('setTimeout(...)')`);
 // - a timer is a `let` that is written twice (`let t = setTimeout; t(r, 5); t = other`);
 // - a timer, `Atomics.wait` or `scheduler.wait` is passed on as a plain value (`run(setTimeout)`, `run(Atomics.wait)`;
 //   behind a cast it is reported), or a page script is a call result (`const s = mk(); page.evaluate(s)`);
@@ -1004,12 +1020,14 @@ const noFixedWait = {
           case "Identifier": {
             const v = lookupIn(src, e);
             const init = soleInit(v) ?? paramDefault(v);
-            if (!init) return unknown;
+            // a let written more than once holds every text it is given
+            const given = init ? [init] : writesOf(v);
+            if (!given?.length) return unknown;
             if (memo.has(v)) return memo.get(v);
             if (active.has(v)) { cuts++; return unknown; }
             active.add(v);
             const before = cuts;
-            const t = go(init).slice(0, CAP);
+            const t = given.map(go).join(unknown).slice(0, CAP);
             active.delete(v);
             if (cuts === before) memo.set(v, t);
             return t;
