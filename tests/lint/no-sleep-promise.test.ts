@@ -1178,6 +1178,14 @@ describe('sleep rule spec table', () => {
     expect((await specLint(lines.join('\n'))).length).toBeGreaterThan(0);
     expect(Date.now() - t0).toBeLessThan(1500);
   });
+  // 100 nested executors is as deep as the parser goes; each level is judged once
+  it('judges 100 nested promise executors within 1.5 s', async () => {
+    let code = 'setTimeout(r99, 50);';
+    for (let i = 99; i >= 0; i--) code = `new Promise<void>((r${i}) => { ${code} });`;
+    const t0 = Date.now();
+    expect((await specLint(`await ${code}`)).length).toBe(1);
+    expect(Date.now() - t0).toBeLessThan(1500);
+  });
   // Per-branch walking must not turn a chain of `a1 = a0 ?? a0` into 2^n steps
   it('walks a doubling chain of aliases once', async () => {
     const chain = Array.from({ length: 200 }, (_, i) => `const a${i + 1} = a${i} ?? a${i};`).join(' ');
