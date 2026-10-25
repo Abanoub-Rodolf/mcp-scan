@@ -86,7 +86,8 @@ function registryOverrides(server: ResolvedServer): Array<{ url: string; scope?:
   const out: Array<{ url: string; scope?: string }> = [];
   const add = (key: string, url: string | undefined) => {
     const m = /^(?:(@[^:]+):)?registry$/i.exec(key);
-    if (m && url) out.push({ url, scope: m[1] });
+    url = url?.trim();
+    if (m && url && !out.some(r => r.url === url && r.scope === m[1])) out.push({ url, scope: m[1] });
   };
   const args = server.args ?? [];
   for (let i = 0; i < args.length; i++) {
@@ -95,7 +96,7 @@ function registryOverrides(server: ResolvedServer): Array<{ url: string; scope?:
     if (a === '--') break;
     const eq = a.indexOf('=');
     if (eq > 0) add(a.slice(2, eq), a.slice(eq + 1));
-    else if (/registry$/i.test(a)) add(a.slice(2), typeof args[i + 1] === 'string' ? args[i + 1] as string : undefined);
+    else if (/registry$/i.test(a) && typeof args[i + 1] === 'string' && !(args[i + 1] as string).startsWith('-')) add(a.slice(2), args[++i] as string);
   }
   for (const [k, v] of Object.entries(server.env ?? {})) {
     const m = /^npm_config_(.+)$/i.exec(k);
@@ -112,7 +113,8 @@ export async function scanRegistry(server: ResolvedServer, offline: boolean = fa
   const findings: Finding[] = [];
 
   const custom = server.command === 'npx' || server.command === 'npm'
-    ? registryOverrides(server).filter(r => !DEFAULT_REGISTRY_HOSTS.has(registryHost(r.url)))
+    // Plain http to the real npm host is still open to tampering in transit.
+    ? registryOverrides(server).filter(r => /^http:\/\//i.test(r.url) || !DEFAULT_REGISTRY_HOSTS.has(registryHost(r.url)))
     : [];
   for (const r of custom) {
     const plain = /^http:\/\//i.test(r.url);

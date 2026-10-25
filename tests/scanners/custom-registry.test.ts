@@ -68,4 +68,29 @@ describe('custom npm registry', () => {
   it('ignores registry flags on non-npm commands', async () => {
     expect(custom(await scan(['--registry=https://npm.evil.example'], undefined, 'node'))).toHaveLength(0);
   });
+
+  it('trims env values before grading the scheme', async () => {
+    expect(custom(await scan(['-y', 'some-mcp'], { NPM_CONFIG_REGISTRY: ' http://npm.evil.example ' }))[0].severity).toBe('HIGH');
+  });
+
+  it('flags plain http even to the npm registry host', async () => {
+    const f = custom(await scan(['-y', '--registry=http://registry.npmjs.org', 'some-mcp']));
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('HIGH');
+  });
+
+  it('does not take a following flag as the registry value', async () => {
+    expect(custom(await scan(['--registry', '--yes', 'some-mcp']))).toHaveLength(0);
+  });
+
+  it('reports one finding for a registry set twice', async () => {
+    expect(custom(await scan(['-y', '--registry=https://npm.evil.example', 'some-mcp'], { npm_config_registry: 'https://npm.evil.example' }))).toHaveLength(1);
+  });
+
+  it('skips the npmjs provenance lookup when a custom registry is set', async () => {
+    const fs = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', '--registry=https://npm.evil.example', 'some-mcp'] }, false);
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(fs.some(f => f.id === 'unverified-source' || f.id === 'provenance-verified')).toBe(false);
+  });
 });
