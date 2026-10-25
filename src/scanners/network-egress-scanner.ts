@@ -11,7 +11,7 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
   // No /g flags: these regexes are reused across strings and .test() on a
   // global regex carries lastIndex between calls, silently alternating
   // detections (the same bug fixed in the PII patterns).
-  const urlRegex = /https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?::\d+)?(?:\/[^\s"']*)?/;
+  const urlRegex = /https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?::\d+)?(?:\/[^\s"']*)?/i;
   const ipRegex = /\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/;
   const ipv6Regex = /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/;
   const b64UrlRegex = /aHR0c[A-Za-z0-9+/=]+|c2h0dH[A-Za-z0-9+/=]+/;
@@ -60,7 +60,7 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
       if (reversedUrlRegex.test(str)) endpoints.add('obfuscated:reversed');
 
       const dataInUrlMatch = str.match(DATA_IN_URL_PATTERN);
-      if (dataInUrlMatch && (str.includes('http') || str.includes('wss'))) {
+      if (dataInUrlMatch && /https?|wss/i.test(str)) {
           findings.push({
              id: 'network-egress-data-in-url',
              severity: 'HIGH',
@@ -91,13 +91,13 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
   checkString(JSON.stringify(server));
 
   // Non-standard port detection
-  const wssRegex = /wss?:\/\/[^\s"']+/g;
+  const wssRegex = /wss?:\/\/[^\s"']+/gi;
   const wssMatches = serverStr.match(wssRegex);
   if (wssMatches) {
       wssMatches.forEach(w => endpoints.add(w));
   }
 
-  if (/(https?|wss?):\/\/[a-zA-Z0-9.-]+:[0-9]{4,5}/.test(JSON.stringify(server))) {
+  if (/(https?|wss?):\/\/[a-zA-Z0-9.-]+:[0-9]{4,5}/i.test(JSON.stringify(server))) {
      const isLocalhostPort = /localhost:[0-9]+/.test(JSON.stringify(server)) || /127\.0\.0\.1:[0-9]+/.test(JSON.stringify(server));
      if (!isLocalhostPort) {
          findings.push({
@@ -140,7 +140,7 @@ export function scanNetworkEgress(server: ResolvedServer): Finding[] {
      }
 
      let category = 'unknown';
-     const host = endpoint.replace(/^(?:https?|wss?):\/\//, '').split(/[/:]/)[0].toLowerCase();
+     const host = endpoint.replace(/^(?:https?|wss?):\/\//i, '').split(/[/:]/)[0].toLowerCase();
      for (const [cat, domains] of Object.entries(KNOWN_ENDPOINTS)) {
          // Registered-domain matching: 'api.openai.com.evil.io' must not be
          // classified as OpenAI, and 'telemetry' must not match any URL
