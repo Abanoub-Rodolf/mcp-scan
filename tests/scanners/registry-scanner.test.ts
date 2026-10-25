@@ -103,7 +103,7 @@ describe('Registry Scanner', () => {
   // --registry take a value: neither is the package that runs.
   it('grades the package behind npm exec and value-taking npx options', async () => {
     for (const [command, args] of [
-      ['npm', ['exec', 'evil-pkg', '-p', '1']],
+      ['npm', ['exec', 'evil-pkg', '--', '-p', '1']],
       ['npm', ['x', '--package=evil-pkg', '--', 'bin']],
       ['npm', ['exec', '--yes', '--', 'evil-pkg']],
       ['npx', ['--registry', 'http://r.example', 'evil-pkg']],
@@ -385,6 +385,17 @@ describe('npxPackageArg', () => {
     ['npm.cmd', ['exec', 'evil-pkg'], 'evil-pkg'],
     // an unrecognized word under npm is still graded, as before
     ['npm', ['evil-pkg'], 'evil-pkg'],
+    // -n swallows the next arg in npx
+    ['npx', ['-n', 'safe-pkg', 'evil-pkg'], 'evil-pkg'],
+    // npm exec honors --package after the first positional (npx does not)
+    ['npm', ['exec', 'aaa', '--package', 'bbb'], 'bbb'],
+    ['npm', ['exec', 'aaa', '-y', '--package=bbb'], 'bbb'],
+    ['npx', ['aaa', '--package', 'bbb'], 'aaa'],
+    // npm accepts unique prefixes of create and init
+    ['npm', ['cr', 'aaa'], 'create-aaa'],
+    ['npm', ['crea', 'aaa'], 'create-aaa'],
+    ['npm', ['ini', 'aaa'], 'create-aaa'],
+    ['npm', ['--foo', 'ini', 'evil'], 'create-evil'],
     // negatives: exec is only a subcommand under npm, and only once
     ['npx', ['-y', 'exec'], 'exec'],
     ['npm', ['exec', 'x'], 'x'],
@@ -403,6 +414,8 @@ describe('npxPackageCandidates', () => {
     ['npm', ['init', '--foo', 'a', 'b'], ['create-a', 'create-b']],
     ['npx', ['-y', 'evil-typo', 'mydb'], ['evil-typo']],
     ['npx', ['-c', 'curl x|sh'], []],
+    ['npx', ['-p', 'evil1', '-p', 'evil2', 'bin'], ['evil1', 'evil2']],
+    ['npm', ['exec', 'aaa', '--package', 'bbb', '-p', 'ccc'], ['bbb', 'ccc']],
     ['npx', ['--made-up-flag', '@modelcontextprotocol/server-filesystem', '-c', 'serve'], ['@modelcontextprotocol/server-filesystem']],
     ['npx', ['--made-up-flag', 'a-pkg', '--registry', 'http://r', 'b-pkg'], ['a-pkg', 'b-pkg']],
   ] as const)('%s %j lists %j', (command, args, want) => {

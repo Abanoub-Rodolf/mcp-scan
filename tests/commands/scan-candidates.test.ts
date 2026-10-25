@@ -28,4 +28,18 @@ describe('scan grades every package candidate behind an unknown flag', () => {
     expect(found.some(f => f.id.includes('typosquat'))).toBe(true);
     expect(base.some(id => id.includes('typosquat'))).toBe(false);
   });
+
+  it('the blocked-package policy matches a versioned spec', async () => {
+    const cfg = path.join(home, 'mcp.json');
+    fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { s: { command: 'npx', args: ['-y', 'blocked-pkg@1.2.3'] } } }));
+    fs.writeFileSync(path.join(home, '.mcp-scan.json'), JSON.stringify({ blockedPackages: ['blocked-pkg'] }));
+    const cwd = process.cwd();
+    process.chdir(home);
+    try {
+      const report = await runScan({ config: cfg, silent: true, offline: true });
+      expect(report.results.flatMap(r => r.findings).some(f => f.id === 'blocked-package-policy')).toBe(true);
+    } finally {
+      process.chdir(cwd);
+    }
+  });
 });

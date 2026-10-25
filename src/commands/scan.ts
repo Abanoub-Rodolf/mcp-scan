@@ -14,7 +14,7 @@ import { scanPromptInjection } from '../scanners/prompt-injection-scanner.js';
 import { scanToolPoisoning } from '../scanners/tool-poisoning-scanner.js';
 import { scanEnvLeak } from '../scanners/env-leak-scanner.js';
 import { scanSupplyChain, SupplyChainResult } from '../scanners/supply-chain-scanner.js';
-import { scanPackageDeep, npxPackageArg, npxPackageCandidates } from '../scanners/package-scanner.js';
+import { scanPackageDeep, npxPackageArg, npxPackageCandidates, parsePackageSpec } from '../scanners/package-scanner.js';
 import { scanLicense } from '../scanners/license-scanner.js';
 import { scanDataFlow } from '../scanners/data-flow-scanner.js';
 import { scanNetworkEgress } from '../scanners/network-egress-scanner.js';
@@ -191,7 +191,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       }
 
       // Apply policy: Blocked Packages
-      if (policy && policy.blockedPackages && (candidates.some(c => policy.blockedPackages!.includes(c)) || policy.blockedPackages.includes(packageName) || policy.blockedPackages.includes(server.name))) {
+      if (policy && policy.blockedPackages && (candidates.some(c => policy.blockedPackages!.includes(c) || policy.blockedPackages!.includes(parsePackageSpec(c).name)) || policy.blockedPackages.includes(parsePackageSpec(packageName).name) || policy.blockedPackages.includes(packageName) || policy.blockedPackages.includes(server.name))) {
         allFindings.push({
           id: 'blocked-package-policy',
           severity: 'CRITICAL',

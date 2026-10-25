@@ -86,7 +86,7 @@ function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: S
 
 // npx/npm options whose value is the next arg, not the package.
 const NPX_VALUE_OPTS = new Set([
-  '--registry', '--cache', '--userconfig', '--prefix', '-w', '--workspace', '--loglevel', '--before',
+  '-n',   '--registry', '--cache', '--userconfig', '--prefix', '-w', '--workspace', '--loglevel', '--before',
   '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell', '-C', '--globalconfig', '--omit', '--fetch-timeout', '--fetch-retries',
   '--scope', '--install-strategy', '--min-release-age', '--audit-level', '--ca', '--cert', '--key', '--cpu', '--os', '--libc',
   '--noproxy', '--local-address', '--user-agent', '--maxsockets', '--fetch-retry-mintimeout', '--fetch-retry-maxtimeout',
@@ -94,7 +94,7 @@ const NPX_VALUE_OPTS = new Set([
 // Flags that take no value. A dash flag in neither set might take one, so the
 // package is then ambiguous and the riskiest candidate is graded.
 const NPX_BOOL_OPTS = new Set([
-  '-y', '--yes', '--no', '-n', '--no-install', '-q', '--quiet', '--silent', '--verbose', '-d', '-f', '--force', '--offline',
+  '-y', '--yes', '--no', '--no-install', '-q', '--quiet', '--silent', '--verbose', '-d', '-f', '--force', '--offline',
   '--prefer-online', '--prefer-offline', '--no-audit', '--no-fund', '--ignore-scripts', '--legacy-peer-deps', '--json',
   '-g', '--global', '--workspaces', '-ws', '--include-workspace-root', '--if-present', '--dry-run', '--no-update-notifier',
   '--ignore-existing', '--no-progress', '--foreground-scripts', '--strict-peer-deps',
@@ -111,7 +111,7 @@ const NPM_NON_EXEC_SUBS = new Set([
   'deprecate', 'dist-tag', 'find-dupes', 'install-test', 'it', 'install-ci-test', 'cit', 'sit',
 ]);
 const isExecSub = (w: string) => w === 'x' || (w.length >= 2 && 'exec'.startsWith(w));
-const isCreateSub = (w: string) => w === 'init' || w === 'create' || w === 'innit';
+const isCreateSub = (w: string) => w === 'innit' || (w.length >= 2 && w !== 'in' && 'init'.startsWith(w)) || (w.length >= 2 && 'create'.startsWith(w));
 const MAX_CANDIDATES = 4;
 
 /** npm init/create <spec> runs create-<name>; scoped @s -> @s/create, @s/n -> @s/create-n. */
@@ -140,7 +140,7 @@ const isKnownPkg = (spec: string) => {
 export function npxPackageCandidates(args: unknown, command?: string): string[] {
   const list = (Array.isArray(args) ? args : args && typeof args === 'object' ? Object.values(args) : [])
     .filter((a): a is string => typeof a === 'string');
-  const cmd = (command ?? '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/i, '');
+  const cmd = (typeof command === 'string' ? command : '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/i, '');
   const pkgs: string[] = [];
   const pos: string[] = [];
   let ambiguous = false;
@@ -153,7 +153,16 @@ export function npxPackageCandidates(args: unknown, command?: string): string[] 
     // server's own args (-p is often a port there), unless a flag we do not
     // know may have eaten the package.
     if (pos.length > 0) {
-      if (!ambiguous || pos.length >= MAX_CANDIDATES) break;
+      // npm exec, unlike npx, still reads --package after the bin
+      if (cmd === 'npm' && !create && !endOpts) {
+        if (a === '--') endOpts = true;
+        else if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
+        else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
+        else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
+        else if (NPX_VALUE_OPTS.has(a) || a === '-c' || a === '--call') i++;
+        if (!ambiguous) continue;
+      }
+      if (!ambiguous || pos.length >= MAX_CANDIDATES) { if (cmd === 'npm') continue; break; }
       if (a === '-c' || a === '--call' || NPX_VALUE_OPTS.has(a) || /^--@[^:]+:registry$/.test(a)) i++;
       else if (!a.startsWith('-')) pos.push(a);
       continue;
@@ -177,7 +186,7 @@ export function npxPackageCandidates(args: unknown, command?: string): string[] 
       // else: the value of an unknown flag before the subcommand
     } else pos.push(a);
   }
-  if (pkgs.length > 0) return [pkgs.find(p => !isKnownPkg(p)) ?? pkgs[0]];
+  if (pkgs.length > 0) return [...new Set(pkgs)].slice(0, 8);
   let cands = create ? pos.map(createPackage) : pos;
   if (ambiguous && cands.length > 1) {
     const valid = cands.filter(c => validatePackageName(c).valid);
