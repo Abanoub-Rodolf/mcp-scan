@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
-import { checkFingerprints, logScan } from '../../src/utils/audit-logger.js';
+import { checkFingerprints, logScan, fingerprintKey } from '../../src/utils/audit-logger.js';
 import { ScanReport, ServerScanResult } from '../../src/types/scan-result.js';
 
 function server(args: string[], version?: string, pkg = 'pkg', source: 'registry' | 'snapshot' = 'registry'): ServerScanResult {
@@ -18,6 +18,8 @@ function server(args: string[], version?: string, pkg = 'pkg', source: 'registry
     metadata: { packageName: pkg, ...(version ? { version, versionSource: source } : {}) },
   };
 }
+
+const K = fingerprintKey(server([]));
 
 function report(results: ServerScanResult[]): ScanReport {
   return {
@@ -44,32 +46,32 @@ describe('tamper store', () => {
   it('flags a changed server when the store is healthy', () => {
     logScan(report([server(['-y', 'pkg'])]));
     const found = checkFingerprints([server(['-y', 'pkg', '--evil'])]);
-    expect(found['Cursor:files']?.[0].id).toBe('server-mutation');
+    expect(found[K]?.[0].id).toBe('server-mutation');
   });
 
   it('reports every server when the store is corrupt, instead of passing them', () => {
     fs.writeFileSync(store, '{ not json');
     const found = checkFingerprints([server(['-y', 'pkg'])]);
-    expect(found['Cursor:files']?.[0].id).toBe('server-mutation');
-    expect(found['Cursor:files']?.[0].description).toMatch(/unreadable or corrupt/);
+    expect(found[K]?.[0].id).toBe('server-mutation');
+    expect(found[K]?.[0].description).toMatch(/unreadable or corrupt/);
   });
 
   it('treats a store with the wrong shape as corrupt', () => {
     fs.writeFileSync(store, JSON.stringify({ 'Cursor:files': 42 }));
-    expect(checkFingerprints([server(['-y', 'pkg'])])['Cursor:files']).toBeDefined();
+    expect(checkFingerprints([server(['-y', 'pkg'])])[K]).toBeDefined();
     fs.writeFileSync(store, '[]');
-    expect(checkFingerprints([server(['-y', 'pkg'])])['Cursor:files']).toBeDefined();
+    expect(checkFingerprints([server(['-y', 'pkg'])])[K]).toBeDefined();
   });
 
   it('treats an unreadable store as corrupt', () => {
     fs.mkdirSync(store);
-    expect(checkFingerprints([server(['-y', 'pkg'])])['Cursor:files']).toBeDefined();
+    expect(checkFingerprints([server(['-y', 'pkg'])])[K]).toBeDefined();
   });
 
   it('quarantines the bad file and rebuilds a baseline for the next run', () => {
     fs.writeFileSync(store, '{ not json');
     const results = [server(['-y', 'pkg'])];
-    expect(checkFingerprints(results)['Cursor:files']).toBeDefined();
+    expect(checkFingerprints(results)[K]).toBeDefined();
 
     const aside = fs.readdirSync(home).filter(f => f.startsWith('known-servers.json.corrupt-'));
     expect(aside.length).toBe(1);
@@ -77,7 +79,7 @@ describe('tamper store', () => {
     logScan(report(results));
     expect(() => JSON.parse(fs.readFileSync(store, 'utf8'))).not.toThrow();
     expect(checkFingerprints(results)).toEqual({});
-    expect(checkFingerprints([server(['-y', 'pkg', '--evil'])])['Cursor:files']).toBeDefined();
+    expect(checkFingerprints([server(['-y', 'pkg', '--evil'])])[K]).toBeDefined();
   });
 
   it('stays quiet on a first run with no store', () => {
@@ -100,7 +102,7 @@ describe('fingerprint scope', () => {
 
   it('flags a patch bump of the same package at MEDIUM, not LOW', () => {
     logScan(report([server(['-y', 'pkg'], '1.0.0')]));
-    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.1')])['Cursor:files'];
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.1')])[K];
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
     expect(f?.[0].description).toContain('registry latest changed for an unpinned server');
     expect(f?.[0].description).toContain('1.0.0 -> 1.0.1');
@@ -124,7 +126,7 @@ describe('fingerprint scope', () => {
     logScan(report([server(['-y', 'pkg'], '1.0.0', 'pkg', 'snapshot')]));
     const file = path.join(home, 'known-servers.json');
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    data['Cursor:files#resolved:snapshot'] = '0.1.0';
+    data[`${K}#resolved:snapshot`] = '0.1.0';
     delete data.__sig;
     const key = Buffer.from(fs.readFileSync(path.join(home, 'baseline.key'), 'utf8').trim(), 'hex');
     const entries = Object.keys(data).sort().map(k => [k, data[k]]);
@@ -136,7 +138,7 @@ describe('fingerprint scope', () => {
   it('still catches a registry change across an offline scan in between', () => {
     logScan(report([server(['-y', 'pkg'], '1.0.0', 'pkg', 'registry')]));
     logScan(report([server(['-y', 'pkg'], '0.9.0', 'pkg', 'snapshot')]));
-    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.1', 'pkg', 'registry')])['Cursor:files'];
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.1', 'pkg', 'registry')])[K];
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
   });
 
@@ -151,7 +153,7 @@ describe('fingerprint scope', () => {
 
   it('flags a changed pin as a config change', () => {
     logScan(report([server(['-y', 'pkg@1.0.0'], '1.0.0', 'pkg@1.0.0')]));
-    const f = checkFingerprints([server(['-y', 'pkg@1.0.1'], '1.0.0', 'pkg@1.0.1')])['Cursor:files'];
+    const f = checkFingerprints([server(['-y', 'pkg@1.0.1'], '1.0.0', 'pkg@1.0.1')])[K];
     expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
     expect(f?.[0].description).toContain('configuration has changed');
   });
@@ -159,7 +161,7 @@ describe('fingerprint scope', () => {
   it('tracks the bare name and @latest, where latest is what runs', () => {
     for (const spec of ['pkg', 'pkg@latest']) {
       logScan(report([server(['-y', spec], '1.0.0', spec)]));
-      expect(checkFingerprints([server(['-y', spec], '1.0.1', spec)])['Cursor:files']?.[0].severity).toBe('MEDIUM');
+      expect(checkFingerprints([server(['-y', spec], '1.0.1', spec)])[K]?.[0].severity).toBe('MEDIUM');
     }
   });
 
@@ -178,13 +180,13 @@ describe('fingerprint scope', () => {
     ['non-semver', '1.0.0', 'latest-build'],
   ])('flags a resolved version swap (%s) at MEDIUM', (_n, before, after) => {
     logScan(report([server(['-y', 'pkg'], before)]));
-    const f = checkFingerprints([server(['-y', 'pkg'], after)])['Cursor:files'];
+    const f = checkFingerprints([server(['-y', 'pkg'], after)])[K];
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
   });
 
   it('flags a different package name at MEDIUM even when args and version look the same', () => {
     logScan(report([server(['-y', 'pkg'], '1.0.0', 'pkg')]));
-    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0', 'pkg-evil')])['Cursor:files'];
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0', 'pkg-evil')])[K];
     expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
   });
 
@@ -195,7 +197,7 @@ describe('fingerprint scope', () => {
 
   it('still flags an edited config even when the version also moved', () => {
     logScan(report([server(['-y', 'pkg'], '1.0.0')]));
-    const f = checkFingerprints([server(['-y', 'pkg', '--evil'], '1.0.1')])['Cursor:files'];
+    const f = checkFingerprints([server(['-y', 'pkg', '--evil'], '1.0.1')])[K];
     expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
   });
 
@@ -205,13 +207,13 @@ describe('fingerprint scope', () => {
 
   it('upgrades a verified old-format store with an INFO line, not silence', () => {
     fs.writeFileSync(storeFile(), JSON.stringify({ 'Cursor:files': sha, 'Cursor:other': sha }));
-    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0')])['Cursor:files'];
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0')])[K];
     expect(f).toHaveLength(1);
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'INFO' });
     expect(f?.[0].description).toMatch(/baseline was reset/);
     expect(quarantined()).toHaveLength(0);
     logScan(report([server(['-y', 'pkg'], '1.0.0')]));
-    expect(checkFingerprints([server(['-y', 'pkg', '--evil'], '1.0.0')])['Cursor:files']?.[0].severity).toBe('MEDIUM');
+    expect(checkFingerprints([server(['-y', 'pkg', '--evil'], '1.0.0')])[K]?.[0].severity).toBe('MEDIUM');
   });
 
   it.each([
@@ -222,7 +224,7 @@ describe('fingerprint scope', () => {
     fs.writeFileSync(storeFile(), JSON.stringify({ [key]: sha }));
     const [tool, name] = [key.split(':')[0], key.split(':').slice(1).join(':')];
     const s = { ...server(['-y', 'pkg'], '1.0.0'), toolName: tool, serverName: name };
-    const f = checkFingerprints([s])[key];
+    const f = checkFingerprints([s])[fingerprintKey(s)];
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'INFO' });
     expect(f?.[0].description).toMatch(/baseline was reset/);
     expect(quarantined()).toHaveLength(0);
@@ -233,7 +235,7 @@ describe('fingerprint scope', () => {
     ['a per-source #resolved key', { 'Cursor:files': sha, 'Cursor:files#resolved:registry': sha }],
   ])('does not take %s for the old format, even with a hash value', (_n, content) => {
     fs.writeFileSync(storeFile(), JSON.stringify(content));
-    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0')])['Cursor:files'];
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0')])[K];
     expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
     expect(quarantined()).toHaveLength(1);
   });
@@ -245,7 +247,7 @@ describe('fingerprint scope', () => {
     ['a missing schema but current-format extras', { 'Cursor:files': sha, 'Cursor:files#resolved': '1.0.0' }],
   ])('treats %s as a bad store: MEDIUM finding and quarantine', (_n, content) => {
     fs.writeFileSync(storeFile(), JSON.stringify(content));
-    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0')])['Cursor:files'];
+    const f = checkFingerprints([server(['-y', 'pkg'], '1.0.0')])[K];
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
     expect(quarantined()).toHaveLength(1);
   });
@@ -264,9 +266,9 @@ describe('signed baseline', () => {
   function forgeBaselineFor(evilResults: ServerScanResult[]) {
     const honest = fs.readFileSync(storeFile(), 'utf8');
     logScan(report(evilResults));
-    const blessed = JSON.parse(fs.readFileSync(storeFile(), 'utf8'))['Cursor:files'];
+    const blessed = JSON.parse(fs.readFileSync(storeFile(), 'utf8'))[K];
     const forged = JSON.parse(honest);
-    forged['Cursor:files'] = blessed;
+    forged[K] = blessed;
     fs.writeFileSync(storeFile(), JSON.stringify(forged));
   }
 
@@ -305,7 +307,7 @@ describe('signed baseline', () => {
   it('flags a hand-edited store even though it is still valid JSON of the right shape', () => {
     logScan(report(results()));
     forgeBaselineFor(evil());
-    const f = checkFingerprints(evil())['Cursor:files'];
+    const f = checkFingerprints(evil())[K];
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
     expect(f?.[0].description).toMatch(/integrity check \(signature does not match\)/);
     expect(quarantined()).toHaveLength(1);
@@ -316,7 +318,7 @@ describe('signed baseline', () => {
     const store = JSON.parse(fs.readFileSync(storeFile(), 'utf8'));
     delete store.__sig;
     fs.writeFileSync(storeFile(), JSON.stringify(store));
-    const f = checkFingerprints(results())['Cursor:files'];
+    const f = checkFingerprints(results())[K];
     expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
     expect(f?.[0].description).toMatch(/signature missing/);
     expect(quarantined()).toHaveLength(1);
@@ -325,7 +327,7 @@ describe('signed baseline', () => {
   it('does not let an old-format file stand in once the install has a key', () => {
     logScan(report(results()));
     fs.writeFileSync(storeFile(), JSON.stringify({ 'Cursor:files': 'a'.repeat(64) }));
-    const f = checkFingerprints(results())['Cursor:files'];
+    const f = checkFingerprints(results())[K];
     expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
     expect(quarantined()).toHaveLength(1);
   });
@@ -333,7 +335,7 @@ describe('signed baseline', () => {
   it('rebuilds a signed baseline after a tamper, so the next run is clean', () => {
     logScan(report(results()));
     forgeBaselineFor(evil());
-    expect(checkFingerprints(evil())['Cursor:files']).toBeDefined();
+    expect(checkFingerprints(evil())[K]).toBeDefined();
     logScan(report(evil()));
     expect(checkFingerprints(evil())).toEqual({});
   });
@@ -342,7 +344,7 @@ describe('signed baseline', () => {
     logScan(report(results()));
     const old = fs.readFileSync(keyFile(), 'utf8');
     fs.rmSync(keyFile());
-    const f = checkFingerprints(results())['Cursor:files'];
+    const f = checkFingerprints(results())[K];
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
     expect(f?.[0].description).toMatch(/baseline key is gone/);
     expect(quarantined()).toHaveLength(1);
@@ -358,7 +360,7 @@ describe('signed baseline', () => {
   ])('treats a %s key file as tampered and replaces it', (_n, content) => {
     logScan(report(results()));
     fs.writeFileSync(keyFile(), content);
-    const f = checkFingerprints(results())['Cursor:files'];
+    const f = checkFingerprints(results())[K];
     expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
     expect(f?.[0].description).toMatch(/baseline key unreadable/);
     expect(quarantined()).toHaveLength(1);
@@ -402,7 +404,7 @@ describe('signed baseline', () => {
     fs.writeFileSync(storeFile(), JSON.stringify({ 'Cursor:files': sha('old files'), 'Cursor:other': sha('old other') }));
     const found = checkFingerprints(two);
     // both fingerprints differ from the old recipe's, yet nothing is reported as a change
-    expect(Object.keys(found).sort()).toEqual(['Cursor:files', 'Cursor:other']);
+    expect(Object.keys(found).sort()).toEqual(two.map(fingerprintKey).sort());
     for (const f of Object.values(found)) {
       expect(f).toHaveLength(1);
       expect(f[0]).toMatchObject({ id: 'server-mutation', severity: 'INFO' });
@@ -419,7 +421,7 @@ describe('signed baseline', () => {
 
   it('treats the empty store 2.0.13 wrote for a zero-server scan as an old-format baseline: one INFO per server, then signed', () => {
     fs.writeFileSync(storeFile(), '{}');
-    const f = checkFingerprints(results())['Cursor:files'];
+    const f = checkFingerprints(results())[K];
     expect(f).toHaveLength(1);
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'INFO' });
     expect(f?.[0].description).toMatch(/baseline was reset/);
@@ -435,7 +437,7 @@ describe('signed baseline', () => {
     fs.writeFileSync(storeFile(), '{}');
     const log = path.join(home, 'audit.log');
     fs.writeFileSync(log, fs.readFileSync(log, 'utf8').replaceAll(',"baselineSigned":true', ''));
-    const f = checkFingerprints(results())['Cursor:files'];
+    const f = checkFingerprints(results())[K];
     expect(f?.length).toBeGreaterThan(0);
     expect(f?.[0].severity).toBe('INFO');
   });
@@ -444,7 +446,7 @@ describe('signed baseline', () => {
     logScan(report(results()));
     fs.rmSync(keyFile());
     fs.writeFileSync(storeFile(), '{}');
-    expect(checkFingerprints(results())['Cursor:files']?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    expect(checkFingerprints(results())[K]?.[0]).toMatchObject({ severity: 'MEDIUM' });
   });
 
   it('2.0.13 run against a 2.1.0-signed store makes the next scan report a signature mismatch, once', () => {
@@ -454,7 +456,7 @@ describe('signed baseline', () => {
     const store = JSON.parse(fs.readFileSync(storeFile(), 'utf8'));
     store['Cursor:files'] = sha('2.0.13 recipe');
     fs.writeFileSync(storeFile(), JSON.stringify(store, null, 2));
-    const f = checkFingerprints(results())['Cursor:files'];
+    const f = checkFingerprints(results())[K];
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
     expect(f?.[0].description).toMatch(/signature does not match/);
     expect(quarantined()).toHaveLength(1);
@@ -464,7 +466,7 @@ describe('signed baseline', () => {
 
   it('still compares an unsigned store while upgrading it', () => {
     writeUnsignedStore(results());
-    const f = checkFingerprints(evil())['Cursor:files'];
+    const f = checkFingerprints(evil())[K];
     expect(f?.map(x => x.severity).sort()).toEqual(['INFO', 'MEDIUM']);
   });
 
@@ -472,7 +474,7 @@ describe('signed baseline', () => {
     logScan(report(results()));
     const key = fs.readFileSync(keyFile(), 'utf8');
     fs.rmSync(storeFile());
-    const f = checkFingerprints(results())['Cursor:files'];
+    const f = checkFingerprints(results())[K];
     expect(f?.[0]).toMatchObject({ id: 'server-mutation', severity: 'MEDIUM' });
     expect(f?.[0].description).toMatch(/went missing/);
     expect(quarantined()).toHaveLength(0);
@@ -485,14 +487,14 @@ describe('signed baseline', () => {
     logScan(report(results()));
     fs.rmSync(storeFile());
     fs.rmSync(keyFile());
-    expect(checkFingerprints(results())['Cursor:files']?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    expect(checkFingerprints(results())[K]?.[0]).toMatchObject({ severity: 'MEDIUM' });
     logScan(report(results()));
     expect(checkFingerprints(results())).toEqual({});
   });
 
   it('catches a store deleted before the first signed run, from an install that already scanned', () => {
     fs.writeFileSync(path.join(home, 'audit.log'), '{"timestamp":"2026-10-01T00:00:00.000Z"}\n');
-    expect(checkFingerprints(results())['Cursor:files']?.[0]).toMatchObject({ severity: 'MEDIUM' });
+    expect(checkFingerprints(results())[K]?.[0]).toMatchObject({ severity: 'MEDIUM' });
   });
 
   it('stays quiet on a true first run, even with an empty audit log or stray files', () => {
@@ -508,7 +510,7 @@ describe('signed baseline', () => {
     delete store.__sig;
     fs.writeFileSync(storeFile(), JSON.stringify(store));
     fs.rmSync(keyFile());
-    const f = checkFingerprints(evil())['Cursor:files'];
+    const f = checkFingerprints(evil())[K];
     expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
     expect(f?.[0].description).toMatch(/signed before/);
     expect(quarantined()).toHaveLength(1);
@@ -518,7 +520,7 @@ describe('signed baseline', () => {
     logScan(report(results()));
     fs.writeFileSync(storeFile(), JSON.stringify({ 'Cursor:files': 'a'.repeat(64) }));
     fs.rmSync(keyFile());
-    const f = checkFingerprints(results())['Cursor:files'];
+    const f = checkFingerprints(results())[K];
     expect(f?.[0]).toMatchObject({ severity: 'MEDIUM' });
     expect(quarantined()).toHaveLength(1);
   });
@@ -595,5 +597,68 @@ describe('audit log write failure', () => {
   it('stays quiet when the log is written', () => {
     logScan(report([server(['-y', 'pkg'])]));
     expect(said()).toHaveLength(0);
+  });
+});
+
+// One repo with the same server name in several configs (runsheet-mcp has
+// three `runsheet` servers). 2.1.0 keyed the baseline by tool and name only,
+// so scanning the second file reported "unauthorized modification" against
+// the first one in the same clean session.
+describe('baseline per config file', () => {
+  let home: string;
+  const at = (configPath: string, args: string[]): ServerScanResult => ({ ...server(args), configPath });
+  const a = at('/repo/.mcp.json', ['-y', 'pkg']);
+  const b = at('/repo/plugins/runsheet/.mcp.json', ['-y', 'pkg', '--stdio']);
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-perfile-'));
+    process.env.MCP_SCAN_HOME = home;
+  });
+
+  afterEach(() => {
+    delete process.env.MCP_SCAN_HOME;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('does not compare two files that share a server name, file by file', () => {
+    logScan(report([a]));
+    expect(checkFingerprints([b])).toEqual({});
+    logScan(report([b]));
+    expect(checkFingerprints([a])).toEqual({});
+  });
+
+  it('does not compare them when both are in one scan', () => {
+    logScan(report([a, b]));
+    expect(checkFingerprints([a, b])).toEqual({});
+  });
+
+  it('still flags a change to one of them, and only that one', () => {
+    logScan(report([a, b]));
+    const found = checkFingerprints([at(a.configPath, ['-y', 'pkg', '--evil']), b]);
+    const flagged = Object.values(found).flat();
+    expect(flagged).toHaveLength(1);
+    expect(flagged[0].id).toBe('server-mutation');
+  });
+
+  // A baseline written before this change is keyed by tool and name. It
+  // must keep catching a change on the first scan after the upgrade.
+  it('carries an older tool:name baseline over when the name is unique', () => {
+    logScan(report([a]));
+    const file = path.join(home, 'known-servers.json');
+    const key = Buffer.from(fs.readFileSync(path.join(home, 'baseline.key'), 'utf8').trim(), 'hex');
+    const data: Record<string, string> = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const [newKey] = Object.keys(data).filter(k => !k.startsWith('__'));
+    data['Cursor:files'] = data[newKey];
+    delete data[newKey];
+    delete data.__sig;
+    const entries = Object.keys(data).sort().map(k => [k, data[k]]);
+    data.__sig = crypto.createHmac('sha256', key).update(JSON.stringify(entries)).digest('hex');
+    fs.writeFileSync(file, JSON.stringify(data));
+
+    expect(checkFingerprints([a])).toEqual({});
+    expect(Object.values(checkFingerprints([at(a.configPath, ['-y', 'pkg', '--evil'])])).flat()[0]?.id).toBe('server-mutation');
+
+    logScan(report([a]));
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))[K]).toBeUndefined();
   });
 });
