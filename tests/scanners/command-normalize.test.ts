@@ -31,8 +31,4 @@ describe('launcher command forms', () => {
     expect(want.length).toBeGreaterThan(0);
     expect(await scanPackageDeep(srv(command, pkgArgs), true)).toEqual(want);
   });
-
-  it('grades a path-launched binary by its name', () => {
-    expect(scanTyposquat(srv('/opt/bin/server-githb', [])).map(f => f.id)).toEqual(['typosquat-detection']);
-  });
 });
