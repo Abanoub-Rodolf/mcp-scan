@@ -93,7 +93,7 @@ const NPX_VALUE_OPTS = new Set([
 ]);
 // Flags that take no value. A dash flag in neither set might take one, so the
 // package is then ambiguous and the riskiest candidate is graded.
-const NPX_BOOL_OPTS = new Set([
+export const NPX_BOOL_OPTS = new Set([
   '-y', '--yes', '--no', '--no-install', '-q', '--quiet', '--silent', '--verbose', '-d', '-f', '--force', '--offline',
   '--prefer-online', '--prefer-offline', '--no-audit', '--no-fund', '--ignore-scripts', '--legacy-peer-deps', '--json',
   '-g', '--global', '--workspaces', '-ws', '--include-workspace-root', '--if-present', '--dry-run', '--no-update-notifier',

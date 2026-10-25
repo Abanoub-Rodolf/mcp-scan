@@ -2,7 +2,7 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { KNOWN_MALICIOUS_PACKAGES } from '../data/known-malicious.js';
 import { OFFICIAL_SERVERS, TRUSTED_COMMUNITY_SERVERS } from '../data/official-servers.js';
-import { parsePackageSpec, resolveEffectiveVersion, npxPackageArg } from './package-scanner.js';
+import { parsePackageSpec, resolveEffectiveVersion, npxPackageArg, NPX_BOOL_OPTS } from './package-scanner.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 import { logger } from '../utils/logger.js';
 import semver from 'semver';
@@ -82,23 +82,24 @@ const DEFAULT_REGISTRY_HOSTS = new Set(['registry.npmjs.org', 'registry.npmjs.co
 
 // npm's argv parser (nopt) takes any unique prefix of a flag name, so
 // --reg=x sets the registry. 3 chars is the shortest unique prefix.
-const isRegistryKey = (k: string) => /^@[^:]+:registry$/i.test(k) || (k.length >= 3 && 'registry'.startsWith(k.toLowerCase()));
+// npm's env reader takes exact names only, so env keys skip the prefix rule.
+const isRegistryKey = (k: string, exact = false) => /^@[^:]+:registry$/i.test(k)
+  || (exact ? k.toLowerCase() === 'registry' : k.length >= 3 && 'registry'.startsWith(k.toLowerCase()));
 // These load an .npmrc whose registry line we can't see from the config.
-const CONFIG_FILE_KEYS = new Set(['userconfig', 'globalconfig', 'prefix']);
-const NPX_VALUE_FLAGS = new Set(['-p', '--package', '-c', '--call', '--cache', '--shell', '--userconfig', '--globalconfig', '--prefix']);
+const CONFIG_FILE_KEYS = new Set(['userconfig', 'globalconfig']);
 
 type Override = { url: string; scope?: string; file?: boolean };
 
 // Registry overrides an npx or npm exec launch would honor, from its flags
 // and its env. `scope` is set for `@scope:registry` overrides, `file` when
 // the registry comes from a config file instead.
-function registryOverrides(server: ResolvedServer): Override[] {
+function registryOverrides(server: ResolvedServer, cmd: string): Override[] {
   const out: Override[] = [];
-  const add = (key: string, value: string | undefined) => {
+  const add = (key: string, value: string | undefined, exact = false) => {
     const url = value?.trim();
     if (!url) return;
     let o: Override | undefined;
-    if (isRegistryKey(key)) o = { url, scope: /^(@[^:]+):/.exec(key)?.[1] };
+    if (isRegistryKey(key, exact)) o = { url, scope: /^(@[^:]+):/.exec(key)?.[1] };
     else if (CONFIG_FILE_KEYS.has(key.toLowerCase())) o = { url, file: true };
     if (o && !out.some(r => r.url === o!.url && r.scope === o!.scope && r.file === o!.file)) out.push(o);
   };
@@ -108,22 +109,26 @@ function registryOverrides(server: ResolvedServer): Override[] {
   // npx hands everything after the package to the package itself, so a
   // server's own --registry (often a container registry) is not npm's.
   // npm exec keeps parsing its flags past the first positional.
-  const pkg = server.command === 'npx' ? npxPackageArg(args) : undefined;
+  // npx-cli hands the arg after any non-boolean flag to that flag, so a
+  // positional there is a value, not the package.
+  let valued = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--') break;
     if (!a.startsWith('-')) {
-      if (server.command === 'npx' && (a === pkg || !NPX_VALUE_FLAGS.has(args[i - 1] ?? ''))) break;
+      if (cmd === 'npx' && !valued) break;
+      valued = false;
       continue;
     }
+    valued = !a.includes('=') && !NPX_BOOL_OPTS.has(a) && !a.startsWith('--no-');
     const key = a.replace(/^--?/, '');
     const eq = key.indexOf('=');
     if (eq > 0) add(key.slice(0, eq), key.slice(eq + 1));
-    else if ((isRegistryKey(key) || CONFIG_FILE_KEYS.has(key.toLowerCase())) && args[i + 1] !== undefined && !args[i + 1].startsWith('-')) add(key, args[++i]);
+    else if ((isRegistryKey(key) || CONFIG_FILE_KEYS.has(key.toLowerCase())) && args[i + 1] !== undefined && !args[i + 1].startsWith('-')) { add(key, args[++i]); valued = false; }
   }
   for (const [k, v] of Object.entries(server.env ?? {})) {
     const m = /^npm_config_(.+)$/i.exec(k);
-    if (m && typeof v === 'string') add(m[1], v);
+    if (m && typeof v === 'string') add(m[1], v, true);
   }
   return out;
 }
@@ -135,9 +140,10 @@ function registryHost(url: string): string {
 export async function scanRegistry(server: ResolvedServer, offline: boolean = false): Promise<Finding[]> {
   const findings: Finding[] = [];
 
-  const custom = server.command === 'npx' || server.command === 'npm'
+  const cmd = (server.command ?? '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/i, '');
+  const custom = cmd === 'npx' || cmd === 'npm'
     // Plain http to the real npm host is still open to tampering in transit.
-    ? registryOverrides(server).filter(r => r.file || /^http:\/\//i.test(r.url) || !DEFAULT_REGISTRY_HOSTS.has(registryHost(r.url)))
+    ? registryOverrides(server, cmd).filter(r => r.file || /^http:\/\//i.test(r.url) || !DEFAULT_REGISTRY_HOSTS.has(registryHost(r.url)))
     : [];
   for (const r of custom) {
     if (r.file) {
@@ -163,7 +169,7 @@ export async function scanRegistry(server: ResolvedServer, offline: boolean = fa
 
   // Try to determine package name from command or args
   let packageSpec = '';
-  if (server.command === 'npx' || server.command === 'npm') {
+  if (cmd === 'npx' || cmd === 'npm') {
     // npx -y @modelcontextprotocol/server-postgres
     const pkgArg = npxPackageArg(server.args, server.command);
     if (pkgArg) packageSpec = pkgArg;
@@ -184,7 +190,7 @@ export async function scanRegistry(server: ResolvedServer, offline: boolean = fa
       fixRecommendation: `Remove this server immediately.`,
       fixable: false
     });
-  } else if (custom.length) {
+  } else if (custom.some(r => !r.scope || packageName.startsWith(`${r.scope}/`))) {
     // The name allowlists and the npmjs provenance lookup describe the npm
     // registry's copy of this package, not the one actually installed.
     return findings;
@@ -200,7 +206,7 @@ export async function scanRegistry(server: ResolvedServer, offline: boolean = fa
       severity: 'INFO',
       description: `Server '${packageName}' is a widely trusted community package.`,
     });
-  } else if (!packageName.startsWith('@modelcontextprotocol/') && (server.command === 'npx' || server.command === 'npm')) {
+  } else if (!packageName.startsWith('@modelcontextprotocol/') && (cmd === 'npx' || cmd === 'npm')) {
     const isScoped = packageName.startsWith('@');
 
     let predicateType: string | undefined;
