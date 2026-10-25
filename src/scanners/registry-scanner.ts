@@ -86,9 +86,10 @@ const DEFAULT_REGISTRY_HOSTS = new Set(['registry.npmjs.org', 'registry.npmjs.co
 const isRegistryKey = (k: string, exact = false) => /^@[^:]+:registry$/i.test(k)
   || (exact ? k.toLowerCase() === 'registry' : k.length >= 3 && 'registry'.startsWith(k.toLowerCase()));
 // These load an .npmrc whose registry line we can't see from the config.
-const CONFIG_FILE_KEYS = ['userconfig', 'globalconfig', 'prefix'];
+// Shortest prefix npm leaves unambiguous for each (--global wins --globa).
+const CONFIG_FILE_KEYS: Record<string, number> = { userconfig: 5, globalconfig: 7, prefix: 5 };
 // Flags take unique prefixes like the registry key; env keys must be exact.
-const configKey = (k: string, exact = false) => CONFIG_FILE_KEYS.find(c => exact ? c === k.toLowerCase() : k.length >= 5 && c.startsWith(k.toLowerCase()));
+const configKey = (k: string, exact = false) => Object.keys(CONFIG_FILE_KEYS).find(c => exact ? c === k.toLowerCase() : k.length >= CONFIG_FILE_KEYS[c] && c.startsWith(k.toLowerCase()));
 
 type Override = { url: string; scope?: string; file?: boolean; key?: string };
 
