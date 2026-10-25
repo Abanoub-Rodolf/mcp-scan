@@ -98,6 +98,7 @@ export const NPX_BOOL_OPTS = new Set([
   '--prefer-online', '--prefer-offline', '--no-audit', '--no-fund', '--ignore-scripts', '--legacy-peer-deps', '--json',
   '-g', '--global', '--workspaces', '-ws', '--include-workspace-root', '--if-present', '--dry-run', '--no-update-notifier',
   '--ignore-existing', '--no-progress', '--foreground-scripts', '--strict-peer-deps',
+  '--audit', '--fund', '--timing', '--color', '--strict-ssl', '--usage', '--long', '--parseable', '--unicode', '--progress',
 ]);
 // npm subcommands that run no package. npm resolves unique prefixes and
 // aliases of exec/init too, so those are matched loosely below instead.

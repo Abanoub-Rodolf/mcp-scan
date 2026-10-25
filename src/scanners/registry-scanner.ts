@@ -86,9 +86,11 @@ const DEFAULT_REGISTRY_HOSTS = new Set(['registry.npmjs.org', 'registry.npmjs.co
 const isRegistryKey = (k: string, exact = false) => /^@[^:]+:registry$/i.test(k)
   || (exact ? k.toLowerCase() === 'registry' : k.length >= 3 && 'registry'.startsWith(k.toLowerCase()));
 // These load an .npmrc whose registry line we can't see from the config.
-const CONFIG_FILE_KEYS = new Set(['userconfig', 'globalconfig']);
+const CONFIG_FILE_KEYS = ['userconfig', 'globalconfig', 'prefix'];
+// Flags take unique prefixes like the registry key; env keys must be exact.
+const configKey = (k: string, exact = false) => CONFIG_FILE_KEYS.find(c => exact ? c === k.toLowerCase() : k.length >= 5 && c.startsWith(k.toLowerCase()));
 
-type Override = { url: string; scope?: string; file?: boolean };
+type Override = { url: string; scope?: string; file?: boolean; key?: string };
 
 // Registry overrides an npx or npm exec launch would honor, from its flags
 // and its env. `scope` is set for `@scope:registry` overrides, `file` when
@@ -100,8 +102,8 @@ function registryOverrides(server: ResolvedServer, cmd: string): Override[] {
     if (!url) return;
     let o: Override | undefined;
     if (isRegistryKey(key, exact)) o = { url, scope: /^(@[^:]+):/.exec(key)?.[1] };
-    else if (CONFIG_FILE_KEYS.has(key.toLowerCase())) o = { url, file: true };
-    if (o && !out.some(r => r.url === o!.url && r.scope === o!.scope && r.file === o!.file)) out.push(o);
+    else if (configKey(key, exact)) o = { url, file: true, key: configKey(key, exact) };
+    if (o && !out.some(r => r.url === o!.url && r.scope === o!.scope && r.key === o!.key)) out.push(o);
   };
   const raw = server.args;
   const args = (Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? Object.values(raw) : [])
@@ -120,11 +122,12 @@ function registryOverrides(server: ResolvedServer, cmd: string): Override[] {
       valued = false;
       continue;
     }
-    valued = !a.includes('=') && !NPX_BOOL_OPTS.has(a) && !a.startsWith('--no-');
+    // -yq style bundles are short booleans.
+    valued = !a.includes('=') && !NPX_BOOL_OPTS.has(a) && !a.startsWith('--no-') && !/^-[a-z]{2,}$/i.test(a);
     const key = a.replace(/^--?/, '');
     const eq = key.indexOf('=');
     if (eq > 0) add(key.slice(0, eq), key.slice(eq + 1));
-    else if ((isRegistryKey(key) || CONFIG_FILE_KEYS.has(key.toLowerCase())) && args[i + 1] !== undefined && !args[i + 1].startsWith('-')) { add(key, args[++i]); valued = false; }
+    else if ((isRegistryKey(key) || configKey(key)) && args[i + 1] !== undefined && !args[i + 1].startsWith('-')) { add(key, args[++i]); valued = false; }
   }
   for (const [k, v] of Object.entries(server.env ?? {})) {
     const m = /^npm_config_(.+)$/i.exec(k);
@@ -140,18 +143,24 @@ function registryHost(url: string): string {
 export async function scanRegistry(server: ResolvedServer, offline: boolean = false): Promise<Finding[]> {
   const findings: Finding[] = [];
 
-  const cmd = (server.command ?? '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/i, '');
+  const cmd = (server.command ?? '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/i, '').toLowerCase();
   const custom = cmd === 'npx' || cmd === 'npm'
     // Plain http to the real npm host is still open to tampering in transit.
     ? registryOverrides(server, cmd).filter(r => r.file || /^http:\/\//i.test(r.url) || !DEFAULT_REGISTRY_HOSTS.has(registryHost(r.url)))
     : [];
   for (const r of custom) {
     if (r.file) {
+      // --prefix moves the default globalconfig to <prefix>/etc/npmrc.
+      const prefix = r.key === 'prefix';
       findings.push({
         id: 'custom-registry',
-        severity: 'MEDIUM',
-        description: `Server points npm at the config ${r.url}, which can set the registry it installs from. mcp-scan can't see that file's contents.`,
-        fixRecommendation: `Remove the config override, or confirm ${r.url} only names registries you control.`,
+        severity: prefix ? 'LOW' : 'MEDIUM',
+        description: prefix
+          ? `Server sets npm's prefix to ${r.url}, so npm reads ${r.url}/etc/npmrc, which can set the registry. mcp-scan can't see that file's contents.`
+          : `Server points npm at the config ${r.url}, which can set the registry it installs from. mcp-scan can't see that file's contents.`,
+        fixRecommendation: prefix
+          ? `Remove the prefix override, or confirm ${r.url}/etc/npmrc only names registries you control.`
+          : `Remove the config override, or confirm ${r.url} only names registries you control.`,
       });
       continue;
     }
