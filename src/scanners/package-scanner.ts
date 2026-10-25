@@ -4,6 +4,7 @@ import { Severity } from '../types/severity.js';
 import { logger } from '../utils/logger.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 import { loadCveSnapshot } from '../utils/cve-snapshot.js';
+import { OFFICIAL_SERVERS, TRUSTED_COMMUNITY_SERVERS } from '../data/official-servers.js';
 import { parseCvssVector } from 'vuln-vects';
 import semver from 'semver';
 
@@ -85,12 +86,24 @@ function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: S
 /**
  * The package an npx/npm launch runs. With `--package=<spec> <bin>` the
  * first positional is the bin, so grading it named the wrong package.
+ * npx installs every --package it gets, so an allowlisted one must not
+ * shadow an unknown one: the first package not on an allowlist wins.
  */
 export function npxPackageArg(args: unknown): string | undefined {
   const list = (Array.isArray(args) ? args : args && typeof args === 'object' ? Object.values(args) : [])
     .filter((a): a is string => typeof a === 'string');
-  const flag = list.find(a => a.startsWith('--package='));
-  return flag ? flag.slice('--package='.length) : list.find(a => !a.startsWith('-'));
+  const pkgs: string[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const a = list[i];
+    if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
+    else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
+  }
+  if (pkgs.length === 0) return list.find(a => !a.startsWith('-'));
+  const known = (spec: string) => {
+    const { name } = parsePackageSpec(spec);
+    return OFFICIAL_SERVERS.has(name) || TRUSTED_COMMUNITY_SERVERS.has(name);
+  };
+  return pkgs.find(p => !known(p)) ?? pkgs[0];
 }
 
 /**

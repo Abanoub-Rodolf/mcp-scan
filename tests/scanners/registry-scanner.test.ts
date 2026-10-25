@@ -72,6 +72,19 @@ describe('Registry Scanner', () => {
     expect(findings.map(f => f.id)).toEqual(['official-server']);
   });
 
+  // npx installs every --package it is given, so an allowlisted first one
+  // must not shadow an unknown second one.
+  it('grades an unknown package hidden behind an official one', async () => {
+    for (const args of [
+      ['--package=@modelcontextprotocol/server-sqlite', '--package=evil-pkg', 'mcp-server-sqlite'],
+      ['-p', '@modelcontextprotocol/server-sqlite', '-p', 'evil-pkg', 'mcp-server-sqlite'],
+      ['--package', '@modelcontextprotocol/server-sqlite', '--package', 'evil-pkg', 'mcp-server-sqlite'],
+    ]) {
+      const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx', args }, true);
+      expect(findings.find(f => f.id === 'unverified-source')?.description).toContain("'evil-pkg'");
+    }
+  });
+
   it('should flag scoped unverified sources at LOW when offline', async () => {
     const findings = await scanRegistry({
       name: 'test', toolName: 't', configPath: 'p', command: 'npx',
