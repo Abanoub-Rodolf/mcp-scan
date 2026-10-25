@@ -53,4 +53,23 @@ describe('report --json stdout', () => {
 
     expect(stdout.mock.calls.flat().join(' ')).toContain('Aggregating reports from');
   });
+
+  // runScan({ silent: true }) leaves the logger silent, and every line of
+  // the human report is gated on it, so findings never printed.
+  it('prints findings without --json after the silent per-file scans', async () => {
+    runScanMock.mockImplementation(async () => {
+      logger.isSilent = true;
+      return {
+        results: [{ serverName: 'docs', toolName: '.mcp', configPath: '.mcp.json', scanDurationMs: 1,
+          findings: [{ id: 'http-transport-no-auth', severity: 'HIGH', description: 'plain http', fixRecommendation: 'https' }] }],
+        totalScanned: 1, criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0, infoCount: 0, totalDurationMs: 1,
+      };
+    });
+    const stdout = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await runMultiConfigReport({ configs: tmpDir });
+
+    expect(stdout.mock.calls.flat().join(' ')).toContain('http-transport-no-auth');
+  });
 });

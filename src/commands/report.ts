@@ -69,6 +69,9 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
   let notMcpConfigCount = 0;
   let failedFileCount = 0;
 
+  // runScan({ silent: true }) silences the shared logger, and the human
+  // report prints through it: restore after each file or nothing prints.
+  const silent = logger.isSilent;
   for (const file of configFiles) {
     // Basic check if it looks like an MCP config
     try {
@@ -96,7 +99,10 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
       // Silently swallowed per-file failures made configs vanish from the
       // aggregated report with no way to know they were skipped.
       failedFileCount++;
+      logger.isSilent = silent;
       logger.warn(`Skipping ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      logger.isSilent = silent;
     }
   }
 
