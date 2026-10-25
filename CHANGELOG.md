@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- `npm exec <pkg>` and `npm x <pkg>` are graded on the package, not on `exec`/`x`, and npx options that take a value (`--registry`, `--cache`, `--userconfig`, `--prefix`, `-c`/`--call`, `-w`/`--workspace`) no longer have that value graded as the package. Both sent the wrong name to the known-malicious, typosquat, CVE, registry and supply-chain checks.
+- `HTTP://`, `Http://` and `WS://` URLs (any case) are reported by `http-transport-no-auth` and `insecure-transport`, and `fix` upgrades them. Schemes are case-insensitive, but the checks only matched lowercase, so these got no finding at all.
+
 ## [2.2.0] - 2026-10-25
 
 Upgrade note: CI runs may start failing. A policy or custom rule file that is broken, or a YAML policy using `match.pii_types`, now stops the scan with exit 1 instead of being skipped. Fix or remove the file.
