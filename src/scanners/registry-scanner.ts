@@ -184,7 +184,7 @@ export async function scanRegistry(server: ResolvedServer, offline: boolean = fa
     const pkgArg = npxPackageArg(server.args, server.command);
     if (pkgArg) packageSpec = pkgArg;
   } else {
-    packageSpec = launcher(server.command);
+    packageSpec = server.command || '';
   }
 
   // Guard: no package name means nothing to scan
