@@ -25,8 +25,21 @@ export function scanTransport(server: ResolvedServer, allowedDomains: string[] =
     });
   }
 
-  // Check for insecure URL-based server
-  if (server.url?.startsWith('http://')) {
+  // Check for insecure URL-based server. Loopback traffic never leaves the
+  // machine, so it is LOW, not HIGH: what is left is that any local process
+  // or a DNS-rebinding page can reach it. Rewriting it to https:// would
+  // just break a local dev server, so it is not auto-fixable.
+  let host = '';
+  try { host = server.url ? new URL(server.url).hostname : ''; } catch (_e) {}
+  const isLoopback = host === 'localhost' || host === '[::1]' || /^127(\.\d{1,3}){3}$/.test(host);
+  if (server.url?.startsWith('http://') && isLoopback) {
+    findings.push({
+      id: 'http-transport-no-auth',
+      severity: 'LOW',
+      description: `Server uses plain http:// on loopback (${host}). Traffic stays on this machine, but any local process can reach the server.`,
+      fixRecommendation: `Require a token on the local server, or run it over stdio.`,
+    });
+  } else if (server.url?.startsWith('http://')) {
     findings.push({
       id: 'http-transport-no-auth',
       severity: 'HIGH',
