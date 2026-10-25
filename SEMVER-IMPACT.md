@@ -2,7 +2,7 @@
 
 Tracks all public API exports and their semver classification. Updated when the public API changes.
 
-Current version: 2.2.0
+Current version: 2.3.0
 
 ---
 
