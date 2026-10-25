@@ -96,6 +96,7 @@ export function npxPackageArg(args: unknown): string | undefined {
   for (let i = 0; i < list.length; i++) {
     const a = list[i];
     if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
+    else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
     else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
   }
   if (pkgs.length === 0) return list.find(a => !a.startsWith('-'));

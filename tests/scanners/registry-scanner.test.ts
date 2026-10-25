@@ -79,6 +79,7 @@ describe('Registry Scanner', () => {
       ['--package=@modelcontextprotocol/server-sqlite', '--package=evil-pkg', 'mcp-server-sqlite'],
       ['-p', '@modelcontextprotocol/server-sqlite', '-p', 'evil-pkg', 'mcp-server-sqlite'],
       ['--package', '@modelcontextprotocol/server-sqlite', '--package', 'evil-pkg', 'mcp-server-sqlite'],
+      ['-p=evil-pkg', 'mcp-server-sqlite'],
     ]) {
       const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx', args }, true);
       expect(findings.find(f => f.id === 'unverified-source')?.description).toContain("'evil-pkg'");
