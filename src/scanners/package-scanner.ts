@@ -103,29 +103,28 @@ export function npxPackageArg(args: unknown, command?: string): string | undefin
   // positional may be the exec/x subcommand, after any global flags.
   const pkgs: string[] = [];
   let first: string | undefined;
-  let call: string | undefined;
   let sub = command !== 'npm';
   for (let i = 0; i < list.length && first === undefined; i++) {
     const a = list[i];
     if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
     else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
     else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
-    // -c runs a command string instead of a package: grade that string,
-    // unless a --package comes with it.
-    else if ((a === '-c' || a === '--call') && i + 1 < list.length) call = list[++i];
-    else if (a.startsWith('--call=') || a.startsWith('-c=')) call = a.slice(a.indexOf('=') + 1);
+    // -c runs a command string, not a package: the AST scanner grades it,
+    // and it must never reach a registry lookup.
+    else if (a === '-c' || a === '--call') i++;
+    else if (a.startsWith('--call=') || a.startsWith('-c=')) continue;
     else if (NPX_VALUE_OPTS.has(a) || /^--@[^:]+:registry$/.test(a)) i++;
     else if (!a.startsWith('-')) {
       if (!sub && (a === 'exec' || a === 'x')) sub = true;
       else first = a;
     }
   }
-  if (pkgs.length === 0) return call ?? first;
+  if (pkgs.length === 0) return first;
   const known = (spec: string) => {
     const { name } = parsePackageSpec(spec);
     return OFFICIAL_SERVERS.has(name) || TRUSTED_COMMUNITY_SERVERS.has(name);
   };
-  return pkgs.find(p => !known(p)) ?? call ?? pkgs[0];
+  return pkgs.find(p => !known(p)) ?? pkgs[0];
 }
 
 /**

