@@ -153,6 +153,13 @@ describe('findReportablePackage', () => {
     expect(findReportablePackage(report)).toBe('good-package');
   });
 
+  it('reads npx.cmd and path launchers', () => {
+    for (const command of ['NPX.CMD', '/usr/local/bin/npx']) {
+      const report = fakeReport([fakeResult({ connection: { command, args: ['-y', 'good-package'] } })]);
+      expect(findReportablePackage(report)).toBe('good-package');
+    }
+  });
+
   // Same parse as the scanners: the hint must not name `exec` for npm exec.
   it('names the package behind npm exec', () => {
     const report = fakeReport([fakeResult({ connection: { command: 'npm', args: ['--yes', 'exec', 'good-package'] } })]);

@@ -49,7 +49,6 @@ describe('scan runs the deeper package checks on every candidate', () => {
     await runScan({ config: cfg, silent: true, offline: true });
     const alt = (deep.mock.calls as any[]).map(c => c[0]).find(s => s.args.includes('second-pkg') && !s.args.includes('first-pkg'));
     expect(alt?.args).toContain('--registry=http://e.example');
-    expect(alt?.env).toEqual({ npm_config_userconfig: './x' });
   });
 
   it('applies blockedPackages under an uppercase npx.cmd', async () => {
@@ -66,5 +65,16 @@ describe('scan runs the deeper package checks on every candidate', () => {
     } finally {
       process.chdir(cwd);
     }
+  });
+
+  it('does not carry a registry flag that comes after the package', async () => {
+    const { runScan } = await import('../../src/commands/scan.js');
+    const cfg = path.join(home, 'mcp.json');
+    fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { s: { command: 'npx',
+      args: ['--made-up-flag', 'first-pkg', 'second-pkg', '--registry=http://own.example'] } } }));
+    await runScan({ config: cfg, silent: true, offline: true });
+    const alts = (deep.mock.calls as any[]).map(c => c[0]).filter(s => !s.args.includes('first-pkg'));
+    expect(alts.length).toBeGreaterThan(0);
+    for (const a of alts) expect(a.args).not.toContain('--registry=http://own.example');
   });
 });

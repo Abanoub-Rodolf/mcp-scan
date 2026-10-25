@@ -9,6 +9,8 @@ const FORMS: Array<[string, string[]]> = [
   ['NPX.CMD', ['-y', 'server-githb']],
   ['npx.cmd', ['-y', 'server-githb']],
   ['/usr/local/bin/npx', ['-y', 'server-githb']],
+  ['npx.ps1', ['-y', 'server-githb']],
+  ['NPM.BAT', ['exec', 'server-githb']],
   ['C:\\nodejs\\NPM.CMD', ['exec', 'server-githb']],
 ];
 
@@ -28,5 +30,9 @@ describe('launcher command forms', () => {
     const want = await scanPackageDeep(srv('npx', ['-y', 'mcp-server-git']), true);
     expect(want.length).toBeGreaterThan(0);
     expect(await scanPackageDeep(srv(command, pkgArgs), true)).toEqual(want);
+  });
+
+  it('grades a path-launched binary by its name', () => {
+    expect(scanTyposquat(srv('/opt/bin/server-githb', [])).map(f => f.id)).toEqual(['typosquat-detection']);
   });
 });
