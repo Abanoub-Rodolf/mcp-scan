@@ -14,7 +14,7 @@ import { scanPromptInjection } from '../scanners/prompt-injection-scanner.js';
 import { scanToolPoisoning } from '../scanners/tool-poisoning-scanner.js';
 import { scanEnvLeak } from '../scanners/env-leak-scanner.js';
 import { scanSupplyChain, SupplyChainResult } from '../scanners/supply-chain-scanner.js';
-import { scanPackageDeep, npxPackageArg, npxPackageCandidates, parsePackageSpec, launcher } from '../scanners/package-scanner.js';
+import { scanPackageDeep, npxPackageArg, npxPackageCandidates, parsePackageSpec, launcher, NPX_BOOL_OPTS } from '../scanners/package-scanner.js';
 import { scanLicense } from '../scanners/license-scanner.js';
 import { scanDataFlow } from '../scanners/data-flow-scanner.js';
 import { scanNetworkEgress } from '../scanners/network-egress-scanner.js';
@@ -183,14 +183,22 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       // candidate is graded against the same registry as the real launch.
       const args = Array.isArray(server.args) ? server.args.filter((x): x is string => typeof x === 'string') : [];
       const where: string[] = [];
-      // npx hands everything after the package to the server, so stop there.
-      const firstPkg = new Set([packageName, ...candidates]);
+      // npx hands everything after the package to the server, so stop at the
+      // first positional that isn't a flag's value (npx-cli's own rule).
+      let valued = false;
       for (let i = 0; i < args.length; i++) {
-        if (args[i] === '--' || (cmd === 'npx' && firstPkg.has(args[i]))) break;
-        const m = /^--([^=]+)(=|$)/.exec(args[i]);
+        const a = args[i];
+        if (a === '--') break;
+        if (!a.startsWith('-')) {
+          if (cmd === 'npx' && !valued) break;
+          valued = false;
+          continue;
+        }
+        valued = !a.includes('=') && !NPX_BOOL_OPTS.has(a) && !a.startsWith('--no-') && !/^-[a-z]{2,}$/i.test(a);
+        const m = /^--([^=]+)(=|$)/.exec(a);
         if (!m || !(isRegistryKey(m[1]) || configKey(m[1]))) continue;
-        where.push(args[i]);
-        if (!m[2] && args[i + 1] !== undefined && !args[i + 1].startsWith('-')) where.push(args[++i]);
+        where.push(a);
+        if (!m[2] && args[i + 1] !== undefined && !args[i + 1].startsWith('-')) { where.push(args[++i]); valued = false; }
       }
 
       // An unknown flag can swallow the package as its value, leaving several
