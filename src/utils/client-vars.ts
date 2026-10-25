@@ -4,4 +4,4 @@
 export const CLIENT_VARS = new Set(['CLAUDE_PLUGIN_ROOT']);
 
 export const stripClientVars = (s: string) =>
-  s.replace(/\$\{([A-Za-z0-9_]+)\}/g, (ref, name) => (CLIENT_VARS.has(name) ? '' : ref));
+  s.replace(/\$(?:\{([A-Za-z0-9_]+)\}|([A-Za-z0-9_]+))/g, (ref, braced, bare) => (CLIENT_VARS.has(braced ?? bare) ? '' : ref));

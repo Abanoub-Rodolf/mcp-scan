@@ -1,6 +1,6 @@
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
-import { stripClientVars } from '../utils/client-vars.js';
+import { CLIENT_VARS, stripClientVars } from '../utils/client-vars.js';
 
 export function scanConfig(server: ResolvedServer): Finding[] {
   const findings: Finding[] = [];
@@ -17,7 +17,9 @@ export function scanConfig(server: ResolvedServer): Finding[] {
       const bare = stripClientVars(arg);
       const isSimpleEnvVar = /^\$\{[A-Z0-9_]+\}$/i.test(bare);
       const hasCommandSubstitution = /\$\(.*\)|`.*`/.test(arg);
-      const hasComplexExpression = /\$\{.*\}/.test(bare) && !isSimpleEnvVar;
+      // Erasing a client var must not erase a command chained after it.
+      const hasComplexExpression = (/\$\{.*\}/.test(bare) && !isSimpleEnvVar)
+        || (bare !== arg && /[;|&\n]/.test(arg));
       
       if (hasCommandSubstitution) {
         findings.push({
@@ -64,6 +66,7 @@ export function scanConfig(server: ResolvedServer): Finding[] {
       const match = arg.match(/\$([A-Z0-9_]+)/i);
       if (match) {
         const envVar = match[1];
+        if (CLIENT_VARS.has(envVar)) continue;
         const inServerEnv = server.env && envVar in server.env;
         const inProcessEnv = envVar in process.env || envVar.toUpperCase() in process.env;
         if (!inServerEnv && !inProcessEnv) {
