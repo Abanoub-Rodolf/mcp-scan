@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { submitToUgig } from '../../src/commands/submit.js';
 
 vi.mock('../../src/utils/logger.js', () => ({
@@ -11,7 +11,8 @@ const report = (url: string) => ({
 }) as any;
 
 describe('submit URL schemes', () => {
-  it.each(['https://x.example.com/sse', 'HTTPS://x.example.com/sse'])('%s is the server url', async (url) => {
+  beforeEach(() => vi.clearAllMocks());
+  it.each(['https://x.example.com/sse', 'HTTPS://x.example.com/SSE'])('%s is the server url', async (url) => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const { logger } = await import('../../src/utils/logger.js');
     await submitToUgig(report(url), { apiKey: 'k', dryRun: true });

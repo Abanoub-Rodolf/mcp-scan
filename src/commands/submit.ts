@@ -54,7 +54,7 @@ function deriveTransportType(result: ServerScanResult): string {
 
   // SSE or HTTP transport if args contain a URL
   if (allArgs.match(/https?:\/\//i)) {
-    if (allArgs.includes('/sse')) return 'sse';
+    if (allArgs.toLowerCase().includes('/sse')) return 'sse';
     return 'streamable-http';
   }
 
