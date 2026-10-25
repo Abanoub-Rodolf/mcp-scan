@@ -45,7 +45,9 @@ export async function runDoctor() {
     }
     const servers = extractServers(tool.name, tool.configPath, config);
     for (const server of servers) {
-      if (server.command && !['node', 'npx', 'npm', 'python', 'python3', 'docker'].includes(launcher(server.command))) {
+      // A path still gets its existence check below; only a bare launcher name is skipped.
+      const bare = !/[\\/]/.test(server.command ?? '');
+      if (server.command && !(bare && ['node', 'npx', 'npm', 'python', 'python3', 'docker'].includes(launcher(server.command)))) {
         // Simple heuristic for local paths
         if (server.command.startsWith('.') || server.command.includes('/') || server.command.includes('\\')) {
             if (!fs.existsSync(server.command)) {
