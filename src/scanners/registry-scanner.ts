@@ -80,23 +80,46 @@ async function resolveVersionForProvenanceCheck(packageName: string, versionSpec
 // registry.yarnpkg.com is a CNAME for the npm registry.
 const DEFAULT_REGISTRY_HOSTS = new Set(['registry.npmjs.org', 'registry.npmjs.com', 'registry.yarnpkg.com']);
 
+// npm's argv parser (nopt) takes any unique prefix of a flag name, so
+// --reg=x sets the registry. 3 chars is the shortest unique prefix.
+const isRegistryKey = (k: string) => /^@[^:]+:registry$/i.test(k) || (k.length >= 3 && 'registry'.startsWith(k.toLowerCase()));
+// These load an .npmrc whose registry line we can't see from the config.
+const CONFIG_FILE_KEYS = new Set(['userconfig', 'globalconfig', 'prefix']);
+const NPX_VALUE_FLAGS = new Set(['-p', '--package', '-c', '--call', '--cache', '--shell', '--userconfig', '--globalconfig', '--prefix']);
+
+type Override = { url: string; scope?: string; file?: boolean };
+
 // Registry overrides an npx or npm exec launch would honor, from its flags
-// and its env. `scope` is set for `@scope:registry` overrides.
-function registryOverrides(server: ResolvedServer): Array<{ url: string; scope?: string }> {
-  const out: Array<{ url: string; scope?: string }> = [];
-  const add = (key: string, url: string | undefined) => {
-    const m = /^(?:(@[^:]+):)?registry$/i.exec(key);
-    url = url?.trim();
-    if (m && url && !out.some(r => r.url === url && r.scope === m[1])) out.push({ url, scope: m[1] });
+// and its env. `scope` is set for `@scope:registry` overrides, `file` when
+// the registry comes from a config file instead.
+function registryOverrides(server: ResolvedServer): Override[] {
+  const out: Override[] = [];
+  const add = (key: string, value: string | undefined) => {
+    const url = value?.trim();
+    if (!url) return;
+    let o: Override | undefined;
+    if (isRegistryKey(key)) o = { url, scope: /^(@[^:]+):/.exec(key)?.[1] };
+    else if (CONFIG_FILE_KEYS.has(key.toLowerCase())) o = { url, file: true };
+    if (o && !out.some(r => r.url === o!.url && r.scope === o!.scope && r.file === o!.file)) out.push(o);
   };
-  const args = server.args ?? [];
+  const raw = server.args;
+  const args = (Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? Object.values(raw) : [])
+    .filter((a): a is string => typeof a === 'string');
+  // npx hands everything after the package to the package itself, so a
+  // server's own --registry (often a container registry) is not npm's.
+  // npm exec keeps parsing its flags past the first positional.
+  const pkg = server.command === 'npx' ? npxPackageArg(args) : undefined;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (typeof a !== 'string' || !a.startsWith('--')) continue;
     if (a === '--') break;
-    const eq = a.indexOf('=');
-    if (eq > 0) add(a.slice(2, eq), a.slice(eq + 1));
-    else if (/registry$/i.test(a) && typeof args[i + 1] === 'string' && !(args[i + 1] as string).startsWith('-')) add(a.slice(2), args[++i] as string);
+    if (!a.startsWith('-')) {
+      if (server.command === 'npx' && (a === pkg || !NPX_VALUE_FLAGS.has(args[i - 1] ?? ''))) break;
+      continue;
+    }
+    const key = a.replace(/^--?/, '');
+    const eq = key.indexOf('=');
+    if (eq > 0) add(key.slice(0, eq), key.slice(eq + 1));
+    else if ((isRegistryKey(key) || CONFIG_FILE_KEYS.has(key.toLowerCase())) && args[i + 1] !== undefined && !args[i + 1].startsWith('-')) add(key, args[++i]);
   }
   for (const [k, v] of Object.entries(server.env ?? {})) {
     const m = /^npm_config_(.+)$/i.exec(k);
@@ -114,9 +137,18 @@ export async function scanRegistry(server: ResolvedServer, offline: boolean = fa
 
   const custom = server.command === 'npx' || server.command === 'npm'
     // Plain http to the real npm host is still open to tampering in transit.
-    ? registryOverrides(server).filter(r => /^http:\/\//i.test(r.url) || !DEFAULT_REGISTRY_HOSTS.has(registryHost(r.url)))
+    ? registryOverrides(server).filter(r => r.file || /^http:\/\//i.test(r.url) || !DEFAULT_REGISTRY_HOSTS.has(registryHost(r.url)))
     : [];
   for (const r of custom) {
+    if (r.file) {
+      findings.push({
+        id: 'custom-registry',
+        severity: 'MEDIUM',
+        description: `Server points npm at the config ${r.url}, which can set the registry it installs from. mcp-scan can't see that file's contents.`,
+        fixRecommendation: `Remove the config override, or confirm ${r.url} only names registries you control.`,
+      });
+      continue;
+    }
     const plain = /^http:\/\//i.test(r.url);
     const target = r.scope ? `${r.scope} packages` : 'the package';
     findings.push({

@@ -63,6 +63,7 @@ describe('custom npm registry', () => {
   it('still blocks a known malicious package behind a custom registry', async () => {
     const fs = await scan(['-y', '--registry=https://npm.evil.example', 'postmark-mcp']);
     expect(fs.some(f => f.id === 'known-malicious')).toBe(true);
+    expect(custom(fs)).toHaveLength(1);
   });
 
   it('ignores registry flags on non-npm commands', async () => {
@@ -92,5 +93,47 @@ describe('custom npm registry', () => {
       args: ['-y', '--registry=https://npm.evil.example', 'some-mcp'] }, false);
     expect(mockFetch).not.toHaveBeenCalled();
     expect(fs.some(f => f.id === 'unverified-source' || f.id === 'provenance-verified')).toBe(false);
+  });
+
+  it('reads abbreviated registry flags the way npm does', async () => {
+    expect(custom(await scan(['--reg=http://npm.evil.example', 'some-mcp']))[0].severity).toBe('HIGH');
+    expect(custom(await scan(['-regi=https://npm.evil.example', 'some-mcp']))).toHaveLength(1);
+    expect(custom(await scan(['--reg', 'https://npm.evil.example', 'some-mcp']))).toHaveLength(1);
+  });
+
+  it('flags a config file that can set the registry', async () => {
+    expect(custom(await scan(['--userconfig=./evil.npmrc', 'some-mcp']))[0].description).toContain('evil.npmrc');
+    expect(custom(await scan(['--globalconfig', '/tmp/rc', 'some-mcp']))).toHaveLength(1);
+    expect(custom(await scan(['some-mcp'], { NPM_CONFIG_USERCONFIG: './evil.npmrc' }))).toHaveLength(1);
+  });
+
+  it('ignores a --registry npx passes through to the package', async () => {
+    expect(custom(await scan(['-y', 'some-mcp', '--registry=https://ghcr.io']))).toHaveLength(0);
+  });
+
+  it('still reads flags after the package for npm exec', async () => {
+    expect(custom(await scan(['exec', 'some-mcp', '--registry=https://npm.evil.example'], undefined, 'npm'))).toHaveLength(1);
+  });
+
+  it('reads object-shaped args', async () => {
+    const fs = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: { a: '--registry=https://npm.evil.example', b: 'some-mcp' } as unknown as string[] }, true);
+    expect(custom(fs)).toHaveLength(1);
+  });
+
+  it.each([
+    'https://registry.npmjs.org.evil.example',
+    'https://registry.npmjs.org@evil.example',
+    'https://REGISTRY.npmjs.org.evil.example',
+    'https://registry.npmjs.org./',
+  ])('does not take %s for the npm registry', async (url) => {
+    expect(custom(await scan(['--registry=' + url, 'some-mcp']))[0]?.severity).toBe('MEDIUM');
+  });
+
+  it('survives non-string args, env values and bad urls', async () => {
+    const fs = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: [42, null, '--registry=not a url', 'some-mcp'] as unknown as string[],
+      env: { npm_config_registry: 7 } as unknown as Record<string, string> }, true);
+    expect(custom(fs)).toHaveLength(1);
   });
 });
