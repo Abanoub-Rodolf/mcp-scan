@@ -2,8 +2,7 @@
 
 Tracks all public API exports and their semver classification. Updated when the public API changes.
 
-Current version: 2.0.1
-Branch: audit/v1 (pre-release quality pass)
+Current version: 2.2.0
 
 ---
 
@@ -22,6 +21,7 @@ Source: `dist/lib.d.ts`
 
 | Symbol | Kind | Semver Risk |
 |--------|------|-------------|
+| `PolicyError` | class (extends `Error`) | Added in 2.2.0 (minor). `runScan` rejects with it when a policy file exists but cannot be read, parsed or has a wrong-typed field. Removing or renaming the class = major. |
 | `BaselineKeyError` | class (extends `Error`) | Added in 2.2.0 (minor). `runScan` now rejects with it when the `baseline.key` path is a directory or other non-regular file; it used to resolve with misleading MEDIUM findings. Callers that wrap `runScan` should handle the rejection. Removing or renaming the class = major. |
 
 ### Exported Types
