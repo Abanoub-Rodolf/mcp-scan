@@ -50,7 +50,7 @@ const SARIF_RULES: Record<string, { short: string, full: string, helpUri?: strin
   },
   'custom-registry': {
      short: 'Non-default npm registry',
-     full: 'Package is fetched from a registry other than the npm registry, so its name says nothing about the code it runs.',
+     full: 'Package may be fetched from a registry other than the npm registry (a flag, env var or npm config file sets it), so its name says nothing about the code it runs.',
      helpUri: 'https://thynkq.com/docs/mcp-scan/rules/custom-registry'
   },
   'data-controls-consent-gap': {
