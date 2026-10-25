@@ -48,6 +48,11 @@ const SARIF_RULES: Record<string, { short: string, full: string, helpUri?: strin
      full: 'One server references another server, enabling cross-server data movement.',
      helpUri: 'https://thynkq.com/docs/mcp-scan/rules/cross-server-flow'
   },
+  'custom-registry': {
+     short: 'Non-default npm registry',
+     full: 'Package may be fetched from a registry other than the npm registry (a flag, env var or npm config file sets it), so its name says nothing about the code it runs.',
+     helpUri: 'https://thynkq.com/docs/mcp-scan/rules/custom-registry'
+  },
   'data-controls-consent-gap': {
      short: 'Consent gap',
      full: 'PII handling without a consent mechanism or privacy policy reference.',

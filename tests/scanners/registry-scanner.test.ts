@@ -106,12 +106,19 @@ describe('Registry Scanner', () => {
       ['npm', ['exec', 'evil-pkg', '--', '-p', '1']],
       ['npm', ['x', '--package=evil-pkg', '--', 'bin']],
       ['npm', ['exec', '--yes', '--', 'evil-pkg']],
-      ['npx', ['--registry', 'http://r.example', 'evil-pkg']],
+      ['npx', ['--loglevel', 'warn', 'evil-pkg']],
       ['npx', ['--cache', '/tmp/c', '-y', 'evil-pkg']],
     ] as const) {
       const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command, args: [...args] }, true);
       expect(findings.find(f => f.id === 'unverified-source')?.description, `${command} ${args.join(' ')}`).toContain("'evil-pkg'");
     }
+  });
+
+  // A custom registry gets its own finding instead of the npmjs-based ones.
+  it('reports custom-registry, not unverified-source, behind --registry', async () => {
+    const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx', args: ['--registry', 'http://r.example', 'evil-pkg'] }, true);
+    expect(findings.find(f => f.id === 'custom-registry')?.severity).toBe('HIGH');
+    expect(findings.some(f => f.id === 'unverified-source')).toBe(false);
   });
 
   it('still treats exec as a package name under npx', async () => {
