@@ -89,9 +89,14 @@ function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: S
  * npx installs every --package it gets, so an allowlisted one must not
  * shadow an unknown one: the first package not on an allowlist wins.
  */
-export function npxPackageArg(args: unknown): string | undefined {
-  const list = (Array.isArray(args) ? args : args && typeof args === 'object' ? Object.values(args) : [])
+// npx options whose value is the next arg, not the package.
+const NPX_VALUE_OPTS = new Set(['--registry', '--cache', '--userconfig', '--prefix', '-c', '--call', '-w', '--workspace']);
+
+export function npxPackageArg(args: unknown, command?: string): string | undefined {
+  let list = (Array.isArray(args) ? args : args && typeof args === 'object' ? Object.values(args) : [])
     .filter((a): a is string => typeof a === 'string');
+  // `npm exec <pkg>` / `npm x <pkg>`: the subcommand is not the package.
+  if (command === 'npm' && (list[0] === 'exec' || list[0] === 'x')) list = list.slice(1);
   // npx options end at the first positional; anything after it is the
   // server's own args (-p is often a port there).
   const pkgs: string[] = [];
@@ -101,6 +106,7 @@ export function npxPackageArg(args: unknown): string | undefined {
     if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
     else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
     else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
+    else if (NPX_VALUE_OPTS.has(a)) i++;
     else if (!a.startsWith('-')) first = a;
   }
   if (pkgs.length === 0) return first;
@@ -254,7 +260,7 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
 
   let packageSpec = '';
   if (server.command === 'npx' || server.command === 'npm') {
-    const pkgArg = npxPackageArg(server.args);
+    const pkgArg = npxPackageArg(server.args, server.command);
     if (pkgArg) packageSpec = pkgArg;
   }
 

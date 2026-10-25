@@ -98,6 +98,26 @@ describe('Registry Scanner', () => {
     }
   });
 
+  // `npm exec` and `npm x` put a subcommand first, and npx options like
+  // --registry take a value: neither is the package that runs.
+  it('grades the package behind npm exec and value-taking npx options', async () => {
+    for (const [command, args] of [
+      ['npm', ['exec', 'evil-pkg', '-p', '1']],
+      ['npm', ['x', '--package=evil-pkg', '--', 'bin']],
+      ['npm', ['exec', '--yes', '--', 'evil-pkg']],
+      ['npx', ['--registry', 'http://r.example', 'evil-pkg']],
+      ['npx', ['--cache', '/tmp/c', '-y', 'evil-pkg']],
+    ] as const) {
+      const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command, args: [...args] }, true);
+      expect(findings.find(f => f.id === 'unverified-source')?.description, `${command} ${args.join(' ')}`).toContain("'evil-pkg'");
+    }
+  });
+
+  it('still treats exec as a package name under npx', async () => {
+    const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx', args: ['-y', 'exec'] }, true);
+    expect(findings.find(f => f.id === 'unverified-source')?.description).toContain("'exec'");
+  });
+
   it('should flag scoped unverified sources at LOW when offline', async () => {
     const findings = await scanRegistry({
       name: 'test', toolName: 't', configPath: 'p', command: 'npx',
