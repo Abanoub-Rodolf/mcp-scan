@@ -2,7 +2,7 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { KNOWN_MALICIOUS_PACKAGES } from '../data/known-malicious.js';
 import { OFFICIAL_SERVERS, TRUSTED_COMMUNITY_SERVERS } from '../data/official-servers.js';
-import { parsePackageSpec, resolveEffectiveVersion } from './package-scanner.js';
+import { parsePackageSpec, resolveEffectiveVersion, npxPackageArg } from './package-scanner.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 import { logger } from '../utils/logger.js';
 import semver from 'semver';
@@ -84,8 +84,8 @@ export async function scanRegistry(server: ResolvedServer, offline: boolean = fa
   let packageSpec = '';
   if (server.command === 'npx' || server.command === 'npm') {
     // npx -y @modelcontextprotocol/server-postgres
-    const pkgArg = (Array.isArray(server.args) ? server.args : (server.args ? Object.values(server.args) : [])).find(a => typeof a === 'string' && !a.startsWith('-'));
-    if (pkgArg) packageSpec = pkgArg as string;
+    const pkgArg = npxPackageArg(server.args);
+    if (pkgArg) packageSpec = pkgArg;
   } else {
     packageSpec = server.command || '';
   }

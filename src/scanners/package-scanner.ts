@@ -83,6 +83,17 @@ function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: S
 }
 
 /**
+ * The package an npx/npm launch runs. With `--package=<spec> <bin>` the
+ * first positional is the bin, so grading it named the wrong package.
+ */
+export function npxPackageArg(args: unknown): string | undefined {
+  const list = (Array.isArray(args) ? args : args && typeof args === 'object' ? Object.values(args) : [])
+    .filter((a): a is string => typeof a === 'string');
+  const flag = list.find(a => a.startsWith('--package='));
+  return flag ? flag.slice('--package='.length) : list.find(a => !a.startsWith('-'));
+}
+
+/**
  * Splits a package spec (as it appears in `npx <spec>` / `npm exec <spec>`)
  * into its registry name and version specifier. Handles scoped packages
  * (`@scope/name@1.2.3`) by skipping the leading `@` before looking for the
@@ -225,8 +236,8 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
 
   let packageSpec = '';
   if (server.command === 'npx' || server.command === 'npm') {
-    const pkgArg = (Array.isArray(server.args) ? server.args : (server.args ? Object.values(server.args) : [])).find(a => typeof a === 'string' && !a.startsWith('-'));
-    if (pkgArg) packageSpec = pkgArg as string;
+    const pkgArg = npxPackageArg(server.args);
+    if (pkgArg) packageSpec = pkgArg;
   }
 
   if (!packageSpec) return findings;

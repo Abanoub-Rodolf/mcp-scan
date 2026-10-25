@@ -52,6 +52,26 @@ describe('Registry Scanner', () => {
     expect(findings.some(f => f.id === 'unverified-source' && f.severity === 'MEDIUM')).toBe(true);
   });
 
+  // npx --package=<pkg> <bin> runs <bin> out of <pkg>. 2.1.0 graded the
+  // bin (optifeed-mcp) instead of the package (optifeed-radar).
+  it('grades the --package= value, not the bin that follows it', async () => {
+    const findings = await scanRegistry({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', '--package=optifeed-radar@0.2.3', 'optifeed-mcp']
+    }, true);
+    const f = findings.find(x => x.id === 'unverified-source');
+    expect(f?.description).toContain("'optifeed-radar'");
+    expect(f?.description).not.toContain('optifeed-mcp');
+  });
+
+  it('recognises an official package passed with --package=', async () => {
+    const findings = await scanRegistry({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['--package=@modelcontextprotocol/server-sqlite', 'mcp-server-sqlite']
+    }, true);
+    expect(findings.map(f => f.id)).toEqual(['official-server']);
+  });
+
   it('should flag scoped unverified sources at LOW when offline', async () => {
     const findings = await scanRegistry({
       name: 'test', toolName: 't', configPath: 'p', command: 'npx',

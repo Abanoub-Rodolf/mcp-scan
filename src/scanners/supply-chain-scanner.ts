@@ -2,6 +2,7 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding, PackageMetadata } from '../types/scan-result.js';
 import { logger } from '../utils/logger.js';
 import { loadCveSnapshot } from '../utils/cve-snapshot.js';
+import { npxPackageArg } from './package-scanner.js';
 
 interface NpmPackageData {
   'dist-tags'?: { latest?: string };
@@ -64,8 +65,8 @@ export async function scanSupplyChain(server: ResolvedServer, offline: boolean =
 
   let packageName = '';
   if (server.command === 'npx' || server.command === 'npm') {
-    const pkgArg = (Array.isArray(server.args) ? server.args : (server.args ? Object.values(server.args) : [])).find(a => typeof a === 'string' && !a.startsWith('-'));
-    if (pkgArg) packageName = pkgArg as string;
+    const pkgArg = npxPackageArg(server.args);
+    if (pkgArg) packageName = pkgArg;
   }
 
   if (!packageName) return { findings, trustScore: 100, metadata };

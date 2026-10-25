@@ -14,7 +14,7 @@ import { scanPromptInjection } from '../scanners/prompt-injection-scanner.js';
 import { scanToolPoisoning } from '../scanners/tool-poisoning-scanner.js';
 import { scanEnvLeak } from '../scanners/env-leak-scanner.js';
 import { scanSupplyChain, SupplyChainResult } from '../scanners/supply-chain-scanner.js';
-import { scanPackageDeep } from '../scanners/package-scanner.js';
+import { scanPackageDeep, npxPackageArg } from '../scanners/package-scanner.js';
 import { scanLicense } from '../scanners/license-scanner.js';
 import { scanDataFlow } from '../scanners/data-flow-scanner.js';
 import { scanNetworkEgress } from '../scanners/network-egress-scanner.js';
@@ -173,8 +173,8 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       // Simple heuristic for package name from supply-chain-scanner
       let packageName = '';
       if (server.command === 'npx' || server.command === 'npm') {
-        const pkgArg = (Array.isArray(server.args) ? server.args : (server.args ? Object.values(server.args) : [])).find(a => typeof a === 'string' && !a.startsWith('-'));
-        if (pkgArg) packageName = pkgArg as string;
+        const pkgArg = npxPackageArg(server.args);
+        if (pkgArg) packageName = pkgArg;
       }
 
       // Apply policy: Blocked Packages
