@@ -333,16 +333,15 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
     }));
   }
 
-  const names = new Map<string, number>();
-  for (const result of results) names.set(nameKey(result), (names.get(nameKey(result)) ?? 0) + 1);
-
   for (const result of results) {
     const key = fingerprintKey(result);
     const currentFingerprint = generateFingerprint(result);
-    // A baseline from before per-file keys still counts on the first scan
-    // after an upgrade, as long as the name is not shared in this scan.
+    // A baseline from before per-file keys is checked once, on the first
+    // scan after an upgrade, against every file that has the name. That can
+    // flag a monorepo once; skipping shared names would let a planted
+    // duplicate turn the check off.
     const old = nameKey(result);
-    const prior = store.data[key] === undefined && names.get(old) === 1 && store.data[old] !== undefined ? old : key;
+    const prior = store.data[key] === undefined && store.data[old] !== undefined ? old : key;
 
     if (store.data[prior] && store.data[prior] !== currentFingerprint) {
       mutationFindings[key] = [{

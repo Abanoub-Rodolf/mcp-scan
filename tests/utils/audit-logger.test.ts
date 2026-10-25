@@ -642,7 +642,31 @@ describe('baseline per config file', () => {
 
   // A baseline written before this change is keyed by tool and name. It
   // must keep catching a change on the first scan after the upgrade.
-  it('carries an older tool:name baseline over when the name is unique', () => {
+  // Rewrites the store as 2.1.0 would have keyed it, signed.
+  const toNameKeys = () => {
+    const file = path.join(home, 'known-servers.json');
+    const key = Buffer.from(fs.readFileSync(path.join(home, 'baseline.key'), 'utf8').trim(), 'hex');
+    const data: Record<string, string> = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const k of Object.keys(data).filter(k => k.startsWith('['))) {
+      data['Cursor:files'] = data[k];
+      delete data[k];
+    }
+    delete data.__sig;
+    const entries = Object.keys(data).sort().map(k => [k, data[k]]);
+    data.__sig = crypto.createHmac('sha256', key).update(JSON.stringify(entries)).digest('hex');
+    fs.writeFileSync(file, JSON.stringify(data));
+  };
+
+  // A second config planted with the same name must not switch the
+  // carried-over check off.
+  it('checks every file sharing the name against an older baseline', () => {
+    logScan(report([a]));
+    toNameKeys();
+    const found = checkFingerprints([at(a.configPath, ['-y', 'pkg', '--evil']), at('/repo/planted/.mcp.json', ['-y', 'pkg'])]);
+    expect(found[fingerprintKey(a)]?.[0].id).toBe('server-mutation');
+  });
+
+  it('carries an older tool:name baseline over to the per-file key', () => {
     logScan(report([a]));
     const file = path.join(home, 'known-servers.json');
     const key = Buffer.from(fs.readFileSync(path.join(home, 'baseline.key'), 'utf8').trim(), 'hex');
