@@ -37,7 +37,7 @@ export function scanTyposquat(server: ResolvedServer): Finding[] {
     const pkgArg = npxPackageArg(server.args, server.command);
     if (pkgArg) packageName = pkgArg;
   } else {
-    packageName = server.command || '';
+    packageName = launcher(server.command);
   }
 
   if (!packageName) return findings;
