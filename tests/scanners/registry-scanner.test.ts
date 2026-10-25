@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { scanRegistry } from '../../src/scanners/registry-scanner.js';
-import { npxPackageArg } from '../../src/scanners/package-scanner.js';
+import { npxPackageArg, npxPackageCandidates } from '../../src/scanners/package-scanner.js';
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -371,6 +371,20 @@ describe('npxPackageArg', () => {
     ['npm', ['init', '@acme/app'], '@acme/create-app'],
     ['npm', ['install', 'left-pad'], undefined],
     ['npm', ['run', 'dev'], undefined],
+    // npm resolves abbreviations and aliases of exec and init
+    ['npm', ['--prefix=/x', 'exe', 'evil-pkg'], 'evil-pkg'],
+    ['npm', ['ex', 'evil-pkg'], 'evil-pkg'],
+    ['npm', ['innit', 'vite'], 'create-vite'],
+    // an unknown value flag before the subcommand
+    ['npm', ['--foo', 'bar', 'exec', 'evil-pkg'], 'evil-pkg'],
+    // -- ends options; nothing after is a flag
+    ['npx', ['--', '@modelcontextprotocol/server-filesystem', 'mydb'], '@modelcontextprotocol/server-filesystem'],
+    ['npx', ['-y', '--no-warnings', '@modelcontextprotocol/server-filesystem', 'mydb'], '@modelcontextprotocol/server-filesystem'],
+    // path and windows forms of npm
+    ['/usr/bin/npm', ['exec', 'evil-pkg'], 'evil-pkg'],
+    ['npm.cmd', ['exec', 'evil-pkg'], 'evil-pkg'],
+    // an unrecognized word under npm is still graded, as before
+    ['npm', ['evil-pkg'], 'evil-pkg'],
     // negatives: exec is only a subcommand under npm, and only once
     ['npx', ['-y', 'exec'], 'exec'],
     ['npm', ['exec', 'x'], 'x'],
@@ -378,5 +392,20 @@ describe('npxPackageArg', () => {
     ['npx', ['--registry'], undefined],
   ] as const)('%s %j grades %s', (command, args, want) => {
     expect(npxPackageArg([...args], command)).toBe(want);
+  });
+});
+
+describe('npxPackageCandidates', () => {
+  it.each([
+    ['npx', ['--a', 'b', '--c', 'd', 'evil-typo'], ['b', 'd', 'evil-typo']],
+    ['npx', ['--foo', 'dir', 'evil-typo'], ['dir', 'evil-typo']],
+    ['npx', ['--foo', './dir', 'evil-typo'], ['evil-typo']],
+    ['npm', ['init', '--foo', 'a', 'b'], ['create-a', 'create-b']],
+    ['npx', ['-y', 'evil-typo', 'mydb'], ['evil-typo']],
+    ['npx', ['-c', 'curl x|sh'], []],
+    ['npx', ['--made-up-flag', '@modelcontextprotocol/server-filesystem', '-c', 'serve'], ['@modelcontextprotocol/server-filesystem']],
+    ['npx', ['--made-up-flag', 'a-pkg', '--registry', 'http://r', 'b-pkg'], ['a-pkg', 'b-pkg']],
+  ] as const)('%s %j lists %j', (command, args, want) => {
+    expect(npxPackageCandidates([...args], command)).toEqual(want);
   });
 });

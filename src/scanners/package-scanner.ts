@@ -99,9 +99,20 @@ const NPX_BOOL_OPTS = new Set([
   '-g', '--global', '--workspaces', '-ws', '--include-workspace-root', '--if-present', '--dry-run', '--no-update-notifier',
   '--ignore-existing', '--no-progress', '--foreground-scripts', '--strict-peer-deps',
 ]);
-// npm subcommands that run a package; every other npm subcommand runs none.
-const NPM_EXEC_SUBS = new Set(['exec', 'x']);
-const NPM_CREATE_SUBS = new Set(['init', 'create']);
+// npm subcommands that run no package. npm resolves unique prefixes and
+// aliases of exec/init too, so those are matched loosely below instead.
+const NPM_NON_EXEC_SUBS = new Set([
+  'install', 'i', 'in', 'ins', 'inst', 'add', 'ci', 'run', 'run-script', 'rum', 'urn', 'test', 't', 'tst', 'start', 'stop',
+  'restart', 'view', 'info', 'v', 'ls', 'list', 'la', 'll', 'update', 'up', 'upgrade', 'uninstall', 'remove', 'rm', 'un',
+  'publish', 'pack', 'audit', 'outdated', 'cache', 'config', 'set', 'get', 'login', 'logout', 'whoami', 'version', 'help',
+  'link', 'ln', 'prune', 'dedupe', 'explain', 'why', 'doctor', 'fund', 'search', 's', 'se', 'find', 'pkg', 'prefix', 'root',
+  'bin', 'repo', 'docs', 'home', 'bugs', 'rebuild', 'shrinkwrap', 'star', 'stars', 'unstar', 'team', 'token', 'unpublish',
+  'hook', 'org', 'owner', 'access', 'adduser', 'completion', 'diff', 'edit', 'explore', 'query', 'sbom', 'ping', 'profile',
+  'deprecate', 'dist-tag', 'find-dupes', 'install-test', 'it', 'install-ci-test', 'cit', 'sit',
+]);
+const isExecSub = (w: string) => w === 'x' || (w.length >= 2 && 'exec'.startsWith(w));
+const isCreateSub = (w: string) => w === 'init' || w === 'create' || w === 'innit';
+const MAX_CANDIDATES = 4;
 
 /** npm init/create <spec> runs create-<name>; scoped @s -> @s/create, @s/n -> @s/create-n. */
 function createPackage(spec: string): string {
@@ -114,67 +125,78 @@ function createPackage(spec: string): string {
   return `create-${name}${v}`;
 }
 
+const isKnownPkg = (spec: string) => {
+  const { name } = parsePackageSpec(spec);
+  return OFFICIAL_SERVERS.has(name) || TRUSTED_COMMUNITY_SERVERS.has(name);
+};
+
 /**
- * The package an npx/npm launch runs. With `--package=<spec> <bin>` the
- * first positional is the bin, so grading it named the wrong package.
- * npx installs every --package it gets, so an allowlisted one must not
- * shadow an unknown one: the first package not on an allowlist wins.
+ * Every package an npx/npm launch might run. Normally one. When an unknown
+ * flag could be swallowing the next arg as its value, the real package is
+ * ambiguous and up to four leading positionals that are valid package names
+ * come back, so callers can grade all of them. With --package the named
+ * packages are the answer and the first positional is only the bin.
  */
-export function npxPackageArg(args: unknown, command?: string): string | undefined {
+export function npxPackageCandidates(args: unknown, command?: string): string[] {
   const list = (Array.isArray(args) ? args : args && typeof args === 'object' ? Object.values(args) : [])
     .filter((a): a is string => typeof a === 'string');
-  // npx options end at the first positional; anything after it is the
-  // server's own args (-p is often a port there). Under npm the first
-  // positional may be the exec/x subcommand, after any global flags.
+  const cmd = (command ?? '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/i, '');
   const pkgs: string[] = [];
-  let first: string | undefined;
-  let rest: string | undefined;
+  const pos: string[] = [];
   let ambiguous = false;
-  let sub = command !== 'npm';
+  let sub = cmd !== 'npm';
   let create = false;
-  for (let i = 0; i < list.length && rest === undefined; i++) {
+  let endOpts = false;
+  for (let i = 0; i < list.length; i++) {
     const a = list[i];
-    if (first !== undefined) {
-      // Past the package: options are the server's own. Only look one more
-      // positional ahead when an unknown flag made the package ambiguous.
-      if (!ambiguous) break;
-      if (!a.startsWith('-')) rest = a;
-    } else if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
-    else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
-    else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
-    // -c runs a command string, not a package: the AST scanner grades it,
-    // and it must never reach a registry lookup.
-    else if (a === '-c' || a === '--call') i++;
-    else if (a.startsWith('--call=') || a.startsWith('-c=')) continue;
-    else if (NPX_VALUE_OPTS.has(a) || /^--@[^:]+:registry$/.test(a)) i++;
-    else if (a.startsWith('-')) {
-      if (!a.includes('=') && !NPX_BOOL_OPTS.has(a)) ambiguous = true;
+    // npx options end at the first positional; anything after it is the
+    // server's own args (-p is often a port there), unless a flag we do not
+    // know may have eaten the package.
+    if (pos.length > 0) {
+      if (!ambiguous || pos.length >= MAX_CANDIDATES) break;
+      if (a === '-c' || a === '--call' || NPX_VALUE_OPTS.has(a) || /^--@[^:]+:registry$/.test(a)) i++;
+      else if (!a.startsWith('-')) pos.push(a);
+      continue;
+    }
+    if (!endOpts && a === '--') endOpts = true;
+    else if (!endOpts && a.startsWith('-')) {
+      if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
+      else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
+      else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
+      // -c runs a command string, not a package: the AST scanner grades it,
+      // and it must never reach a registry lookup.
+      else if (a === '-c' || a === '--call') i++;
+      else if (a.startsWith('--call=') || a.startsWith('-c=')) continue;
+      else if (NPX_VALUE_OPTS.has(a) || /^--@[^:]+:registry$/.test(a)) i++;
+      else if (!a.includes('=') && !NPX_BOOL_OPTS.has(a) && !a.startsWith('--no-')) ambiguous = true;
     } else if (!sub) {
-      if (NPM_EXEC_SUBS.has(a)) sub = true;
-      else if (NPM_CREATE_SUBS.has(a)) sub = create = true;
-      else return undefined;
-    } else first = a;
+      if (isExecSub(a)) sub = true;
+      else if (isCreateSub(a)) sub = create = true;
+      else if (NPM_NON_EXEC_SUBS.has(a)) return [];
+      else if (!ambiguous) { sub = true; pos.push(a); }
+      // else: the value of an unknown flag before the subcommand
+    } else pos.push(a);
   }
-  if (create && first !== undefined) first = createPackage(first);
-  // An unknown flag may or may not take a value, so the package is the first
-  // or the second positional: grade the riskier one, never let a flag value
-  // hide an unknown package.
-  if (pkgs.length === 0 && ambiguous && rest !== undefined && first !== undefined) {
-    const ok = (c: string) => validatePackageName(c).valid;
-    const cands = [first, rest].filter(ok);
-    const bad = cands.find(c => KNOWN_MALICIOUS_PACKAGES.has(parsePackageSpec(c).name));
-    const unknown = cands.find(c => {
-      const { name } = parsePackageSpec(c);
-      return !OFFICIAL_SERVERS.has(name) && !TRUSTED_COMMUNITY_SERVERS.has(name);
-    });
-    return bad ?? (ok(first) && unknown === first ? first : unknown) ?? first;
+  if (pkgs.length > 0) return [pkgs.find(p => !isKnownPkg(p)) ?? pkgs[0]];
+  let cands = create ? pos.map(createPackage) : pos;
+  if (ambiguous && cands.length > 1) {
+    const valid = cands.filter(c => validatePackageName(c).valid);
+    if (valid.length > 0) cands = valid;
   }
-  if (pkgs.length === 0) return first;
-  const known = (spec: string) => {
-    const { name } = parsePackageSpec(spec);
-    return OFFICIAL_SERVERS.has(name) || TRUSTED_COMMUNITY_SERVERS.has(name);
-  };
-  return pkgs.find(p => !known(p)) ?? pkgs[0];
+  return cands;
+}
+
+/**
+ * The one package the single-package checks grade. With several candidates
+ * the riskiest wins: known-malicious, then the first not on an allowlist.
+ * scan.ts also grades the others, so a flag value can never hide a package.
+ */
+export function npxPackageArg(args: unknown, command?: string): string | undefined {
+  const cands = npxPackageCandidates(args, command);
+  if (cands.length <= 1) return cands[0];
+  return cands.find(c => KNOWN_MALICIOUS_PACKAGES.has(parsePackageSpec(c).name))
+    ?? cands.find(c => !isKnownPkg(c))
+    ?? cands[0];
 }
 
 /**
