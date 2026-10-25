@@ -139,10 +139,16 @@ const isKnownPkg = (spec: string) => {
  * come back, so callers can grade all of them. With --package the named
  * packages are the answer and the first positional is only the bin.
  */
+// npx.cmd on Windows, full paths and case-insensitive filesystems all run
+// the same launcher, so compare the bare lowercase name.
+export function launcher(command: unknown): string {
+  return (typeof command === 'string' ? command : '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/i, '').toLowerCase();
+}
+
 export function npxPackageCandidates(args: unknown, command?: string): string[] {
   const list = (Array.isArray(args) ? args : args && typeof args === 'object' ? Object.values(args) : [])
     .filter((a): a is string => typeof a === 'string');
-  const cmd = (typeof command === 'string' ? command : '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/i, '');
+  const cmd = launcher(command);
   const pkgs: string[] = [];
   const pos: string[] = [];
   let ambiguous = false;
@@ -367,7 +373,8 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
   const findings: Finding[] = [];
 
   let packageSpec = '';
-  if (server.command === 'npx' || server.command === 'npm') {
+  const cmd = launcher(server.command);
+  if (cmd === 'npx' || cmd === 'npm') {
     const pkgArg = npxPackageArg(server.args, server.command);
     if (pkgArg) packageSpec = pkgArg;
   }

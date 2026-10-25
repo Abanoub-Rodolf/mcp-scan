@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 import { auditDir } from './audit-logger.js';
-import { validatePackageName, npxPackageArg } from '../scanners/package-scanner.js';
+import { validatePackageName, npxPackageArg, launcher } from '../scanners/package-scanner.js';
 import { reportUrlFor } from '../commands/badge.js';
 import type { ScanReport } from '../types/scan-result.js';
 
@@ -63,7 +63,7 @@ function looksLikeFilePath(candidate: string): boolean {
 export function findReportablePackage(report: ScanReport): string | undefined {
   for (const result of report.results) {
     const command = result.connection?.command;
-    if (command !== 'npx' && command !== 'npm' && command !== 'node') continue;
+    if (!['npx', 'npm', 'node'].includes(launcher(command))) continue;
 
     const pkgArg = npxPackageArg(result.connection?.args ?? [], command);
     if (!pkgArg || looksLikeFilePath(pkgArg)) continue;

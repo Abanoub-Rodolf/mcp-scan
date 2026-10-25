@@ -2,7 +2,7 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { KNOWN_MALICIOUS_PACKAGES } from '../data/known-malicious.js';
 import { OFFICIAL_SERVERS, TRUSTED_COMMUNITY_SERVERS } from '../data/official-servers.js';
-import { parsePackageSpec, resolveEffectiveVersion, npxPackageArg, NPX_BOOL_OPTS } from './package-scanner.js';
+import { parsePackageSpec, resolveEffectiveVersion, npxPackageArg, NPX_BOOL_OPTS, launcher } from './package-scanner.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 import { logger } from '../utils/logger.js';
 import semver from 'semver';
@@ -144,7 +144,7 @@ function registryHost(url: string): string {
 export async function scanRegistry(server: ResolvedServer, offline: boolean = false): Promise<Finding[]> {
   const findings: Finding[] = [];
 
-  const cmd = (server.command ?? '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/i, '').toLowerCase();
+  const cmd = launcher(server.command);
   const custom = cmd === 'npx' || cmd === 'npm'
     // Plain http to the real npm host is still open to tampering in transit.
     ? registryOverrides(server, cmd).filter(r => r.file || /^http:\/\//i.test(r.url) || !DEFAULT_REGISTRY_HOSTS.has(registryHost(r.url)))
