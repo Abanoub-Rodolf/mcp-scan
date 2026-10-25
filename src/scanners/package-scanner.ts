@@ -86,7 +86,7 @@ function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: S
 // npx/npm options whose value is the next arg, not the package.
 const NPX_VALUE_OPTS = new Set([
   '--registry', '--cache', '--userconfig', '--prefix', '-w', '--workspace', '--loglevel', '--before',
-  '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell',
+  '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell', '-C', '--globalconfig', '--omit', '--fetch-timeout', '--fetch-retries',
 ]);
 
 /**
@@ -103,21 +103,23 @@ export function npxPackageArg(args: unknown, command?: string): string | undefin
   // positional may be the exec/x subcommand, after any global flags.
   const pkgs: string[] = [];
   let first: string | undefined;
+  let call: string | undefined;
   let sub = command !== 'npm';
   for (let i = 0; i < list.length && first === undefined; i++) {
     const a = list[i];
     if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
     else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
     else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
-    // -c runs a command string instead of a package: grade that string.
-    else if ((a === '-c' || a === '--call') && i + 1 < list.length) first = list[++i];
-    else if (NPX_VALUE_OPTS.has(a)) i++;
+    // -c runs a command string instead of a package: grade that string,
+    // unless a --package comes with it.
+    else if ((a === '-c' || a === '--call') && i + 1 < list.length) call = list[++i];
+    else if (NPX_VALUE_OPTS.has(a) || /^--@[^:]+:registry$/.test(a)) i++;
     else if (!a.startsWith('-')) {
       if (!sub && (a === 'exec' || a === 'x')) sub = true;
       else first = a;
     }
   }
-  if (pkgs.length === 0) return first;
+  if (pkgs.length === 0) return call ?? first;
   const known = (spec: string) => {
     const { name } = parsePackageSpec(spec);
     return OFFICIAL_SERVERS.has(name) || TRUSTED_COMMUNITY_SERVERS.has(name);
