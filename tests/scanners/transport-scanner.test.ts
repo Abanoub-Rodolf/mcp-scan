@@ -41,4 +41,14 @@ describe('Transport Scanner', () => {
       expect(sev(url), url).toBe('HIGH');
     }
   });
+
+  // Rewriting a loopback arg to https:// just breaks the local server.
+  it('does not mark a loopback http:// arg fixable', () => {
+    const f = scanTransport({ name: 's', toolName: 't', configPath: 'p', command: 'npx', args: ['mcp-remote', 'http://localhost:3000/mcp'] });
+    const t = f.find(x => x.id === 'http-transport-no-auth');
+    expect(t?.severity).toBe('LOW');
+    expect(t?.fixable).toBeFalsy();
+    const remote = scanTransport({ name: 's', toolName: 't', configPath: 'p', command: 'npx', args: ['mcp-remote', 'http://example.com/mcp'] });
+    expect(remote.find(x => x.id === 'http-transport-no-auth')).toMatchObject({ severity: 'MEDIUM', fixable: true });
+  });
 });
