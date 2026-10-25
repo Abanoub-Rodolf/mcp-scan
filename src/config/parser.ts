@@ -126,12 +126,12 @@ export function extractServers(toolName: string, configPath: string, config: Mcp
   // one pseudo-server per character. Paths are relative to the plugin
   // root, the parent of .claude-plugin/. Followed one level only.
   const raw: unknown = config.mcpServers;
-  if (typeof raw === 'string' || Array.isArray(raw)) {
+  // An array of server objects is the older inline shape, not refs.
+  if (typeof raw === 'string' || (Array.isArray(raw) && raw.every(r => typeof r === 'string'))) {
     if (!follow) return [];
     const dir = path.dirname(configPath);
     const root = /^\.(claude|codex)-plugin$/.test(path.basename(dir)) ? path.dirname(dir) : dir;
-    return (Array.isArray(raw) ? raw : [raw]).flatMap(ref => {
-      if (typeof ref !== 'string') return [];
+    return (Array.isArray(raw) ? raw : [raw]).flatMap((ref: string) => {
       const target = path.resolve(root, ref);
       let nested: McpConfig | null = null;
       try {
@@ -144,7 +144,9 @@ export function extractServers(toolName: string, configPath: string, config: Mcp
         if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) throw new Error('outside the plugin root');
         nested = parseJsonC(readRegularFile(real)) as McpConfig;
       } catch (_e) {}
-      if (!nested) logger.warn(`${configPath} points mcpServers at ${ref}, which could not be read or lies outside the plugin. Its servers were not scanned.`);
+      // stderr, not logger.warn: --json and --ci silence the logger, and a
+      // skipped file must not pass as a clean one.
+      if (!nested) process.stderr.write(`mcp-scan: ${configPath} points mcpServers at ${ref}, which could not be read or lies outside the plugin. Its servers were not scanned.\n`);
       return extractServers(toolName, target, nested, false);
     });
   }

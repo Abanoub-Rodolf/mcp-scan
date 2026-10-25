@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { parseConfig, extractServers } from '../../src/config/parser.js';
+import { logger } from '../../src/utils/logger.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -134,6 +135,30 @@ describe('mcpServers given as a file reference', () => {
     fs.writeFileSync(path.join(root, 'b.json'), JSON.stringify({ mcpServers: { b: { command: 'node' } } }));
 
     expect(extractServers('t', manifest, parseConfig(manifest)).map(s => s.name)).toEqual(['a', 'b']);
+  });
+
+  // An array of server objects is not a list of file refs: 2.1.0 scanned
+  // each entry, so dropping them would hide every server in that file.
+  it('still scans an array of server objects', () => {
+    const cfg = path.join(root, 'mcp.json');
+    fs.writeFileSync(cfg, JSON.stringify({ mcpServers: [{ command: 'node' }, { command: 'npx' }] }));
+    expect(extractServers('t', cfg, parseConfig(cfg)).map(s => s.command)).toEqual(['node', 'npx']);
+  });
+
+  // --json and --ci silence the logger, so the skip must reach stderr directly.
+  it('reports an unreadable reference on stderr even when the logger is silent', () => {
+    const manifest = path.join(root, '.claude-plugin', 'plugin.json');
+    fs.writeFileSync(manifest, JSON.stringify({ mcpServers: './.mcp.json' }));
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const was = logger.isSilent;
+    logger.isSilent = true;
+    try {
+      extractServers('t', manifest, parseConfig(manifest));
+      expect(spy.mock.calls.map(c => String(c[0])).join('')).toContain('./.mcp.json');
+    } finally {
+      logger.isSilent = was;
+      spy.mockRestore();
+    }
   });
 
   it('yields no pseudo-servers when the reference cannot be read', () => {
