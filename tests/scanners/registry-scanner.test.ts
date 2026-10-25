@@ -86,6 +86,18 @@ describe('Registry Scanner', () => {
     }
   });
 
+  // After the package, -p and --package belong to the server (often a
+  // port), so they must not replace the package that npx actually runs.
+  it('ignores -p and --package that come after the package', async () => {
+    for (const args of [
+      ['-y', 'evil-pkg', '-p', '8080'],
+      ['-y', 'evil-pkg', '--package=@modelcontextprotocol/server-filesystem'],
+    ]) {
+      const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx', args }, true);
+      expect(findings.find(f => f.id === 'unverified-source')?.description, args.join(' ')).toContain("'evil-pkg'");
+    }
+  });
+
   it('should flag scoped unverified sources at LOW when offline', async () => {
     const findings = await scanRegistry({
       name: 'test', toolName: 't', configPath: 'p', command: 'npx',
