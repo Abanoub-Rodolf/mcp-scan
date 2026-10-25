@@ -77,4 +77,15 @@ describe('scan runs the deeper package checks on every candidate', () => {
     expect(alts.length).toBeGreaterThan(0);
     for (const a of alts) expect(a.args).not.toContain('--registry=http://own.example');
   });
+
+  it('carries a registry flag that sits between two candidates', async () => {
+    const { runScan } = await import('../../src/commands/scan.js');
+    const cfg = path.join(home, 'mcp.json');
+    fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { s: { command: 'npx',
+      args: ['--made-up', 'a-pkg', '--registry=http://r.example', 'b-pkg'] } } }));
+    await runScan({ config: cfg, silent: true, offline: true });
+    const alts = (deep.mock.calls as any[]).map(c => c[0]).filter(s => s.args.length <= 2);
+    expect(alts.length).toBeGreaterThan(0);
+    for (const a of alts) expect(a.args).toContain('--registry=http://r.example');
+  });
 });
