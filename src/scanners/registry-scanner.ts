@@ -77,8 +77,55 @@ async function resolveVersionForProvenanceCheck(packageName: string, versionSpec
   return version;
 }
 
+// registry.yarnpkg.com is a CNAME for the npm registry.
+const DEFAULT_REGISTRY_HOSTS = new Set(['registry.npmjs.org', 'registry.npmjs.com', 'registry.yarnpkg.com']);
+
+// Registry overrides an npx or npm exec launch would honor, from its flags
+// and its env. `scope` is set for `@scope:registry` overrides.
+function registryOverrides(server: ResolvedServer): Array<{ url: string; scope?: string }> {
+  const out: Array<{ url: string; scope?: string }> = [];
+  const add = (key: string, url: string | undefined) => {
+    const m = /^(?:(@[^:]+):)?registry$/i.exec(key);
+    if (m && url) out.push({ url, scope: m[1] });
+  };
+  const args = server.args ?? [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (typeof a !== 'string' || !a.startsWith('--')) continue;
+    if (a === '--') break;
+    const eq = a.indexOf('=');
+    if (eq > 0) add(a.slice(2, eq), a.slice(eq + 1));
+    else if (/registry$/i.test(a)) add(a.slice(2), typeof args[i + 1] === 'string' ? args[i + 1] as string : undefined);
+  }
+  for (const [k, v] of Object.entries(server.env ?? {})) {
+    const m = /^npm_config_(.+)$/i.exec(k);
+    if (m && typeof v === 'string') add(m[1], v);
+  }
+  return out;
+}
+
+function registryHost(url: string): string {
+  try { return new URL(url).hostname.toLowerCase(); } catch (_e) { return url; }
+}
+
 export async function scanRegistry(server: ResolvedServer, offline: boolean = false): Promise<Finding[]> {
   const findings: Finding[] = [];
+
+  const custom = server.command === 'npx' || server.command === 'npm'
+    ? registryOverrides(server).filter(r => !DEFAULT_REGISTRY_HOSTS.has(registryHost(r.url)))
+    : [];
+  for (const r of custom) {
+    const plain = /^http:\/\//i.test(r.url);
+    const target = r.scope ? `${r.scope} packages` : 'the package';
+    findings.push({
+      id: 'custom-registry',
+      severity: plain ? 'HIGH' : 'MEDIUM',
+      description: plain
+        ? `Server fetches ${target} from ${r.url} over plain http, so anyone on the network path can swap the code it runs.`
+        : `Server fetches ${target} from ${registryHost(r.url)}, not the npm registry. Whoever runs that registry decides what code this server runs, whatever the package name.`,
+      fixRecommendation: `Remove the registry override, or confirm ${registryHost(r.url)} is a registry you control and pin an exact version.`,
+    });
+  }
 
   // Try to determine package name from command or args
   let packageSpec = '';
@@ -103,6 +150,10 @@ export async function scanRegistry(server: ResolvedServer, offline: boolean = fa
       fixRecommendation: `Remove this server immediately.`,
       fixable: false
     });
+  } else if (custom.length) {
+    // The name allowlists and the npmjs provenance lookup describe the npm
+    // registry's copy of this package, not the one actually installed.
+    return findings;
   } else if (OFFICIAL_SERVERS.has(packageName)) {
     findings.push({
       id: 'official-server',
