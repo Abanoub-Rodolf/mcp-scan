@@ -142,7 +142,7 @@ const isKnownPkg = (spec: string) => {
 // npx.cmd on Windows, full paths and case-insensitive filesystems all run
 // the same launcher, so compare the bare lowercase name.
 export function launcher(command: unknown): string {
-  return (typeof command === 'string' ? command : '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe)$/i, '').toLowerCase();
+  return (typeof command === 'string' ? command : '').split(/[\\/]/).pop()!.replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
 }
 
 export function npxPackageCandidates(args: unknown, command?: string): string[] {
