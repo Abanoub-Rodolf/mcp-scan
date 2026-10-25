@@ -5,7 +5,7 @@ import { detectTools } from '../config/detector.js';
 import { parseConfig, extractServers, loadPolicy, loadIgnoreList } from '../config/parser.js';
 import { scanSecrets } from '../scanners/secret-scanner.js';
 import { scanPermissions } from '../scanners/permission-scanner.js';
-import { scanRegistry } from '../scanners/registry-scanner.js';
+import { scanRegistry, isRegistryKey, configKey } from '../scanners/registry-scanner.js';
 import { scanTyposquat } from '../scanners/typosquat-scanner.js';
 import { scanTransport } from '../scanners/transport-scanner.js';
 import { scanConfig } from '../scanners/config-scanner.js';
@@ -187,8 +187,8 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       const firstPkg = new Set([packageName, ...candidates]);
       for (let i = 0; i < args.length; i++) {
         if (args[i] === '--' || (cmd === 'npx' && firstPkg.has(args[i]))) break;
-        const m = /^--(@[^:=]+:registry|[a-z]+)(=|$)/i.exec(args[i]);
-        if (!m || !/^@|^reg|^userc|^globalc|^prefi/i.test(m[1])) continue;
+        const m = /^--([^=]+)(=|$)/.exec(args[i]);
+        if (!m || !(isRegistryKey(m[1]) || configKey(m[1]))) continue;
         where.push(args[i]);
         if (!m[2] && args[i + 1] !== undefined && !args[i + 1].startsWith('-')) where.push(args[++i]);
       }

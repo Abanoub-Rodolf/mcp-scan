@@ -83,13 +83,13 @@ const DEFAULT_REGISTRY_HOSTS = new Set(['registry.npmjs.org', 'registry.npmjs.co
 // npm's argv parser (nopt) takes any unique prefix of a flag name, so
 // --reg=x sets the registry. 3 chars is the shortest unique prefix.
 // npm's env reader takes exact names only, so env keys skip the prefix rule.
-const isRegistryKey = (k: string, exact = false) => /^@[^:]+:registry$/i.test(k)
+export const isRegistryKey = (k: string, exact = false) => /^@[^:]+:registry$/i.test(k)
   || (exact ? k.toLowerCase() === 'registry' : k.length >= 3 && 'registry'.startsWith(k.toLowerCase()));
 // These load an .npmrc whose registry line we can't see from the config.
 // Shortest prefix npm leaves unambiguous for each (--global wins --globa).
 const CONFIG_FILE_KEYS: Record<string, number> = { userconfig: 5, globalconfig: 7, prefix: 5 };
 // Flags take unique prefixes like the registry key; env keys must be exact.
-const configKey = (k: string, exact = false) => Object.keys(CONFIG_FILE_KEYS).find(c => exact ? c === k.toLowerCase() : k.length >= CONFIG_FILE_KEYS[c] && c.startsWith(k.toLowerCase()));
+export const configKey = (k: string, exact = false) => Object.keys(CONFIG_FILE_KEYS).find(c => exact ? c === k.toLowerCase() : k.length >= CONFIG_FILE_KEYS[c] && c.startsWith(k.toLowerCase()));
 
 type Override = { url: string; scope?: string; file?: boolean; key?: string };
 
