@@ -430,6 +430,7 @@ describe('npxPackageCandidates', () => {
     ['npx', ['--foo', 'a', 'b', '--package=evil', 'bin'], ['evil', 'a', 'b', 'bin']],
     ['npx', ['--foo', 'a', '--package=evil', 'bin'], ['evil', 'a', 'bin']],
     ['npx', ['--foo', 'x', '--package=evil', '/home/u'], ['evil', 'x']],
+    ['npx', ['--foo', 'x', '--package=evil', 'github:u/r', './p'], ['evil', 'x', 'github:u/r']],
     ['npm', ['exec', '--made-up', 'legacy', '-c', 'x', 'evil'], ['legacy', 'evil']],
     ['npm', ['exec', '--made-up', 'legacy', '--registry', 'r', 'evil'], ['legacy', 'evil']],
     ['npx', ['-n', 'safe-pkg', 'evil-pkg'], ['safe-pkg', 'evil-pkg']],

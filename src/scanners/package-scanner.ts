@@ -200,7 +200,7 @@ export function npxPackageCandidates(args: unknown, command?: string): string[] 
     // Risk first, so the cap can only ever drop allowlisted packages.
     const rank = (p: string) => KNOWN_MALICIOUS_PACKAGES.has(parsePackageSpec(p).name) ? 0 : isKnownPkg(p) ? 2 : 1;
     // After an unknown flag the positionals may still be what runs, so keep them.
-    const all = ambiguous ? [...pkgs, ...pos.filter(c => validatePackageName(c).valid)] : pkgs;
+    const all = ambiguous ? [...pkgs, ...pos.filter(c => !/^\.{0,2}\/|\s/.test(c))] : pkgs;
     return [...new Set(all)].sort((x, y) => rank(x) - rank(y)).slice(0, MAX_PACKAGES);
   }
   let cands = create ? pos.map(createPackage) : pos;
