@@ -1,5 +1,6 @@
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
+import { stripClientVars } from '../utils/client-vars.js';
 
 export function scanConfig(server: ResolvedServer): Finding[] {
   const findings: Finding[] = [];
@@ -13,9 +14,10 @@ export function scanConfig(server: ResolvedServer): Finding[] {
       // to smuggle execution. A complex ${...} expression (e.g.
       // --url=${BASE}/api) is a config smell, not code execution, so it
       // reports as MEDIUM. Simple ${VAR} refs (any case) are allowed.
-      const isSimpleEnvVar = /^\$\{[A-Z0-9_]+\}$/i.test(arg);
+      const bare = stripClientVars(arg);
+      const isSimpleEnvVar = /^\$\{[A-Z0-9_]+\}$/i.test(bare);
       const hasCommandSubstitution = /\$\(.*\)|`.*`/.test(arg);
-      const hasComplexExpression = /\$\{.*\}/.test(arg) && !isSimpleEnvVar;
+      const hasComplexExpression = /\$\{.*\}/.test(bare) && !isSimpleEnvVar;
       
       if (hasCommandSubstitution) {
         findings.push({

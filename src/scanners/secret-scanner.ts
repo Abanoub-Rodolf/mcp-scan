@@ -1,6 +1,7 @@
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { SECRET_PATTERNS } from '../data/secret-patterns.js';
+import { CLIENT_VARS, stripClientVars } from '../utils/client-vars.js';
 
 // Entropy-detection calibration: values at least this long are checked,
 // and only flagged above this Shannon bits-per-character.
@@ -134,7 +135,7 @@ export function scanSecrets(server: ResolvedServer): Finding[] {
     const envRefMatch = value.match(/^\$\{([A-Z0-9_]+)\}$|^\$([A-Z0-9_]+)$/i);
     if (envRefMatch) {
       const varName = envRefMatch[1] || envRefMatch[2];
-      if (!(varName in process.env) && !(varName.toUpperCase() in process.env)) {
+      if (!CLIENT_VARS.has(varName) && !(varName in process.env) && !(varName.toUpperCase() in process.env)) {
         findings.push({
           id: 'missing-referenced-env-var',
           severity: 'MEDIUM',
@@ -195,9 +196,11 @@ export function scanSecrets(server: ResolvedServer): Finding[] {
     }
 
     // 3. Entropy-based detection (if no pattern matched)
-    if (!foundPattern && value.length >= MIN_ENTROPY_VALUE_LENGTH) {
-      const entropy = calculateEntropy(value);
-      if (entropy > MIN_ENTROPY_BITS_PER_CHAR && !isExemptFromEntropy(value)) {
+    // A client-expanded prefix is a path, not key material: grade the rest.
+    const graded = stripClientVars(value);
+    if (!foundPattern && graded.length >= MIN_ENTROPY_VALUE_LENGTH) {
+      const entropy = calculateEntropy(graded);
+      if (entropy > MIN_ENTROPY_BITS_PER_CHAR && !isExemptFromEntropy(graded)) {
         findings.push({
           id: 'high-entropy-value',
           severity: 'MEDIUM',
