@@ -83,31 +83,39 @@ function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: S
   }
 }
 
+// npx/npm options whose value is the next arg, not the package.
+const NPX_VALUE_OPTS = new Set([
+  '--registry', '--cache', '--userconfig', '--prefix', '-w', '--workspace', '--loglevel', '--before',
+  '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell',
+]);
+
 /**
  * The package an npx/npm launch runs. With `--package=<spec> <bin>` the
  * first positional is the bin, so grading it named the wrong package.
  * npx installs every --package it gets, so an allowlisted one must not
  * shadow an unknown one: the first package not on an allowlist wins.
  */
-// npx options whose value is the next arg, not the package.
-const NPX_VALUE_OPTS = new Set(['--registry', '--cache', '--userconfig', '--prefix', '-c', '--call', '-w', '--workspace']);
-
 export function npxPackageArg(args: unknown, command?: string): string | undefined {
-  let list = (Array.isArray(args) ? args : args && typeof args === 'object' ? Object.values(args) : [])
+  const list = (Array.isArray(args) ? args : args && typeof args === 'object' ? Object.values(args) : [])
     .filter((a): a is string => typeof a === 'string');
-  // `npm exec <pkg>` / `npm x <pkg>`: the subcommand is not the package.
-  if (command === 'npm' && (list[0] === 'exec' || list[0] === 'x')) list = list.slice(1);
   // npx options end at the first positional; anything after it is the
-  // server's own args (-p is often a port there).
+  // server's own args (-p is often a port there). Under npm the first
+  // positional may be the exec/x subcommand, after any global flags.
   const pkgs: string[] = [];
   let first: string | undefined;
+  let sub = command !== 'npm';
   for (let i = 0; i < list.length && first === undefined; i++) {
     const a = list[i];
     if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
     else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
     else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
+    // -c runs a command string instead of a package: grade that string.
+    else if ((a === '-c' || a === '--call') && i + 1 < list.length) first = list[++i];
     else if (NPX_VALUE_OPTS.has(a)) i++;
-    else if (!a.startsWith('-')) first = a;
+    else if (!a.startsWith('-')) {
+      if (!sub && (a === 'exec' || a === 'x')) sub = true;
+      else first = a;
+    }
   }
   if (pkgs.length === 0) return first;
   const known = (spec: string) => {

