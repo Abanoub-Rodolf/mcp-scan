@@ -133,8 +133,18 @@ export function extractServers(toolName: string, configPath: string, config: Mcp
     return (Array.isArray(raw) ? raw : [raw]).flatMap(ref => {
       if (typeof ref !== 'string') return [];
       const target = path.resolve(root, ref);
-      const nested = parseConfig(target);
-      if (!nested) logger.warn(`${configPath} points mcpServers at ${ref}, which could not be read. Its servers were not scanned.`);
+      let nested: McpConfig | null = null;
+      try {
+        // The manifest may come from an untrusted clone: stay inside the
+        // plugin root (after symlinks), refuse FIFOs and devices, and keep
+        // the file's content out of any parse error.
+        const realRoot = fs.realpathSync(root);
+        const real = fs.realpathSync(target);
+        const rel = path.relative(realRoot, real);
+        if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) throw new Error('outside the plugin root');
+        nested = parseJsonC(readRegularFile(real)) as McpConfig;
+      } catch (_e) {}
+      if (!nested) logger.warn(`${configPath} points mcpServers at ${ref}, which could not be read or lies outside the plugin. Its servers were not scanned.`);
       return extractServers(toolName, target, nested, false);
     });
   }
