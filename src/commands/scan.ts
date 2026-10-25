@@ -231,6 +231,17 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         return result.findings;
       });
       allFindings.push(...supplyChainResult);
+
+      // Same for the deeper package checks on the non-primary candidates.
+      for (const cand of candidates.filter(c => c !== packageName)) {
+        const alt = { ...server, command: 'npx', args: [cand] };
+        const seen = new Set(allFindings.map(f => `${f.id}|${f.description}`));
+        const extra = [
+          ...await runScanner('package', () => scanPackageDeep(alt, options.offline)),
+          ...await runScanner('supply-chain', async () => (await scanSupplyChain(alt, options.offline)).findings),
+        ];
+        allFindings.push(...extra.filter(f => !seen.has(`${f.id}|${f.description}`)));
+      }
       
       const licenseFindings = await runScanner('license', () => scanLicense(metadata));
       allFindings.push(...licenseFindings);
