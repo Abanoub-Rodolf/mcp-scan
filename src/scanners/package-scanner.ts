@@ -163,9 +163,18 @@ export function npxPackageCandidates(args: unknown, command?: string): string[] 
         if (NPX_VALUE_OPTS.has(a) || a === '-c' || a === '--call') { i++; continue; }
         if (!ambiguous) continue;
       }
-      if (!ambiguous || pos.length >= MAX_CANDIDATES) { if (cmd === 'npm') continue; break; }
+      if (!ambiguous) { if (cmd === 'npm') continue; break; }
+      // The unknown flag may have eaten the first positional, so --package
+      // can still be live here. Keep scanning to the end for it; only the
+      // positional candidates are capped.
+      if (!create && !endOpts) {
+        if (a === '--') { endOpts = true; continue; }
+        if (a.startsWith('--package=') || a.startsWith('--no-package=')) { pkgs.push(a.slice(a.indexOf('=') + 1)); continue; }
+        if (a.startsWith('-p=')) { pkgs.push(a.slice(3)); continue; }
+        if ((a === '--package' || a === '-p' || a === '--no-package') && i + 1 < list.length) { pkgs.push(list[++i]); continue; }
+      }
       if (a === '-c' || a === '--call' || NPX_VALUE_OPTS.has(a) || /^--@[^:]+:registry$/.test(a)) i++;
-      else if (!a.startsWith('-')) pos.push(a);
+      else if (!a.startsWith('-') && pos.length < MAX_CANDIDATES) pos.push(a);
       continue;
     }
     if (!endOpts && a === '--') endOpts = true;

@@ -403,6 +403,12 @@ describe('npxPackageArg', () => {
     ['npm', ['exec', 'aaa', '--no-package', 'bbb'], 'bbb'],
     ['npm', ['exec', 'aaa', '--no-package=bbb'], 'bbb'],
     ['npx', ['--no-package', 'bbb', 'bin'], 'bbb'],
+    // an unknown flag may have eaten the first positional, so a later --package still counts
+    ['npx', ['--foo', 'a', '--package=evil', 'bin'], 'evil'],
+    ['npx', ['--foo', 'a', '-p=evil', 'bin'], 'evil'],
+    ['npx', ['--foo', 'a', '--no-package=evil', 'bin'], 'evil'],
+    ['npx', ['--foo', 'a', '--package', 'evil', 'bin'], 'evil'],
+    ['npx', ['--foo', 'a', 'b', 'c', 'd', '--package=evil', 'bin'], 'evil'],
     // negatives: exec is only a subcommand under npm, and only once
     ['npx', ['-y', 'exec'], 'exec'],
     ['npm', ['exec', 'x'], 'x'],
