@@ -2,6 +2,7 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { findEncodedInstruction } from '../utils/encoded-text.js';
 import { buildScanText } from '../utils/scan-text.js';
+import { CLIENT_VARS } from '../utils/client-vars.js';
 
 // Long whitespace padding before an instruction reads as deliberately
 // hidden rather than ordinary formatting.
@@ -115,6 +116,7 @@ export function scanToolPoisoning(server: ResolvedServer): Finding[] {
   let match;
   while ((match = envVarRefRegex.exec(textToScan)) !== null) {
     const envVarName = match[1];
+    if (CLIENT_VARS.has(envVarName)) continue;
     const inServerEnv = server.env && server.env[envVarName] !== undefined;
     const inProcessEnv = envVarName in process.env || envVarName.toUpperCase() in process.env;
     if (!inServerEnv && !inProcessEnv) {

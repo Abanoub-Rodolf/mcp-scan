@@ -10,7 +10,8 @@ const passColor = chalk.hex('#3FB950');
 const dimColor = chalk.dim;
 
 // In `mcp-scan proxy` stdout carries the MCP protocol, so the proxy flips
-// this to send every log line to stderr. Scan output is untouched.
+// this to send every log line to stderr (so does `report --json`). Scan
+// output is untouched.
 const out = (...args: unknown[]) => (logger.toStderr ? console.error(...args) : console.log(...args));
 
 export const logger = {

@@ -79,6 +79,14 @@ const SCHEMA = '2';
 // sources (e.g. #resolved:snapshot) are left in place and never read.
 const resolvedKey = (key: string) => `${key}#resolved:registry`;
 
+// One entry per server per config file. Keyed by tool and name alone, two
+// files defining the same name (a monorepo, a plugin next to its repo)
+// overwrote each other and read as a mutation inside one clean scan.
+export const fingerprintKey = (r: Pick<ServerScanResult, 'toolName' | 'serverName' | 'configPath'>) =>
+  JSON.stringify([r.toolName, r.serverName, path.resolve(r.configPath)]);
+// How 2.1.0 and older keyed entries.
+const nameKey = (r: Pick<ServerScanResult, 'toolName' | 'serverName'>) => `${r.toolName}:${r.serverName}`;
+
 // The registry's latest for a server whose spec has no version part (or
 // says `latest`), where latest really is what runs. Not tracked: any other
 // spec (an exact pin, a range, a tag), because the spec is part of the
@@ -288,7 +296,7 @@ function quarantineStore() {
 function flagAll(results: ServerScanResult[], severity: Finding['severity'], text: (name: string) => Pick<Finding, 'description' | 'fixRecommendation'>) {
   const out: Record<string, Finding[]> = {};
   for (const result of results) {
-    out[`${result.toolName}:${result.serverName}`] = [{ id: 'server-mutation', severity, ...text(result.serverName) }];
+    out[fingerprintKey(result)] = [{ id: 'server-mutation', severity, ...text(result.serverName) }];
   }
   return out;
 }
@@ -326,10 +334,16 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
   }
 
   for (const result of results) {
-    const key = `${result.toolName}:${result.serverName}`;
+    const key = fingerprintKey(result);
     const currentFingerprint = generateFingerprint(result);
+    // A baseline from before per-file keys is checked once, on the first
+    // scan after an upgrade, against every file that has the name. That can
+    // flag a monorepo once; skipping shared names would let a planted
+    // duplicate turn the check off.
+    const old = nameKey(result);
+    const prior = store.data[key] === undefined && store.data[old] !== undefined ? old : key;
 
-    if (store.data[key] && store.data[key] !== currentFingerprint) {
+    if (store.data[prior] && store.data[prior] !== currentFingerprint) {
       mutationFindings[key] = [{
         id: 'server-mutation',
         severity: 'MEDIUM',
@@ -340,8 +354,8 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
     }
 
     const latest = trackedLatest(result);
-    const before = latest && store.data[resolvedKey(key)];
-    if (store.data[key] && latest && before && before !== latest) {
+    const before = latest && store.data[resolvedKey(prior)];
+    if (store.data[prior] && latest && before && before !== latest) {
       // A new latest is how a rug-pull looks, so it is MEDIUM whatever the
       // bump size: a compromised publish ships as a patch. Offline scans
       // have no latest, so going offline is not a change.
@@ -357,7 +371,7 @@ export function checkFingerprints(results: ServerScanResult[]): Record<string, F
   // The store came from a version that did not sign. Its entries were just
   // compared as usual; this scan signs it. Said once, not per server.
   if (store.status === 'unsigned' && results.length > 0) {
-    const first = `${results[0].toolName}:${results[0].serverName}`;
+    const first = fingerprintKey(results[0]);
     mutationFindings[first] = [...(mutationFindings[first] ?? []), {
       id: 'server-mutation',
       severity: 'INFO',
@@ -383,7 +397,9 @@ function updateFingerprints(results: ServerScanResult[]): boolean {
     newKey = loaded.created;
 
     for (const result of results) {
-      const key = `${result.toolName}:${result.serverName}`;
+      const key = fingerprintKey(result);
+      delete fingerprints[nameKey(result)];
+      delete fingerprints[resolvedKey(nameKey(result))];
       fingerprints[key] = generateFingerprint(result);
       const latest = trackedLatest(result);
       if (latest) fingerprints[resolvedKey(key)] = latest;

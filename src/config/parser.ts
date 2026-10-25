@@ -118,11 +118,43 @@ export function parseConfig(configPath: string): McpConfig | null {
   }
 }
 
-export function extractServers(toolName: string, configPath: string, config: McpConfig | null): ResolvedServer[] {
+export function extractServers(toolName: string, configPath: string, config: McpConfig | null, follow = true): ResolvedServer[] {
   if (!config || !config.mcpServers) return [];
+
+  // Claude and Codex plugin manifests may point mcpServers at other files
+  // ("./.mcp.json") instead of inlining them. Iterating that string made
+  // one pseudo-server per character. Paths are relative to the plugin
+  // root, the parent of .claude-plugin/. Followed one level only.
+  const raw: unknown = config.mcpServers;
+  // An array of server objects is the older inline shape, not refs.
+  if (typeof raw === 'string' || (Array.isArray(raw) && raw.every(r => typeof r === 'string'))) {
+    if (!follow) return [];
+    const dir = path.dirname(configPath);
+    const root = /^\.(claude|codex)-plugin$/.test(path.basename(dir)) ? path.dirname(dir) : dir;
+    return (Array.isArray(raw) ? raw : [raw]).flatMap((ref: string) => {
+      const target = path.resolve(root, ref);
+      let nested: McpConfig | null = null;
+      try {
+        // The manifest may come from an untrusted clone: stay inside the
+        // plugin root (after symlinks), refuse FIFOs and devices, and keep
+        // the file's content out of any parse error.
+        const realRoot = fs.realpathSync(root);
+        const real = fs.realpathSync(target);
+        const rel = path.relative(realRoot, real);
+        if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) throw new Error('outside the plugin root');
+        nested = parseJsonC(readRegularFile(real)) as McpConfig;
+      } catch (_e) {}
+      // stderr, not logger.warn: --json and --ci silence the logger, and a
+      // skipped file must not pass as a clean one.
+      if (!nested) process.stderr.write(`mcp-scan: ${configPath} points mcpServers at ${ref}, which could not be read or lies outside the plugin. Its servers were not scanned.\n`);
+      return extractServers(toolName, target, nested, false);
+    });
+  }
+  if (typeof raw !== 'object') return [];
 
   const servers: ResolvedServer[] = [];
   for (const [name, entry] of Object.entries(config.mcpServers)) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
     // Normalize shapes that appear in real-world configs: args as objects
     // or with non-string values, env values that are numbers/booleans.
     // Downstream scanners assume string arrays / string values; one odd

@@ -1,21 +1,29 @@
 import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 
+// Loopback traffic never leaves the machine.
+function isLoopback(url: string): boolean {
+  let host = '';
+  try { host = new URL(url).hostname; } catch (_e) {}
+  return host === 'localhost' || host === '[::1]' || /^127(\.\d{1,3}){3}$/.test(host);
+}
+
 export function scanTransport(server: ResolvedServer, allowedDomains: string[] = []): Finding[] {
   const findings: Finding[] = [];
   
   // A simplistic check - if it's an HTTP URL in args but no headers/auth are visible
-  const hasHttpArg = server.args?.some(a => {
-    if (typeof a !== 'string') return false;
-    const isHttp = a.startsWith('http://') || a.startsWith('https://');
-    if (!isHttp) return false;
-    const isAllowed = allowedDomains.some(d => a.includes(d));
-    return isHttp && !isAllowed;
-  });
+  const httpArgs = (server.args ?? []).filter((a): a is string =>
+    typeof a === 'string' && (a.startsWith('http://') || a.startsWith('https://')) && !allowedDomains.some(d => a.includes(d)));
   const hasAuthEnv = server.env && Object.keys(server.env).some(k => k.toLowerCase().includes('token') || k.toLowerCase().includes('key'));
 
-  if (hasHttpArg && !hasAuthEnv) {
-    findings.push({
+  if (httpArgs.length && !hasAuthEnv) {
+    // Rewriting a loopback URL to https:// would break the local server.
+    findings.push(httpArgs.every(isLoopback) ? {
+      id: 'http-transport-no-auth',
+      severity: 'LOW',
+      description: `Server connects to a loopback HTTP URL with no authentication credentials in env. Any local process can reach it.`,
+      fixRecommendation: `Require a token on the local server, or run it over stdio.`,
+    } : {
       id: 'http-transport-no-auth',
       severity: 'MEDIUM',
       description: `Server connects via HTTP but no authentication credentials were found in env.`,
@@ -25,8 +33,18 @@ export function scanTransport(server: ResolvedServer, allowedDomains: string[] =
     });
   }
 
-  // Check for insecure URL-based server
-  if (server.url?.startsWith('http://')) {
+  // Check for insecure URL-based server. Loopback traffic never leaves the
+  // machine, so it is LOW, not HIGH: what is left is that any local process
+  // or a DNS-rebinding page can reach it. Rewriting it to https:// would
+  // just break a local dev server, so it is not auto-fixable.
+  if (server.url?.startsWith('http://') && isLoopback(server.url)) {
+    findings.push({
+      id: 'http-transport-no-auth',
+      severity: 'LOW',
+      description: `Server uses plain http:// on loopback (${new URL(server.url).hostname}). Traffic stays on this machine, but any local process can reach the server.`,
+      fixRecommendation: `Require a token on the local server, or run it over stdio.`,
+    });
+  } else if (server.url?.startsWith('http://')) {
     findings.push({
       id: 'http-transport-no-auth',
       severity: 'HIGH',

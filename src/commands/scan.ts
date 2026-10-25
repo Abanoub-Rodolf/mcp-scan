@@ -14,7 +14,7 @@ import { scanPromptInjection } from '../scanners/prompt-injection-scanner.js';
 import { scanToolPoisoning } from '../scanners/tool-poisoning-scanner.js';
 import { scanEnvLeak } from '../scanners/env-leak-scanner.js';
 import { scanSupplyChain, SupplyChainResult } from '../scanners/supply-chain-scanner.js';
-import { scanPackageDeep } from '../scanners/package-scanner.js';
+import { scanPackageDeep, npxPackageArg } from '../scanners/package-scanner.js';
 import { scanLicense } from '../scanners/license-scanner.js';
 import { scanDataFlow } from '../scanners/data-flow-scanner.js';
 import { scanNetworkEgress } from '../scanners/network-egress-scanner.js';
@@ -27,7 +27,7 @@ import { DetectedTool } from '../types/config.js';
 import { createSpinner } from '../utils/spinner.js';
 import { printJsonReport } from '../utils/json-reporter.js';
 import { printReport } from '../utils/reporter.js';
-import { logScan, checkFingerprints, assertBaselineKeyUsable } from '../utils/audit-logger.js';
+import { logScan, checkFingerprints, assertBaselineKeyUsable, fingerprintKey } from '../utils/audit-logger.js';
 import { recalcSeverityCounts, countTotalFindings } from '../utils/severity-tally.js';
 import { repoHint, reportHint, findReportablePackage } from '../utils/repo-hint.js';
 import { loadCustomRules, evaluateCustomRules } from '../utils/rule-engine.js';
@@ -117,7 +117,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         report.results.push({
           serverName: server.name,
           toolName: tool.name,
-          configPath: tool.configPath,
+          configPath: server.configPath,
           scanDurationMs: 0,
           findings: [{
             id: 'duplicate-server',
@@ -150,7 +150,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
       const scannerRuns: Array<[string, () => Finding[] | Promise<Finding[]>]> = [
         ['secret', () => scanSecrets(server)],
-        ['env-leak', () => scanEnvLeak(server, tool.configPath)],
+        ['env-leak', () => scanEnvLeak(server, server.configPath)],
         ['prompt-injection', () => scanPromptInjection(server)],
         ['tool-poisoning', () => scanToolPoisoning(server)],
         ['permissions', () => scanPermissions(server)],
@@ -173,8 +173,8 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       // Simple heuristic for package name from supply-chain-scanner
       let packageName = '';
       if (server.command === 'npx' || server.command === 'npm') {
-        const pkgArg = (Array.isArray(server.args) ? server.args : (server.args ? Object.values(server.args) : [])).find(a => typeof a === 'string' && !a.startsWith('-'));
-        if (pkgArg) packageName = pkgArg as string;
+        const pkgArg = npxPackageArg(server.args);
+        if (pkgArg) packageName = pkgArg;
       }
 
       // Apply policy: Blocked Packages
@@ -236,7 +236,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       const processedFindings = allFindings.map(f => {
         const isIgnored = ignoreList.includes(f.id) || 
                           ignoreList.includes(server.name) || 
-                          ignoreList.some(i => tool.configPath.endsWith(i));
+                          ignoreList.some(i => server.configPath.endsWith(i));
         
         if (isIgnored) {
           return {
@@ -253,7 +253,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       const serverResult: ServerScanResult = {
         serverName: server.name,
         toolName: tool.name,
-        configPath: tool.configPath,
+        configPath: server.configPath,
         findings,
         scanDurationMs: Date.now() - serverStartTime,
         trustScore,
@@ -283,7 +283,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   // 17. Server Fingerprinting (Mutation Check)
   const mutations = checkFingerprints(report.results);
   for (const result of report.results) {
-    const serverKey = `${result.toolName}:${result.serverName}`;
+    const serverKey = fingerprintKey(result);
     if (mutations[serverKey]) {
       result.findings.push(...mutations[serverKey]);
     }

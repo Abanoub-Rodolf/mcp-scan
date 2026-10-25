@@ -52,6 +52,52 @@ describe('Registry Scanner', () => {
     expect(findings.some(f => f.id === 'unverified-source' && f.severity === 'MEDIUM')).toBe(true);
   });
 
+  // npx --package=<pkg> <bin> runs <bin> out of <pkg>. 2.1.0 graded the
+  // bin (optifeed-mcp) instead of the package (optifeed-radar).
+  it('grades the --package= value, not the bin that follows it', async () => {
+    const findings = await scanRegistry({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', '--package=optifeed-radar@0.2.3', 'optifeed-mcp']
+    }, true);
+    const f = findings.find(x => x.id === 'unverified-source');
+    expect(f?.description).toContain("'optifeed-radar'");
+    expect(f?.description).not.toContain('optifeed-mcp');
+  });
+
+  it('recognises an official package passed with --package=', async () => {
+    const findings = await scanRegistry({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['--package=@modelcontextprotocol/server-sqlite', 'mcp-server-sqlite']
+    }, true);
+    expect(findings.map(f => f.id)).toEqual(['official-server']);
+  });
+
+  // npx installs every --package it is given, so an allowlisted first one
+  // must not shadow an unknown second one.
+  it('grades an unknown package hidden behind an official one', async () => {
+    for (const args of [
+      ['--package=@modelcontextprotocol/server-sqlite', '--package=evil-pkg', 'mcp-server-sqlite'],
+      ['-p', '@modelcontextprotocol/server-sqlite', '-p', 'evil-pkg', 'mcp-server-sqlite'],
+      ['--package', '@modelcontextprotocol/server-sqlite', '--package', 'evil-pkg', 'mcp-server-sqlite'],
+      ['-p=evil-pkg', 'mcp-server-sqlite'],
+    ]) {
+      const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx', args }, true);
+      expect(findings.find(f => f.id === 'unverified-source')?.description).toContain("'evil-pkg'");
+    }
+  });
+
+  // After the package, -p and --package belong to the server (often a
+  // port), so they must not replace the package that npx actually runs.
+  it('ignores -p and --package that come after the package', async () => {
+    for (const args of [
+      ['-y', 'evil-pkg', '-p', '8080'],
+      ['-y', 'evil-pkg', '--package=@modelcontextprotocol/server-filesystem'],
+    ]) {
+      const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx', args }, true);
+      expect(findings.find(f => f.id === 'unverified-source')?.description, args.join(' ')).toContain("'evil-pkg'");
+    }
+  });
+
   it('should flag scoped unverified sources at LOW when offline', async () => {
     const findings = await scanRegistry({
       name: 'test', toolName: 't', configPath: 'p', command: 'npx',

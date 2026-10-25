@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { parseConfig, extractServers } from '../../src/config/parser.js';
+import { logger } from '../../src/utils/logger.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -104,3 +105,105 @@ function parseJsonCContent(content: string): any {
     fs.unlinkSync(tmp);
   }
 }
+
+// Claude and Codex plugin manifests may point mcpServers at another file
+// instead of inlining it. 2.1.0 iterated the string, so "./.mcp.json"
+// became 11 servers named "0".."10" and 10 bogus duplicate-server hits.
+describe('mcpServers given as a file reference', () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-plugin-'));
+    fs.mkdirSync(path.join(root, '.claude-plugin'));
+  });
+  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  it('follows a plugin manifest path relative to the plugin root', () => {
+    const manifest = path.join(root, '.claude-plugin', 'plugin.json');
+    fs.writeFileSync(manifest, JSON.stringify({ name: 'p', mcpServers: './.mcp.json' }));
+    fs.writeFileSync(path.join(root, '.mcp.json'), JSON.stringify({ mcpServers: { docs: { command: 'node', args: ['s.js'] } } }));
+
+    const servers = extractServers('claude-code', manifest, parseConfig(manifest));
+    expect(servers.map(s => s.name)).toEqual(['docs']);
+    // Findings must point at the file that defines the server.
+    expect(servers[0].configPath).toBe(path.join(root, '.mcp.json'));
+  });
+
+  it('follows each path in an array of references', () => {
+    const manifest = path.join(root, '.claude-plugin', 'plugin.json');
+    fs.writeFileSync(manifest, JSON.stringify({ mcpServers: ['./a.json', './b.json'] }));
+    fs.writeFileSync(path.join(root, 'a.json'), JSON.stringify({ mcpServers: { a: { command: 'node' } } }));
+    fs.writeFileSync(path.join(root, 'b.json'), JSON.stringify({ mcpServers: { b: { command: 'node' } } }));
+
+    expect(extractServers('t', manifest, parseConfig(manifest)).map(s => s.name)).toEqual(['a', 'b']);
+  });
+
+  // An array of server objects is not a list of file refs: 2.1.0 scanned
+  // each entry, so dropping them would hide every server in that file.
+  it('still scans an array of server objects', () => {
+    const cfg = path.join(root, 'mcp.json');
+    fs.writeFileSync(cfg, JSON.stringify({ mcpServers: [{ command: 'node' }, { command: 'npx' }] }));
+    expect(extractServers('t', cfg, parseConfig(cfg)).map(s => s.command)).toEqual(['node', 'npx']);
+  });
+
+  // --json and --ci silence the logger, so the skip must reach stderr directly.
+  it('reports an unreadable reference on stderr even when the logger is silent', () => {
+    const manifest = path.join(root, '.claude-plugin', 'plugin.json');
+    fs.writeFileSync(manifest, JSON.stringify({ mcpServers: './.mcp.json' }));
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const was = logger.isSilent;
+    logger.isSilent = true;
+    try {
+      extractServers('t', manifest, parseConfig(manifest));
+      expect(spy.mock.calls.map(c => String(c[0])).join('')).toContain('./.mcp.json');
+    } finally {
+      logger.isSilent = was;
+      spy.mockRestore();
+    }
+  });
+
+  it('yields no pseudo-servers when the reference cannot be read', () => {
+    const manifest = path.join(root, '.claude-plugin', 'plugin.json');
+    fs.writeFileSync(manifest, JSON.stringify({ mcpServers: './.mcp.json' }));
+
+    expect(extractServers('t', manifest, parseConfig(manifest))).toEqual([]);
+  });
+
+  it('does not follow a reference that is itself a reference', () => {
+    const manifest = path.join(root, 'plugin.json');
+    fs.writeFileSync(manifest, JSON.stringify({ mcpServers: './plugin.json' }));
+
+    expect(extractServers('t', manifest, parseConfig(manifest))).toEqual([]);
+  });
+
+  // A manifest from an untrusted clone must not make the scanner read,
+  // and echo parse errors from, files outside the plugin.
+  it('does not follow a reference out of the plugin root', () => {
+    const outside = path.join(path.dirname(root), `outside-${path.basename(root)}.json`);
+    fs.writeFileSync(outside, JSON.stringify({ mcpServers: { x: { command: 'node' } } }));
+    try {
+      const manifest = path.join(root, '.claude-plugin', 'plugin.json');
+      fs.writeFileSync(manifest, JSON.stringify({ mcpServers: [`../${path.basename(outside)}`, outside] }));
+      expect(extractServers('t', manifest, parseConfig(manifest))).toEqual([]);
+    } finally {
+      fs.rmSync(outside, { force: true });
+    }
+  });
+
+  it('does not follow a symlink inside the root that leads out of it', () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-outside-'));
+    try {
+      fs.writeFileSync(path.join(outside, 'm.json'), JSON.stringify({ mcpServers: { x: { command: 'node' } } }));
+      fs.symlinkSync(path.join(outside, 'm.json'), path.join(root, '.mcp.json'));
+      const manifest = path.join(root, '.claude-plugin', 'plugin.json');
+      fs.writeFileSync(manifest, JSON.stringify({ mcpServers: './.mcp.json' }));
+      expect(extractServers('t', manifest, parseConfig(manifest))).toEqual([]);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('skips server entries that are not objects', () => {
+    const servers = extractServers('t', 'p', { mcpServers: { ok: { command: 'node' }, bad: 'oops', nil: null } } as any);
+    expect(servers.map(s => s.name)).toEqual(['ok']);
+  });
+});

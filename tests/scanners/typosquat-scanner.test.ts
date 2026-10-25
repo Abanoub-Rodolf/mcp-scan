@@ -11,6 +11,14 @@ describe('Typosquat Scanner', () => {
     expect(findings[0].id).toBe('typosquat-detection');
   });
 
+  it('grades the --package= value, not the bin after it', () => {
+    const findings = scanTyposquat({
+      name: 'test', toolName: 't', configPath: 'p', command: 'npx',
+      args: ['-y', '--package=server-githb', 'gh-mcp']
+    });
+    expect(findings.map(f => f.id)).toEqual(['typosquat-detection']);
+  });
+
   it('should flag homoglyph substitutions', () => {
     const findings = scanTyposquat({
       name: 'test', toolName: 't', configPath: 'p', command: 'npx',

@@ -16,6 +16,8 @@ import { PolicyError } from '../utils/policy-file.js';
  */
 export async function runMultiConfigReport(options: { configs?: string, html?: string, json?: boolean }) {
   const targetDir = options.configs || process.cwd();
+  // With --json stdout is the report and nothing else, so `| jq` works.
+  if (options.json) logger.toStderr = true;
   logger.brand(`Aggregating reports from: ${targetDir}`);
 
   // dot:true is required - fast-glob's default excludes dotfiles/dot-dirs,
@@ -67,6 +69,9 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
   let notMcpConfigCount = 0;
   let failedFileCount = 0;
 
+  // runScan({ silent: true }) silences the shared logger, and the human
+  // report prints through it: restore after each file or nothing prints.
+  const silent = logger.isSilent;
   for (const file of configFiles) {
     // Basic check if it looks like an MCP config
     try {
@@ -94,7 +99,10 @@ export async function runMultiConfigReport(options: { configs?: string, html?: s
       // Silently swallowed per-file failures made configs vanish from the
       // aggregated report with no way to know they were skipped.
       failedFileCount++;
+      logger.isSilent = silent;
       logger.warn(`Skipping ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      logger.isSilent = silent;
     }
   }
 

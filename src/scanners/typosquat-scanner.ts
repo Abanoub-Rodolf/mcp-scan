@@ -2,6 +2,7 @@ import { ResolvedServer } from '../types/config.js';
 import { Finding } from '../types/scan-result.js';
 import { OFFICIAL_SERVERS, TRUSTED_COMMUNITY_SERVERS } from '../data/official-servers.js';
 import { levenshteinDistance } from '../utils/levenshtein.js';
+import { npxPackageArg } from './package-scanner.js';
 
 const HOMOGLYPHS: Record<string, string[]> = {
   'a': ['\u0430', '\u03b1', '\u00e0', '\u00e1', '\u00e2'], // cyrillic a, greek alpha, accented
@@ -32,7 +33,7 @@ export function scanTyposquat(server: ResolvedServer): Finding[] {
   
   let packageName = '';
   if (server.command === 'npx' || server.command === 'npm') {
-    const pkgArg = server.args?.find(a => !a.startsWith('-'));
+    const pkgArg = npxPackageArg(server.args);
     if (pkgArg) packageName = pkgArg;
   } else {
     packageName = server.command || '';

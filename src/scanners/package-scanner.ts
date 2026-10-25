@@ -4,6 +4,7 @@ import { Severity } from '../types/severity.js';
 import { logger } from '../utils/logger.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 import { loadCveSnapshot } from '../utils/cve-snapshot.js';
+import { OFFICIAL_SERVERS, TRUSTED_COMMUNITY_SERVERS } from '../data/official-servers.js';
 import { parseCvssVector } from 'vuln-vects';
 import semver from 'semver';
 
@@ -80,6 +81,34 @@ function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: S
     case 'MEDIUM': return { id: 'known-vulnerability-medium', severity: 'MEDIUM' };
     default: return { id: 'known-vulnerability-low', severity: 'LOW' };
   }
+}
+
+/**
+ * The package an npx/npm launch runs. With `--package=<spec> <bin>` the
+ * first positional is the bin, so grading it named the wrong package.
+ * npx installs every --package it gets, so an allowlisted one must not
+ * shadow an unknown one: the first package not on an allowlist wins.
+ */
+export function npxPackageArg(args: unknown): string | undefined {
+  const list = (Array.isArray(args) ? args : args && typeof args === 'object' ? Object.values(args) : [])
+    .filter((a): a is string => typeof a === 'string');
+  // npx options end at the first positional; anything after it is the
+  // server's own args (-p is often a port there).
+  const pkgs: string[] = [];
+  let first: string | undefined;
+  for (let i = 0; i < list.length && first === undefined; i++) {
+    const a = list[i];
+    if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
+    else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
+    else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
+    else if (!a.startsWith('-')) first = a;
+  }
+  if (pkgs.length === 0) return first;
+  const known = (spec: string) => {
+    const { name } = parsePackageSpec(spec);
+    return OFFICIAL_SERVERS.has(name) || TRUSTED_COMMUNITY_SERVERS.has(name);
+  };
+  return pkgs.find(p => !known(p)) ?? pkgs[0];
 }
 
 /**
@@ -225,8 +254,8 @@ export async function scanPackageDeep(server: ResolvedServer, offline: boolean =
 
   let packageSpec = '';
   if (server.command === 'npx' || server.command === 'npm') {
-    const pkgArg = (Array.isArray(server.args) ? server.args : (server.args ? Object.values(server.args) : [])).find(a => typeof a === 'string' && !a.startsWith('-'));
-    if (pkgArg) packageSpec = pkgArg as string;
+    const pkgArg = npxPackageArg(server.args);
+    if (pkgArg) packageSpec = pkgArg;
   }
 
   if (!packageSpec) return findings;
