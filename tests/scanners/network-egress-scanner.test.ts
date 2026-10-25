@@ -144,4 +144,13 @@ describe('Network Egress Scanner', () => {
     expect(findings.find(f => f.id === 'network-egress-cdn')).toBeDefined();
     expect(findings.find(f => f.id === 'network-egress-cdn')?.severity).toBe('INFO');
   });
+
+  it('reads URL schemes in any case', () => {
+    const upper = scanNetworkEgress({ name: 'u', toolName: 't', configPath: '/t', args: ['HTTPS://api.openai.com/v1/models'] });
+    const lower = scanNetworkEgress({ name: 'u', toolName: 't', configPath: '/t', args: ['https://api.openai.com/v1/models'] });
+    expect(upper.map(f => f.id)).toEqual(lower.map(f => f.id));
+    expect(upper.length).toBeGreaterThan(0);
+    const port = scanNetworkEgress({ name: 'u', toolName: 't', configPath: '/t', args: ['WSS://evil.example.com:9999/x'] });
+    expect(port.some(f => f.id === 'network-egress-non-standard-port')).toBe(true);
+  });
 });

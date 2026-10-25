@@ -14,7 +14,7 @@ import { scanPromptInjection } from '../scanners/prompt-injection-scanner.js';
 import { scanToolPoisoning } from '../scanners/tool-poisoning-scanner.js';
 import { scanEnvLeak } from '../scanners/env-leak-scanner.js';
 import { scanSupplyChain, SupplyChainResult } from '../scanners/supply-chain-scanner.js';
-import { scanPackageDeep, npxPackageArg } from '../scanners/package-scanner.js';
+import { scanPackageDeep, npxPackageArg, npxPackageCandidates, parsePackageSpec } from '../scanners/package-scanner.js';
 import { scanLicense } from '../scanners/license-scanner.js';
 import { scanDataFlow } from '../scanners/data-flow-scanner.js';
 import { scanNetworkEgress } from '../scanners/network-egress-scanner.js';
@@ -172,13 +172,26 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
       // Simple heuristic for package name from supply-chain-scanner
       let packageName = '';
+      let candidates: string[] = [];
       if (server.command === 'npx' || server.command === 'npm') {
-        const pkgArg = npxPackageArg(server.args);
+        const pkgArg = npxPackageArg(server.args, server.command);
         if (pkgArg) packageName = pkgArg;
+        candidates = npxPackageCandidates(server.args, server.command);
+      }
+
+      // An unknown flag can swallow the package as its value, leaving several
+      // candidates. The scanners above graded the riskiest one; grade the
+      // rest too so a flag value can never hide the package that runs.
+      for (const cand of candidates.filter(c => c !== packageName)) {
+        const alt = { ...server, command: 'npx', args: [cand] };
+        const seen = new Set(allFindings.map(f => `${f.id}|${f.description}`));
+        for (const [name, fn] of [['registry', () => scanRegistry(alt, options.offline)], ['typosquat', () => scanTyposquat(alt)]] as Array<[string, () => Finding[] | Promise<Finding[]>]>) {
+          allFindings.push(...(await runScanner(name, fn)).filter(f => !seen.has(`${f.id}|${f.description}`)));
+        }
       }
 
       // Apply policy: Blocked Packages
-      if (policy && policy.blockedPackages && (policy.blockedPackages.includes(packageName) || policy.blockedPackages.includes(server.name))) {
+      if (policy && policy.blockedPackages && (candidates.some(c => policy.blockedPackages!.includes(c) || policy.blockedPackages!.includes(parsePackageSpec(c).name)) || policy.blockedPackages.includes(parsePackageSpec(packageName).name) || policy.blockedPackages.includes(packageName) || policy.blockedPackages.includes(server.name))) {
         allFindings.push({
           id: 'blocked-package-policy',
           severity: 'CRITICAL',
@@ -218,6 +231,17 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         return result.findings;
       });
       allFindings.push(...supplyChainResult);
+
+      // Same for the deeper package checks on the non-primary candidates.
+      for (const cand of candidates.filter(c => c !== packageName)) {
+        const alt = { ...server, command: 'npx', args: [cand] };
+        const seen = new Set(allFindings.map(f => `${f.id}|${f.description}`));
+        const extra = [
+          ...await runScanner('package', () => scanPackageDeep(alt, options.offline)),
+          ...await runScanner('supply-chain', async () => (await scanSupplyChain(alt, options.offline)).findings),
+        ];
+        allFindings.push(...extra.filter(f => !seen.has(`${f.id}|${f.description}`)));
+      }
       
       const licenseFindings = await runScanner('license', () => scanLicense(metadata));
       allFindings.push(...licenseFindings);
