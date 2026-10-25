@@ -35,9 +35,9 @@ export function applyAutoFix(finding: Finding, server: RawMcpServerEntry): boole
       let argsChanged = false;
       if (Array.isArray(server.args)) {
         server.args = server.args.map(arg => {
-          if (typeof arg === 'string' && arg.startsWith('http://')) {
+          if (typeof arg === 'string' && /^http:\/\//i.test(arg)) {
             argsChanged = true;
-            return arg.replace('http://', 'https://');
+            return arg.replace(/^http:\/\//i, 'https://');
           }
           return arg;
         });
@@ -45,9 +45,9 @@ export function applyAutoFix(finding: Finding, server: RawMcpServerEntry): boole
       // Attempt BOTH surfaces independently: a server can carry http://
       // in an arg and in its url at the same time.
       const url = server.url;
-      const urlChanged = typeof url === 'string' && url.startsWith('http://');
+      const urlChanged = typeof url === 'string' && /^http:\/\//i.test(url);
       if (urlChanged) {
-        server.url = url.replace('http://', 'https://');
+        server.url = url.replace(/^http:\/\//i, 'https://');
       }
       changed = argsChanged || urlChanged;
       break;
@@ -68,17 +68,17 @@ export function applyAutoFix(finding: Finding, server: RawMcpServerEntry): boole
       let argsChanged = false;
       if (Array.isArray(server.args)) {
         server.args = server.args.map(arg => {
-          if (typeof arg === 'string' && arg.startsWith('ws://')) {
+          if (typeof arg === 'string' && /^ws:\/\//i.test(arg)) {
             argsChanged = true;
-            return arg.replace('ws://', 'wss://');
+            return arg.replace(/^ws:\/\//i, 'wss://');
           }
           return arg;
         });
       }
       const url = server.url;
-      const urlChanged = typeof url === 'string' && url.startsWith('ws://');
+      const urlChanged = typeof url === 'string' && /^ws:\/\//i.test(url);
       if (urlChanged) {
-        server.url = url.replace('ws://', 'wss://');
+        server.url = url.replace(/^ws:\/\//i, 'wss://');
       }
       changed = argsChanged || urlChanged;
       break;

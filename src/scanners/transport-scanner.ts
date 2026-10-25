@@ -13,7 +13,7 @@ export function scanTransport(server: ResolvedServer, allowedDomains: string[] =
   
   // A simplistic check - if it's an HTTP URL in args but no headers/auth are visible
   const httpArgs = (server.args ?? []).filter((a): a is string =>
-    typeof a === 'string' && (a.startsWith('http://') || a.startsWith('https://')) && !allowedDomains.some(d => a.includes(d)));
+    typeof a === 'string' && /^https?:\/\//i.test(a) && !allowedDomains.some(d => a.includes(d)));
   const hasAuthEnv = server.env && Object.keys(server.env).some(k => k.toLowerCase().includes('token') || k.toLowerCase().includes('key'));
 
   if (httpArgs.length && !hasAuthEnv) {
@@ -37,14 +37,16 @@ export function scanTransport(server: ResolvedServer, allowedDomains: string[] =
   // machine, so it is LOW, not HIGH: what is left is that any local process
   // or a DNS-rebinding page can reach it. Rewriting it to https:// would
   // just break a local dev server, so it is not auto-fixable.
-  if (server.url?.startsWith('http://') && isLoopback(server.url)) {
+  // Schemes are case-insensitive: HTTP:// is just as plain.
+  const plainHttp = /^http:\/\//i.test(server.url ?? '');
+  if (plainHttp && isLoopback(server.url!)) {
     findings.push({
       id: 'http-transport-no-auth',
       severity: 'LOW',
-      description: `Server uses plain http:// on loopback (${new URL(server.url).hostname}). Traffic stays on this machine, but any local process can reach the server.`,
+      description: `Server uses plain http:// on loopback (${new URL(server.url!).hostname}). Traffic stays on this machine, but any local process can reach the server.`,
       fixRecommendation: `Require a token on the local server, or run it over stdio.`,
     });
-  } else if (server.url?.startsWith('http://')) {
+  } else if (plainHttp) {
     findings.push({
       id: 'http-transport-no-auth',
       severity: 'HIGH',
@@ -68,8 +70,8 @@ export function scanTransport(server: ResolvedServer, allowedDomains: string[] =
   }
 
   // Check for explicit ws:// (unencrypted WebSocket)
-  const hasInsecureWs = server.args?.some(a => typeof a === 'string' && a.startsWith('ws://'));
-  if (hasInsecureWs || server.url?.startsWith('ws://')) {
+  const hasInsecureWs = server.args?.some(a => typeof a === 'string' && /^ws:\/\//i.test(a));
+  if (hasInsecureWs || /^ws:\/\//i.test(server.url ?? '')) {
     findings.push({
       id: 'insecure-transport',
       severity: 'HIGH',
