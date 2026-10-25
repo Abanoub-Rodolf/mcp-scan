@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
-- `npm exec <pkg>` and `npm x <pkg>` are graded on the package, not on `exec`/`x`, and npx options that take a value (`--registry`, `--cache`, `--userconfig`, `--prefix`, `-c`/`--call`, `-w`/`--workspace`) no longer have that value graded as the package. Both sent the wrong name to the known-malicious, typosquat, CVE, registry and supply-chain checks.
+- `npm exec <pkg>` and `npm x <pkg>` are graded on the package, not on `exec`/`x`, also with npm flags before the subcommand (`npm --yes exec <pkg>`), and npx options that take a value (`--registry`, `--cache`, `--userconfig`, `--prefix`, `-w`/`--workspace`, `--loglevel`, `--before`, `--otp`, `--tag`, `--node-options`, `--script-shell`, `--shell`, `--proxy`, `--https-proxy`, `--cafile`, `--include`) no longer have that value graded as the package. The post-scan report hint uses the same parse. Both sent the wrong name to the known-malicious, typosquat, CVE, registry and supply-chain checks.
 - `HTTP://`, `Http://` and `WS://` URLs (any case) are reported by `http-transport-no-auth` and `insecure-transport`, and `fix` upgrades them. Schemes are case-insensitive, but the checks only matched lowercase, so these got no finding at all.
 
 ## [2.2.0] - 2026-10-25
