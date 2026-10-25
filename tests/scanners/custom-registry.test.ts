@@ -154,8 +154,15 @@ describe('custom npm registry', () => {
     expect(custom(await scan(args, undefined, command))).toHaveLength(1);
   });
 
-  it('does not treat --prefix as a config file', async () => {
-    expect(custom(await scan(['--prefix', '/x', 'pkg'], { npm_config_prefix: '/usr/local' }))).toHaveLength(0);
+  it('flags --prefix LOW, naming the npmrc it selects', async () => {
+    const f = custom(await scan(['--prefix', '/x', 'pkg']));
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('LOW');
+    expect(f[0].description).toContain('/x/etc/npmrc');
+  });
+
+  it('stops at the package after a known boolean like --timing', async () => {
+    expect(custom(await scan(['--timing', 'some-mcp', '--registry=http://own.example']))).toHaveLength(0);
   });
 
   it('applies the prefix rule to flags only, not env names', async () => {
@@ -167,5 +174,18 @@ describe('custom npm registry', () => {
     const fs = await scan(['--@acme:registry=https://acme.example', 'evil-pkg']);
     expect(custom(fs)).toHaveLength(1);
     expect(fs.some(f => f.id === 'unverified-source')).toBe(true);
+  });
+
+  it.each([['--audit'], ['-yq']])('stops at the package after boolean %s', async (flag) => {
+    expect(custom(await scan([flag, 'pkg', '--registry', 'https://c.io']))).toHaveLength(0);
+  });
+
+  it('reads abbreviated config flags but not abbreviated env keys', async () => {
+    expect(custom(await scan(['--userconf=./x', 'pkg']))).toHaveLength(1);
+    expect(custom(await scan(['pkg'], { npm_config_userconf: './x' }))).toHaveLength(0);
+  });
+
+  it('matches the command case-insensitively', async () => {
+    expect(custom(await scan(['--registry=https://c.io', 'pkg'], undefined, 'NPX.CMD'))).toHaveLength(1);
   });
 });
