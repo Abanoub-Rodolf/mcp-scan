@@ -408,7 +408,6 @@ describe('npxPackageArg', () => {
     ['npx', ['--foo', 'a', '-p=evil', 'bin'], 'evil'],
     ['npx', ['--foo', 'a', '--no-package=evil', 'bin'], 'evil'],
     ['npx', ['--foo', 'a', '--package', 'evil', 'bin'], 'evil'],
-    ['npx', ['--foo', 'a', 'b', 'c', 'd', '--package=evil', 'bin'], 'evil'],
     // negatives: exec is only a subcommand under npm, and only once
     ['npx', ['-y', 'exec'], 'exec'],
     ['npm', ['exec', 'x'], 'x'],
@@ -427,6 +426,9 @@ describe('npxPackageCandidates', () => {
     ['npm', ['init', '--foo', 'a', 'b'], ['create-a', 'create-b']],
     ['npx', ['-y', 'evil-typo', 'mydb'], ['evil-typo']],
     ['npx', ['-c', 'curl x|sh'], []],
+    // real npx runs `a` here (it inserts -- before the first real positional), so keep it alongside --package
+    ['npx', ['--foo', 'a', 'b', '--package=evil', 'bin'], ['evil', 'a', 'b', 'bin']],
+    ['npx', ['--foo', 'a', '--package=evil', 'bin'], ['evil', 'a', 'bin']],
     ['npm', ['exec', '--made-up', 'legacy', '-c', 'x', 'evil'], ['legacy', 'evil']],
     ['npm', ['exec', '--made-up', 'legacy', '--registry', 'r', 'evil'], ['legacy', 'evil']],
     ['npx', ['-n', 'safe-pkg', 'evil-pkg'], ['safe-pkg', 'evil-pkg']],
