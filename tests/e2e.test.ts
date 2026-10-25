@@ -136,4 +136,20 @@ describe('E2E Scan', () => {
       expect(fs.readdirSync(realHome).sort()).toEqual(before);
     }
   });
+  // A plugin manifest that points mcpServers at ./.mcp.json: results and
+  // file checks must name the file that defines the server.
+  it('reports a referenced server against the file that defines it', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-e2e-plugin-'));
+    try {
+      fs.mkdirSync(path.join(root, '.claude-plugin'));
+      const manifest = path.join(root, '.claude-plugin', 'plugin.json');
+      fs.writeFileSync(manifest, JSON.stringify({ name: 'p', mcpServers: './.mcp.json' }));
+      fs.writeFileSync(path.join(root, '.mcp.json'), JSON.stringify({ mcpServers: { docs: { command: 'node', args: ['s.js'] } } }));
+
+      const report = await runScan({ config: manifest, silent: true, offline: true });
+      expect(report.results.map(r => [r.serverName, r.configPath])).toEqual([['docs', path.join(root, '.mcp.json')]]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

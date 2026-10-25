@@ -117,7 +117,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         report.results.push({
           serverName: server.name,
           toolName: tool.name,
-          configPath: tool.configPath,
+          configPath: server.configPath,
           scanDurationMs: 0,
           findings: [{
             id: 'duplicate-server',
@@ -150,7 +150,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
       const scannerRuns: Array<[string, () => Finding[] | Promise<Finding[]>]> = [
         ['secret', () => scanSecrets(server)],
-        ['env-leak', () => scanEnvLeak(server, tool.configPath)],
+        ['env-leak', () => scanEnvLeak(server, server.configPath)],
         ['prompt-injection', () => scanPromptInjection(server)],
         ['tool-poisoning', () => scanToolPoisoning(server)],
         ['permissions', () => scanPermissions(server)],
@@ -236,7 +236,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       const processedFindings = allFindings.map(f => {
         const isIgnored = ignoreList.includes(f.id) || 
                           ignoreList.includes(server.name) || 
-                          ignoreList.some(i => tool.configPath.endsWith(i));
+                          ignoreList.some(i => server.configPath.endsWith(i));
         
         if (isIgnored) {
           return {
@@ -253,7 +253,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       const serverResult: ServerScanResult = {
         serverName: server.name,
         toolName: tool.name,
-        configPath: tool.configPath,
+        configPath: server.configPath,
         findings,
         scanDurationMs: Date.now() - serverStartTime,
         trustScore,
