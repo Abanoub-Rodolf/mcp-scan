@@ -183,7 +183,10 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       // candidate is graded against the same registry as the real launch.
       const args = Array.isArray(server.args) ? server.args.filter((x): x is string => typeof x === 'string') : [];
       const where: string[] = [];
+      // npx hands everything after the package to the server, so stop there.
+      const firstPkg = new Set([packageName, ...candidates]);
       for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--' || (cmd === 'npx' && firstPkg.has(args[i]))) break;
         const m = /^--(@[^:=]+:registry|[a-z]+)(=|$)/i.exec(args[i]);
         if (!m || !/^@|^reg|^userc|^globalc|^prefi/i.test(m[1])) continue;
         where.push(args[i]);
