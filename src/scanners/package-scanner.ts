@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js';
 import { fetchWithTimeout } from '../utils/fetch-with-timeout.js';
 import { loadCveSnapshot } from '../utils/cve-snapshot.js';
 import { OFFICIAL_SERVERS, TRUSTED_COMMUNITY_SERVERS } from '../data/official-servers.js';
+import { KNOWN_MALICIOUS_PACKAGES } from '../data/known-malicious.js';
 import { parseCvssVector } from 'vuln-vects';
 import semver from 'semver';
 
@@ -87,7 +88,31 @@ function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: S
 const NPX_VALUE_OPTS = new Set([
   '--registry', '--cache', '--userconfig', '--prefix', '-w', '--workspace', '--loglevel', '--before',
   '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell', '-C', '--globalconfig', '--omit', '--fetch-timeout', '--fetch-retries',
+  '--scope', '--install-strategy', '--min-release-age', '--audit-level', '--ca', '--cert', '--key', '--cpu', '--os', '--libc',
+  '--noproxy', '--local-address', '--user-agent', '--maxsockets', '--fetch-retry-mintimeout', '--fetch-retry-maxtimeout',
 ]);
+// Flags that take no value. A dash flag in neither set might take one, so the
+// package is then ambiguous and the riskiest candidate is graded.
+const NPX_BOOL_OPTS = new Set([
+  '-y', '--yes', '--no', '-n', '--no-install', '-q', '--quiet', '--silent', '--verbose', '-d', '-f', '--force', '--offline',
+  '--prefer-online', '--prefer-offline', '--no-audit', '--no-fund', '--ignore-scripts', '--legacy-peer-deps', '--json',
+  '-g', '--global', '--workspaces', '-ws', '--include-workspace-root', '--if-present', '--dry-run', '--no-update-notifier',
+  '--ignore-existing', '--no-progress', '--foreground-scripts', '--strict-peer-deps',
+]);
+// npm subcommands that run a package; every other npm subcommand runs none.
+const NPM_EXEC_SUBS = new Set(['exec', 'x']);
+const NPM_CREATE_SUBS = new Set(['init', 'create']);
+
+/** npm init/create <spec> runs create-<name>; scoped @s -> @s/create, @s/n -> @s/create-n. */
+function createPackage(spec: string): string {
+  const { name, versionSpec } = parsePackageSpec(spec);
+  const v = versionSpec ? `@${versionSpec}` : '';
+  if (name.startsWith('@')) {
+    const [scope, rest] = name.split('/');
+    return `${scope}/${rest ? `create-${rest}` : 'create'}${v}`;
+  }
+  return `create-${name}${v}`;
+}
 
 /**
  * The package an npx/npm launch runs. With `--package=<spec> <bin>` the
@@ -103,10 +128,18 @@ export function npxPackageArg(args: unknown, command?: string): string | undefin
   // positional may be the exec/x subcommand, after any global flags.
   const pkgs: string[] = [];
   let first: string | undefined;
+  let rest: string | undefined;
+  let ambiguous = false;
   let sub = command !== 'npm';
-  for (let i = 0; i < list.length && first === undefined; i++) {
+  let create = false;
+  for (let i = 0; i < list.length && rest === undefined; i++) {
     const a = list[i];
-    if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
+    if (first !== undefined) {
+      // Past the package: options are the server's own. Only look one more
+      // positional ahead when an unknown flag made the package ambiguous.
+      if (!ambiguous) break;
+      if (!a.startsWith('-')) rest = a;
+    } else if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
     else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
     else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
     // -c runs a command string, not a package: the AST scanner grades it,
@@ -114,10 +147,27 @@ export function npxPackageArg(args: unknown, command?: string): string | undefin
     else if (a === '-c' || a === '--call') i++;
     else if (a.startsWith('--call=') || a.startsWith('-c=')) continue;
     else if (NPX_VALUE_OPTS.has(a) || /^--@[^:]+:registry$/.test(a)) i++;
-    else if (!a.startsWith('-')) {
-      if (!sub && (a === 'exec' || a === 'x')) sub = true;
-      else first = a;
-    }
+    else if (a.startsWith('-')) {
+      if (!a.includes('=') && !NPX_BOOL_OPTS.has(a)) ambiguous = true;
+    } else if (!sub) {
+      if (NPM_EXEC_SUBS.has(a)) sub = true;
+      else if (NPM_CREATE_SUBS.has(a)) sub = create = true;
+      else return undefined;
+    } else first = a;
+  }
+  if (create && first !== undefined) first = createPackage(first);
+  // An unknown flag may or may not take a value, so the package is the first
+  // or the second positional: grade the riskier one, never let a flag value
+  // hide an unknown package.
+  if (pkgs.length === 0 && ambiguous && rest !== undefined && first !== undefined) {
+    const ok = (c: string) => validatePackageName(c).valid;
+    const cands = [first, rest].filter(ok);
+    const bad = cands.find(c => KNOWN_MALICIOUS_PACKAGES.has(parsePackageSpec(c).name));
+    const unknown = cands.find(c => {
+      const { name } = parsePackageSpec(c);
+      return !OFFICIAL_SERVERS.has(name) && !TRUSTED_COMMUNITY_SERVERS.has(name);
+    });
+    return bad ?? (ok(first) && unknown === first ? first : unknown) ?? first;
   }
   if (pkgs.length === 0) return first;
   const known = (spec: string) => {

