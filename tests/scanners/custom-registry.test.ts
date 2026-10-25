@@ -188,4 +188,9 @@ describe('custom npm registry', () => {
   it('matches the command case-insensitively', async () => {
     expect(custom(await scan(['--registry=https://c.io', 'pkg'], undefined, 'NPX.CMD'))).toHaveLength(1);
   });
+
+  it('needs an unambiguous prefix for globalconfig', async () => {
+    expect(custom(await scan(['--globa=/x', 'pkg']))).toHaveLength(0);
+    expect(custom(await scan(['--globalc=/x', 'pkg']))).toHaveLength(1);
+  });
 });
