@@ -136,4 +136,36 @@ describe('custom npm registry', () => {
       env: { npm_config_registry: 7 } as unknown as Record<string, string> }, true);
     expect(custom(fs)).toHaveLength(1);
   });
+
+  it.each([
+    ['--loglevel', 'warn', '--registry', 'http://e.example', 'pkg'],
+    ['--fetch-retries', '2', '--registry=http://e.example', 'pkg'],
+    ['--foo', 'bar', '--registry', 'http://e.example', '@modelcontextprotocol/server-everything'],
+  ])('reads a --registry after another valued flag: %j', async (...args) => {
+    expect(custom(await scan(args))[0]?.severity).toBe('HIGH');
+  });
+
+  it('still stops at the package after a consumed --registry value', async () => {
+    expect(custom(await scan(['--registry', 'https://registry.npmjs.org', 'pkg', '--registry', 'http://own.example']))).toHaveLength(0);
+  });
+
+  it.each(['/usr/local/bin/npx', 'npx.cmd', 'C:\\nodejs\\npm.cmd'])('normalizes the %s command', async (command) => {
+    const args = command.includes('npm') ? ['exec', '--registry=http://e.example', 'pkg'] : ['-y', '--registry=http://e.example', 'pkg'];
+    expect(custom(await scan(args, undefined, command))).toHaveLength(1);
+  });
+
+  it('does not treat --prefix as a config file', async () => {
+    expect(custom(await scan(['--prefix', '/x', 'pkg'], { npm_config_prefix: '/usr/local' }))).toHaveLength(0);
+  });
+
+  it('applies the prefix rule to flags only, not env names', async () => {
+    expect(custom(await scan(['pkg'], { npm_config_reg: 'http://e.example' }))).toHaveLength(0);
+    expect(custom(await scan(['pkg'], { NPM_CONFIG_REGISTRY: 'http://e.example' }))).toHaveLength(1);
+  });
+
+  it('keeps the npm checks when only another scope is overridden', async () => {
+    const fs = await scan(['--@acme:registry=https://acme.example', 'evil-pkg']);
+    expect(custom(fs)).toHaveLength(1);
+    expect(fs.some(f => f.id === 'unverified-source')).toBe(true);
+  });
 });
