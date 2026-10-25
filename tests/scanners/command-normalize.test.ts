@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { scanTyposquat } from '../../src/scanners/typosquat-scanner.js';
 import { scanSupplyChain } from '../../src/scanners/supply-chain-scanner.js';
 import { scanPackageDeep } from '../../src/scanners/package-scanner.js';
+import { scanRegistry } from '../../src/scanners/registry-scanner.js';
 
 const srv = (command: string, args: string[]) => ({ name: 'test', toolName: 't', configPath: 'p', command, args });
 // npx.cmd on Windows, full paths, and case-insensitive filesystems all run npx.
@@ -30,5 +31,11 @@ describe('launcher command forms', () => {
     const want = await scanPackageDeep(srv('npx', ['-y', 'mcp-server-git']), true);
     expect(want.length).toBeGreaterThan(0);
     expect(await scanPackageDeep(srv(command, pkgArgs), true)).toEqual(want);
+  });
+
+  // A local binary has no registry artifact, so its file name earns no trust.
+  it('grants no allowlist trust to a path-launched binary', async () => {
+    const ids = (await scanRegistry(srv('/x/redis-mcp', []), true)).map(f => f.id);
+    expect(ids).not.toContain('trusted-community-server');
   });
 });
