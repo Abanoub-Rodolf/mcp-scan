@@ -124,7 +124,7 @@ export function npxPackageArg(args: unknown, command?: string): string | undefin
     const { name } = parsePackageSpec(spec);
     return OFFICIAL_SERVERS.has(name) || TRUSTED_COMMUNITY_SERVERS.has(name);
   };
-  return pkgs.find(p => !known(p)) ?? pkgs[0];
+  return pkgs.find(p => !known(p)) ?? call ?? pkgs[0];
 }
 
 /**
