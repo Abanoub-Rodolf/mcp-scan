@@ -113,6 +113,7 @@ export function npxPackageArg(args: unknown, command?: string): string | undefin
     // -c runs a command string instead of a package: grade that string,
     // unless a --package comes with it.
     else if ((a === '-c' || a === '--call') && i + 1 < list.length) call = list[++i];
+    else if (a.startsWith('--call=') || a.startsWith('-c=')) call = a.slice(a.indexOf('=') + 1);
     else if (NPX_VALUE_OPTS.has(a) || /^--@[^:]+:registry$/.test(a)) i++;
     else if (!a.startsWith('-')) {
       if (!sub && (a === 'exec' || a === 'x')) sub = true;

