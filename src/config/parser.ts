@@ -118,11 +118,31 @@ export function parseConfig(configPath: string): McpConfig | null {
   }
 }
 
-export function extractServers(toolName: string, configPath: string, config: McpConfig | null): ResolvedServer[] {
+export function extractServers(toolName: string, configPath: string, config: McpConfig | null, follow = true): ResolvedServer[] {
   if (!config || !config.mcpServers) return [];
+
+  // Claude and Codex plugin manifests may point mcpServers at other files
+  // ("./.mcp.json") instead of inlining them. Iterating that string made
+  // one pseudo-server per character. Paths are relative to the plugin
+  // root, the parent of .claude-plugin/. Followed one level only.
+  const raw: unknown = config.mcpServers;
+  if (typeof raw === 'string' || Array.isArray(raw)) {
+    if (!follow) return [];
+    const dir = path.dirname(configPath);
+    const root = /^\.(claude|codex)-plugin$/.test(path.basename(dir)) ? path.dirname(dir) : dir;
+    return (Array.isArray(raw) ? raw : [raw]).flatMap(ref => {
+      if (typeof ref !== 'string') return [];
+      const target = path.resolve(root, ref);
+      const nested = parseConfig(target);
+      if (!nested) logger.warn(`${configPath} points mcpServers at ${ref}, which could not be read. Its servers were not scanned.`);
+      return extractServers(toolName, target, nested, false);
+    });
+  }
+  if (typeof raw !== 'object') return [];
 
   const servers: ResolvedServer[] = [];
   for (const [name, entry] of Object.entries(config.mcpServers)) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
     // Normalize shapes that appear in real-world configs: args as objects
     // or with non-string values, env values that are numbers/booleans.
     // Downstream scanners assume string arrays / string values; one odd
