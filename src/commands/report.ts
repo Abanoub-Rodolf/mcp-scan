@@ -16,6 +16,8 @@ import { PolicyError } from '../utils/policy-file.js';
  */
 export async function runMultiConfigReport(options: { configs?: string, html?: string, json?: boolean }) {
   const targetDir = options.configs || process.cwd();
+  // With --json stdout is the report and nothing else, so `| jq` works.
+  if (options.json) logger.toStderr = true;
   logger.brand(`Aggregating reports from: ${targetDir}`);
 
   // dot:true is required - fast-glob's default excludes dotfiles/dot-dirs,
