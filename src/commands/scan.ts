@@ -5,7 +5,7 @@ import { detectTools } from '../config/detector.js';
 import { parseConfig, extractServers, loadPolicy, loadIgnoreList } from '../config/parser.js';
 import { scanSecrets } from '../scanners/secret-scanner.js';
 import { scanPermissions } from '../scanners/permission-scanner.js';
-import { scanRegistry } from '../scanners/registry-scanner.js';
+import { scanRegistry, isRegistryKey, configKey } from '../scanners/registry-scanner.js';
 import { scanTyposquat } from '../scanners/typosquat-scanner.js';
 import { scanTransport } from '../scanners/transport-scanner.js';
 import { scanConfig } from '../scanners/config-scanner.js';
@@ -14,7 +14,7 @@ import { scanPromptInjection } from '../scanners/prompt-injection-scanner.js';
 import { scanToolPoisoning } from '../scanners/tool-poisoning-scanner.js';
 import { scanEnvLeak } from '../scanners/env-leak-scanner.js';
 import { scanSupplyChain, SupplyChainResult } from '../scanners/supply-chain-scanner.js';
-import { scanPackageDeep, npxPackageArg, npxPackageCandidates, parsePackageSpec } from '../scanners/package-scanner.js';
+import { scanPackageDeep, npxPackageArg, npxPackageCandidates, parsePackageSpec, launcher, NPX_BOOL_OPTS } from '../scanners/package-scanner.js';
 import { scanLicense } from '../scanners/license-scanner.js';
 import { scanDataFlow } from '../scanners/data-flow-scanner.js';
 import { scanNetworkEgress } from '../scanners/network-egress-scanner.js';
@@ -173,17 +173,39 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       // Simple heuristic for package name from supply-chain-scanner
       let packageName = '';
       let candidates: string[] = [];
-      if (server.command === 'npx' || server.command === 'npm') {
+      const cmd = launcher(server.command);
+      if (cmd === 'npx' || cmd === 'npm') {
         const pkgArg = npxPackageArg(server.args, server.command);
         if (pkgArg) packageName = pkgArg;
         candidates = npxPackageCandidates(server.args, server.command);
+      }
+      // Keep the flags that pick where npm installs from, so an alternate
+      // candidate is graded against the same registry as the real launch.
+      const args = Array.isArray(server.args) ? server.args.filter((x): x is string => typeof x === 'string') : [];
+      const where: string[] = [];
+      // npx hands everything after the package to the server, so stop at the
+      // first positional that isn't a flag's value (npx-cli's own rule).
+      let valued = false;
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === '--') break;
+        if (!a.startsWith('-')) {
+          if (cmd === 'npx' && !valued) break;
+          valued = false;
+          continue;
+        }
+        valued = !a.includes('=') && !NPX_BOOL_OPTS.has(a) && !a.startsWith('--no-') && !/^-[a-z]{2,}$/i.test(a);
+        const m = /^--([^=]+)(=|$)/.exec(a);
+        if (!m || !(isRegistryKey(m[1]) || configKey(m[1]))) continue;
+        where.push(a);
+        if (!m[2] && args[i + 1] !== undefined && !args[i + 1].startsWith('-')) { where.push(args[++i]); valued = false; }
       }
 
       // An unknown flag can swallow the package as its value, leaving several
       // candidates. The scanners above graded the riskiest one; grade the
       // rest too so a flag value can never hide the package that runs.
       for (const cand of candidates.filter(c => c !== packageName)) {
-        const alt = { ...server, command: 'npx', args: [cand] };
+        const alt = { ...server, command: 'npx', args: [...where, cand] };
         const seen = new Set(allFindings.map(f => `${f.id}|${f.description}`));
         for (const [name, fn] of [['registry', () => scanRegistry(alt, options.offline)], ['typosquat', () => scanTyposquat(alt)]] as Array<[string, () => Finding[] | Promise<Finding[]>]>) {
           allFindings.push(...(await runScanner(name, fn)).filter(f => !seen.has(`${f.id}|${f.description}`)));
@@ -234,7 +256,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
       // Same for the deeper package checks on the non-primary candidates.
       for (const cand of candidates.filter(c => c !== packageName)) {
-        const alt = { ...server, command: 'npx', args: [cand] };
+        const alt = { ...server, command: 'npx', args: [...where, cand] };
         const seen = new Set(allFindings.map(f => `${f.id}|${f.description}`));
         const extra = [
           ...await runScanner('package', () => scanPackageDeep(alt, options.offline)),

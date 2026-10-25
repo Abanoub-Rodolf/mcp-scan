@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runDoctor } from '../../src/commands/doctor.js';
 import { fetchWithTimeout } from '../../src/utils/fetch-with-timeout.js';
 import { logger } from '../../src/utils/logger.js';
+import { detectTools } from '../../src/config/detector.js';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 vi.mock('../../src/config/detector.js', () => ({ detectTools: vi.fn().mockResolvedValue([]) }));
 vi.mock('../../src/utils/fetch-with-timeout.js', () => ({ fetchWithTimeout: vi.fn() }));
@@ -44,5 +48,23 @@ describe('doctor update check', () => {
     fetchAs(() => res(true, 200, 'OK', { version: '9.9.9' }));
     await runDoctor();
     expect(printed()).not.toContain('npm registry');
+  });
+
+  // A bare launcher name is trusted to be on PATH; a path to one still has to exist.
+  it.each([
+    ['NPX.CMD', '✓ Server executables'],
+    [path.join(os.tmpdir(), 'mcp-scan-missing', 'npm.cmd'), '1 servers reference executables'],
+  ])('checks executables for %s', async (command, want) => {
+    fetchAs(() => res(true, 200, 'OK', { version: '9.9.9' }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-scan-doctor-'));
+    const cfg = path.join(dir, 'mcp.json');
+    fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { s: { command, args: ['-y', 'pkg'] } } }));
+    vi.mocked(detectTools).mockResolvedValueOnce([{ name: 'cursor', configPath: cfg, exists: true }] as any);
+    try {
+      await runDoctor();
+      expect(printed()).toContain(want);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
