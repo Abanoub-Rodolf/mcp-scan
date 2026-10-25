@@ -429,6 +429,7 @@ describe('npxPackageCandidates', () => {
     // real npx runs `a` here (it inserts -- before the first real positional), so keep it alongside --package
     ['npx', ['--foo', 'a', 'b', '--package=evil', 'bin'], ['evil', 'a', 'b', 'bin']],
     ['npx', ['--foo', 'a', '--package=evil', 'bin'], ['evil', 'a', 'bin']],
+    ['npx', ['--foo', 'x', '--package=evil', '/home/u'], ['evil', 'x']],
     ['npm', ['exec', '--made-up', 'legacy', '-c', 'x', 'evil'], ['legacy', 'evil']],
     ['npm', ['exec', '--made-up', 'legacy', '--registry', 'r', 'evil'], ['legacy', 'evil']],
     ['npx', ['-n', 'safe-pkg', 'evil-pkg'], ['safe-pkg', 'evil-pkg']],
