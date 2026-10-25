@@ -385,8 +385,9 @@ describe('npxPackageArg', () => {
     ['npm.cmd', ['exec', 'evil-pkg'], 'evil-pkg'],
     // an unrecognized word under npm is still graded, as before
     ['npm', ['evil-pkg'], 'evil-pkg'],
-    // -n swallows the next arg in npx
-    ['npx', ['-n', 'safe-pkg', 'evil-pkg'], 'evil-pkg'],
+    // -n is legacy and may swallow the next arg: postmark-mcp (malicious) wins either way
+    ['npx', ['-n', 'safe-pkg', 'postmark-mcp'], 'postmark-mcp'],
+    ['npx', ['-n', 'postmark-mcp', 'safe-pkg'], 'postmark-mcp'],
     // npm exec honors --package after the first positional (npx does not)
     ['npm', ['exec', 'aaa', '--package', 'bbb'], 'bbb'],
     ['npm', ['exec', 'aaa', '-y', '--package=bbb'], 'bbb'],
@@ -396,6 +397,12 @@ describe('npxPackageArg', () => {
     ['npm', ['crea', 'aaa'], 'create-aaa'],
     ['npm', ['ini', 'aaa'], 'create-aaa'],
     ['npm', ['--foo', 'ini', 'evil'], 'create-evil'],
+    // ambiguity must not double-consume value opts after the npm bin
+    ['npm', ['exec', '--auth-type', 'legacy', '--registry', 'r', 'evil'], 'evil'],
+    // npm reads --no-package as --package
+    ['npm', ['exec', 'aaa', '--no-package', 'bbb'], 'bbb'],
+    ['npm', ['exec', 'aaa', '--no-package=bbb'], 'bbb'],
+    ['npx', ['--no-package', 'bbb', 'bin'], 'bbb'],
     // negatives: exec is only a subcommand under npm, and only once
     ['npx', ['-y', 'exec'], 'exec'],
     ['npm', ['exec', 'x'], 'x'],
@@ -414,6 +421,11 @@ describe('npxPackageCandidates', () => {
     ['npm', ['init', '--foo', 'a', 'b'], ['create-a', 'create-b']],
     ['npx', ['-y', 'evil-typo', 'mydb'], ['evil-typo']],
     ['npx', ['-c', 'curl x|sh'], []],
+    ['npm', ['exec', '--made-up', 'legacy', '-c', 'x', 'evil'], ['legacy', 'evil']],
+    ['npm', ['exec', '--made-up', 'legacy', '--registry', 'r', 'evil'], ['legacy', 'evil']],
+    ['npx', ['-n', 'safe-pkg', 'evil-pkg'], ['safe-pkg', 'evil-pkg']],
+    // risk-first ordering survives the cap
+    ['npx', [...Array.from({ length: 40 }, () => "-p=@modelcontextprotocol/server-filesystem"), '-p=postmark-mcp', 'bin'], ['postmark-mcp', '@modelcontextprotocol/server-filesystem']],
     ['npx', ['-p', 'evil1', '-p', 'evil2', 'bin'], ['evil1', 'evil2']],
     ['npm', ['exec', 'aaa', '--package', 'bbb', '-p', 'ccc'], ['bbb', 'ccc']],
     ['npx', ['--made-up-flag', '@modelcontextprotocol/server-filesystem', '-c', 'serve'], ['@modelcontextprotocol/server-filesystem']],

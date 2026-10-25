@@ -86,9 +86,9 @@ function vulnSeverityToFinding(severity: Severity): { id: FindingId; severity: S
 
 // npx/npm options whose value is the next arg, not the package.
 const NPX_VALUE_OPTS = new Set([
-  '-n',   '--registry', '--cache', '--userconfig', '--prefix', '-w', '--workspace', '--loglevel', '--before',
+    '--registry', '--cache', '--userconfig', '--prefix', '-w', '--workspace', '--loglevel', '--before',
   '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell', '-C', '--globalconfig', '--omit', '--fetch-timeout', '--fetch-retries',
-  '--scope', '--install-strategy', '--min-release-age', '--audit-level', '--ca', '--cert', '--key', '--cpu', '--os', '--libc',
+  '--scope', '--auth-type', '--install-strategy', '--min-release-age', '--audit-level', '--ca', '--cert', '--key', '--cpu', '--os', '--libc',
   '--noproxy', '--local-address', '--user-agent', '--maxsockets', '--fetch-retry-mintimeout', '--fetch-retry-maxtimeout',
 ]);
 // Flags that take no value. A dash flag in neither set might take one, so the
@@ -113,6 +113,7 @@ const NPM_NON_EXEC_SUBS = new Set([
 const isExecSub = (w: string) => w === 'x' || (w.length >= 2 && 'exec'.startsWith(w));
 const isCreateSub = (w: string) => w === 'innit' || (w.length >= 2 && w !== 'in' && 'init'.startsWith(w)) || (w.length >= 2 && 'create'.startsWith(w));
 const MAX_CANDIDATES = 4;
+const MAX_PACKAGES = 32;
 
 /** npm init/create <spec> runs create-<name>; scoped @s -> @s/create, @s/n -> @s/create-n. */
 function createPackage(spec: string): string {
@@ -155,11 +156,11 @@ export function npxPackageCandidates(args: unknown, command?: string): string[] 
     if (pos.length > 0) {
       // npm exec, unlike npx, still reads --package after the bin
       if (cmd === 'npm' && !create && !endOpts) {
-        if (a === '--') endOpts = true;
-        else if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
-        else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
-        else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
-        else if (NPX_VALUE_OPTS.has(a) || a === '-c' || a === '--call') i++;
+        if (a === '--') { endOpts = true; continue; }
+        if (a.startsWith('--package=') || a.startsWith('--no-package=')) { pkgs.push(a.slice(a.indexOf('=') + 1)); continue; }
+        if (a.startsWith('-p=')) { pkgs.push(a.slice(3)); continue; }
+        if ((a === '--package' || a === '-p' || a === '--no-package') && i + 1 < list.length) { pkgs.push(list[++i]); continue; }
+        if (NPX_VALUE_OPTS.has(a) || a === '-c' || a === '--call') { i++; continue; }
         if (!ambiguous) continue;
       }
       if (!ambiguous || pos.length >= MAX_CANDIDATES) { if (cmd === 'npm') continue; break; }
@@ -169,9 +170,9 @@ export function npxPackageCandidates(args: unknown, command?: string): string[] 
     }
     if (!endOpts && a === '--') endOpts = true;
     else if (!endOpts && a.startsWith('-')) {
-      if (a.startsWith('--package=')) pkgs.push(a.slice('--package='.length));
+      if (a.startsWith('--package=') || a.startsWith('--no-package=')) pkgs.push(a.slice(a.indexOf('=') + 1));
       else if (a.startsWith('-p=')) pkgs.push(a.slice(3));
-      else if ((a === '--package' || a === '-p') && i + 1 < list.length) pkgs.push(list[++i]);
+      else if ((a === '--package' || a === '-p' || a === '--no-package') && i + 1 < list.length) pkgs.push(list[++i]);
       // -c runs a command string, not a package: the AST scanner grades it,
       // and it must never reach a registry lookup.
       else if (a === '-c' || a === '--call') i++;
@@ -186,7 +187,11 @@ export function npxPackageCandidates(args: unknown, command?: string): string[] 
       // else: the value of an unknown flag before the subcommand
     } else pos.push(a);
   }
-  if (pkgs.length > 0) return [...new Set(pkgs)].slice(0, 8);
+  if (pkgs.length > 0) {
+    // Risk first, so the cap can only ever drop allowlisted packages.
+    const rank = (p: string) => KNOWN_MALICIOUS_PACKAGES.has(parsePackageSpec(p).name) ? 0 : isKnownPkg(p) ? 2 : 1;
+    return [...new Set(pkgs)].sort((x, y) => rank(x) - rank(y)).slice(0, MAX_PACKAGES);
+  }
   let cands = create ? pos.map(createPackage) : pos;
   if (ambiguous && cands.length > 1) {
     const valid = cands.filter(c => validatePackageName(c).valid);
