@@ -153,6 +153,12 @@ describe('findReportablePackage', () => {
     expect(findReportablePackage(report)).toBe('good-package');
   });
 
+  // Same parse as the scanners: the hint must not name `exec` for npm exec.
+  it('names the package behind npm exec', () => {
+    const report = fakeReport([fakeResult({ connection: { command: 'npm', args: ['--yes', 'exec', 'good-package'] } })]);
+    expect(findReportablePackage(report)).toBe('good-package');
+  });
+
   it('returns undefined when no server runs via npx/npm/node', () => {
     const report = fakeReport([fakeResult({ connection: { command: 'python', args: ['server.py'] } })]);
     expect(findReportablePackage(report)).toBeUndefined();

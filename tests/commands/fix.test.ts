@@ -27,6 +27,16 @@ describe('applyAutoFix', () => {
     expect(server.url).toBe('https://api.example.com/mcp');
   });
 
+  it('upgrades uppercase HTTP:// and WS:// schemes', () => {
+    const http: RawMcpServerEntry = { command: 'npx', args: ['HTTP://api.example.com'], url: 'Http://api.example.com/mcp' };
+    expect(applyAutoFix(finding('http-transport-no-auth'), http)).toBe(true);
+    expect(http.args).toEqual(['https://api.example.com']);
+    expect(http.url).toBe('https://api.example.com/mcp');
+    const ws: RawMcpServerEntry = { command: 'npx', url: 'WS://sock.example.com' };
+    expect(applyAutoFix(finding('insecure-transport'), ws)).toBe(true);
+    expect(ws.url).toBe('wss://sock.example.com');
+  });
+
   it('upgrades sse transport flag', () => {
     const server: RawMcpServerEntry = { command: 'npx', args: ['--transport=sse'] };
     expect(applyAutoFix(finding('outdated-transport'), server)).toBe(true);

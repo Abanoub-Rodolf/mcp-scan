@@ -165,7 +165,7 @@ export async function scanRegistry(server: ResolvedServer, offline: boolean = fa
   let packageSpec = '';
   if (server.command === 'npx' || server.command === 'npm') {
     // npx -y @modelcontextprotocol/server-postgres
-    const pkgArg = npxPackageArg(server.args);
+    const pkgArg = npxPackageArg(server.args, server.command);
     if (pkgArg) packageSpec = pkgArg;
   } else {
     packageSpec = server.command || '';

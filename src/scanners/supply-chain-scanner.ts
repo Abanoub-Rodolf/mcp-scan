@@ -65,7 +65,7 @@ export async function scanSupplyChain(server: ResolvedServer, offline: boolean =
 
   let packageName = '';
   if (server.command === 'npx' || server.command === 'npm') {
-    const pkgArg = npxPackageArg(server.args);
+    const pkgArg = npxPackageArg(server.args, server.command);
     if (pkgArg) packageName = pkgArg;
   }
 

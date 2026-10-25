@@ -33,7 +33,7 @@ export function scanTyposquat(server: ResolvedServer): Finding[] {
   
   let packageName = '';
   if (server.command === 'npx' || server.command === 'npm') {
-    const pkgArg = npxPackageArg(server.args);
+    const pkgArg = npxPackageArg(server.args, server.command);
     if (pkgArg) packageName = pkgArg;
   } else {
     packageName = server.command || '';

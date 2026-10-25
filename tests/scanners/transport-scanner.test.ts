@@ -51,4 +51,15 @@ describe('Transport Scanner', () => {
     const remote = scanTransport({ name: 's', toolName: 't', configPath: 'p', command: 'npx', args: ['mcp-remote', 'http://example.com/mcp'] });
     expect(remote.find(x => x.id === 'http-transport-no-auth')).toMatchObject({ severity: 'MEDIUM', fixable: true });
   });
+
+  // URL schemes are case-insensitive; 2.2.0 missed HTTP:// and WS:// entirely.
+  it('flags plain-text schemes in any case', () => {
+    const ids = (s: Partial<Parameters<typeof scanTransport>[0]>) =>
+      scanTransport({ name: 's', toolName: 't', configPath: 'p', ...s } as Parameters<typeof scanTransport>[0]).map(f => `${f.id}:${f.severity}`);
+    expect(ids({ url: 'HTTP://evil.example/mcp' })).toContain('http-transport-no-auth:HIGH');
+    expect(ids({ url: 'Http://LOCALHOST:3000' })).toContain('http-transport-no-auth:LOW');
+    expect(ids({ command: 'npx', args: ['mcp-remote', 'HTTP://evil.example/mcp'] })).toContain('http-transport-no-auth:MEDIUM');
+    expect(ids({ url: 'WS://sock.example' })).toContain('insecure-transport:HIGH');
+    expect(ids({ url: 'HTTPS://ok.example/mcp' })).toEqual([]);
+  });
 });

@@ -53,8 +53,8 @@ function deriveTransportType(result: ServerScanResult): string {
   const allArgs = args.join(' ');
 
   // SSE or HTTP transport if args contain a URL
-  if (allArgs.match(/https?:\/\//)) {
-    if (allArgs.includes('/sse')) return 'sse';
+  if (allArgs.match(/https?:\/\//i)) {
+    if (allArgs.toLowerCase().includes('/sse')) return 'sse';
     return 'streamable-http';
   }
 
@@ -72,7 +72,7 @@ function deriveServerUrl(result: ServerScanResult): string {
 
   // For SSE/HTTP servers, the URL is in the args
   for (const arg of args) {
-    if (arg.match(/^https?:\/\//)) return arg;
+    if (arg.match(/^https?:\/\//i)) return arg;
   }
 
   // For npx/uvx, build a runnable command string
