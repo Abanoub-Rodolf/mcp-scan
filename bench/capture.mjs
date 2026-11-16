@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { introspect } from '../dist/lib.js';
 
 const [id, pkg, ...extra] = process.argv.slice(2);
-if (!id || !pkg) { console.error('usage: capture.mjs <id> <pkg@version> [args...]'); process.exit(2); }
+if (!id || !pkg || !/^[a-z0-9-]+$/.test(id) || pkg.startsWith('-')) { console.error('usage: capture.mjs <id: [a-z0-9-]+> <pkg@version> [args...]  (runs third-party code via npx)'); process.exit(2); }
 const out = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'corpus/benign', `${id}.json`);
 const server = { name: id, toolName: 'bench', configPath: 'bench', command: 'npx', args: ['-y', pkg, ...extra] };
 const c = await introspect(server, { timeoutMs: 180000 });

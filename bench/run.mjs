@@ -69,8 +69,14 @@ if (!snykSkipped) {
       fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { [s.id]: { command: process.execPath, args: [path.join(here, 'replay-server.mjs'), s.file] } } }));
       const { stdout } = await run(snyk, ['scan', '--json', '--no-skills', '--dangerously-run-mcp-servers', cfg], { maxBuffer: 64 * 1024 * 1024, timeout: 180000 });
       const out = JSON.parse(stdout);
-      const issues = JSON.stringify(out).match(/"code":\s*"([EW]\d+)"/g) || [];
-      return { flagged: issues.length > 0, detail: [...new Set(issues)].join(',') };
+      const risks = (out.scan_path_responses || []).flatMap(r => r.server_risks || []);
+      const err = risks.find(r => r.error);
+      if (err) throw new Error(`snyk reported an error: ${JSON.stringify(err.error).slice(0, 120)}`);
+      // 0.6.11 reports risk scores, not issue codes. prompt_injection_tool_desc is the poisoning verdict;
+      // private_data, untrusted_content and destructive_capabilities describe what a tool can do, so they are not counted.
+      // Scores up to 299 are the lowest band in its own printer, so a flag needs 300 or more.
+      const hits = risks.map(r => r.risk_indexes?.prompt_injection_tool_desc).filter(x => x && x.score >= 300);
+      return { flagged: hits.length > 0, detail: hits.map(h => `prompt_injection_tool_desc:${h.score}`).join(',') };
     } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   };
 }
@@ -115,6 +121,7 @@ const pullHits = pulls.filter(s => diffSnapshots(s.id, snapshotOf(catalogOf(s.be
 
 const md = [];
 md.push(`Corpus: ${poisoned.length} poisoned (published proofs of concept), ${benign.length} benign (real npm servers). Generated ${new Date().toISOString().slice(0, 10)}.`, '');
+for (const [name, s] of Object.entries(table)) if (s.errors) md.push(`WARNING: ${name} errored on ${s.errors} samples; they are left out of its numbers.`, '');
 md.push('| Scanner | Precision | Recall | F1 | TP | FP | FN | TN |', '|---|---|---|---|---|---|---|---|');
 for (const [name, s] of Object.entries(table)) md.push(`| ${name} | ${pct(s.tp, s.tp + s.fp)} | ${pct(s.tp, s.tp + s.fn)} | ${Number.isNaN(s.f1) ? 'n/a' : s.f1.toFixed(2)} | ${s.tp} | ${s.fp} | ${s.fn} | ${s.tn} |`);
 if (snykSkipped) md.push('| snyk agent-scan 0.6.11 | not run | not run | | | | | |');
@@ -123,7 +130,7 @@ for (const c of categories) {
   const n = poisoned.filter(s => s.category === c).length;
   md.push(`| ${c} | ${n} | ${Object.keys(table).map(name => { const rows = results[name].filter(r => r.category === c && !r.error); return pct(rows.filter(r => r.flagged).length, rows.length); }).join(' | ')} |`);
 }
-md.push('', `Rug pulls (changed definition after approval): snapshot diff reported ${pullHits} of ${pulls.length}.`);
+md.push('', `Rug pulls (changed definition after approval): snapshot diff reported ${pullHits} of ${pulls.length} (no benign control, so this shows the diff works, not its false-positive rate).`);
 const fps = {};
 for (const [name, rows] of Object.entries(results)) fps[name] = rows.filter(r => r.label === 'benign' && r.flagged).map(r => `${r.id} (${r.detail})`);
 fs.mkdirSync(path.join(here, 'results'), { recursive: true });
