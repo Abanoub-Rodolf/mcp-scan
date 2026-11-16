@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { Finding } from '../types/scan-result.js';
 import { LiveCatalog } from './mcp-client.js';
-import { clean } from '../scanners/live-scanner.js';
+import { clean, oneLine } from '../scanners/live-scanner.js';
 import { auditDir, baselineHmac } from './audit-logger.js';
 import { atomicWriteConfig } from '../config/writer.js';
 
@@ -32,11 +32,13 @@ export function snapshotFile(): string {
 }
 
 // Sorted keys at every level so the same definition always hashes the same.
-export function stable(value: unknown): string {
-  if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
+export function stable(value: unknown, depth = 0): string {
+  // Hostile schemas can nest thousands deep inside the message cap.
+  if (depth > 100) throw new RangeError('definition nested too deeply');
+  if (Array.isArray(value)) return '[' + value.map(v => stable(v, depth + 1)).join(',') + ']';
   if (value && typeof value === 'object') {
     const obj = value as Record<string, unknown>;
-    return '{' + Object.keys(obj).sort().filter(k => obj[k] !== undefined).map(k => JSON.stringify(k) + ':' + stable(obj[k])).join(',') + '}';
+    return '{' + Object.keys(obj).sort().filter(k => obj[k] !== undefined).map(k => JSON.stringify(k) + ':' + stable(obj[k], depth + 1)).join(',') + '}';
   }
   return JSON.stringify(value ?? null);
 }
@@ -72,7 +74,7 @@ export function snapshotOf(c: LiveCatalog, now = new Date()): ServerSnapshot {
 
 const label = (key: string) => {
   const i = key.indexOf(':');
-  return i === -1 ? 'Server instructions' : `${key[0].toUpperCase()}${key.slice(1, i)} '${key.slice(i + 1)}'`;
+  return i === -1 ? 'Server instructions' : `${key[0].toUpperCase()}${key.slice(1, i)} '${oneLine(key.slice(i + 1)).slice(0, 80)}'`;
 };
 const clip = (s: string) => { const c = clean(s); return c.length > 160 ? c.slice(0, 157) + '...' : c; };
 

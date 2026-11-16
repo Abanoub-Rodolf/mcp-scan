@@ -32,7 +32,8 @@ function strings(value: unknown, out: string[], depth = 0): void {
   if (Array.isArray(value)) { for (const v of value.slice(0, 200)) strings(v, out, depth + 1); return; }
   if (typeof value === 'object') {
     for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, 200)) {
-      if (k === 'type' || k === 'required' || k === '$schema') continue;
+      // Schema keywords only: a PROPERTY named 'type' holds an object and must be read.
+      if ((k === 'type' || k === '$schema') && typeof (value as Record<string, unknown>)[k] === 'string') continue;
       strings(v, out, depth + 1);
     }
   }
@@ -74,7 +75,7 @@ const WEAK_PATH = /(?:\.env\b|\.npmrc|\.netrc|\bcredentials?\.json\b|\bkeychain\
 // between the negation and the verb ("do not forget to read") stay flagged.
 const NEGATED = /\b(?:never|(?:do|does|must|should|will|can)(?:\s+not|n't)|won't)\s+(?:\w+\s+){0,1}(?:read|open|access|cat|send|upload|copy|print|load|fetch|include)\b[^.\n]{0,40}$/i;
 const READ_VERB = /\b(?:read|open|cat|load|access|fetch|include|send|upload|copy|print)\b[^.\n]{0,60}$/i;
-const DIRECTIVE = /\b(?:before (?:using|calling|running)|prior to (?:using|calling)|you must|you should|always|first,? (?:you )?(?:must|should)?)\b/i;
+const DIRECTIVE = /\b(?:before (?:using|calling|running)|prior to (?:using|calling)|you must|you should|first,? (?:you )?(?:must|should))\b/i;
 const CONCEAL = [
   /\b(?:do not|don't|never)\s+(?:mention|tell|reveal|disclose|inform|show|let)\b[^.\n]{0,60}\b(?:user|human|anyone)\b/i,
   /\bwithout\s+(?:telling|informing|notifying|alerting)\s+the\s+user\b/i,
@@ -90,7 +91,7 @@ const INJECTION: Array<[RegExp, string]> = [
   [/\b(?:reveal|print|output|repeat)\s+(?:your|the)\s+system\s+prompt\b/i, 'reveal system prompt'],
   [/\b(?:disable|bypass|turn off)\s+(?:your\s+)?(?:safety|guardrails?|content (?:filter|policy))\b/i, 'bypass safety'],
 ];
-const FAKE_TAG = /<\s*\/?\s*(?:important|system|instructions?|secret|hidden|admin|override)\s*>|\[\s*(?:system|important|admin)\s*\]/i;
+const FAKE_TAG = /<\s*\/?\s*(?:important|system|secret|hidden|admin|override)\s*>|\[\s*(?:system|important|admin)\s*\]/i;
 const SHADOW: Array<[RegExp, string]> = [
   [/\b(?:when|whenever|if)\b[^.\n]{0,80}\b(?:is|are)\s+(?:available|present|loaded|installed|connected)\b[^.\n]{0,120}\b(?:must|should|always|never)\b/i, 'conditions on other tools being present'],
   [/\b(?:instead of|rather than|in place of)\s+(?:the\s+)?`?[\w-]+`?\s+tool\b/i, 'replaces another tool'],
@@ -124,10 +125,11 @@ function checkText(who: string, text: string, push: (sev: Severity, id: string, 
     push('LOW', 'live-oversize-description', `${who} carries ${text.length} characters of text, far more than a description needs.`, 'Read it in full: long descriptions are where injected instructions hide.');
   }
 
-  if (TAG_CHARS.test(body)) {
-    const hidden = decodeTags(body);
+  // Linear character-class checks run on the whole text, not just the clipped part.
+  if (TAG_CHARS.test(text)) {
+    const hidden = decodeTags(text);
     push('HIGH', 'live-hidden-text', `${who} contains invisible Unicode tag characters${hidden ? ` that spell: "${clip(hidden)}"` : ''}.`, 'Text the user cannot see but the model can read is an attack, not formatting. Do not use this server.');
-  } else if (INVISIBLE.test(body)) {
+  } else if (INVISIBLE.test(text)) {
     push('HIGH', 'live-hidden-text', `${who} contains zero-width or direction-control characters.`, 'Remove them or stop using the server: they hide text from the person reviewing the tool.');
   }
 
@@ -173,13 +175,27 @@ function checkText(who: string, text: string, push: (sev: Severity, id: string, 
   }
 }
 
+const BUDGET = 4 * 1024 * 1024; // chars of item text analyzed per server
+
 export function scanLive(catalog: LiveCatalog): Finding[] {
   const findings: Finding[] = [];
   const items = itemsOf(catalog);
+  let spent = 0;
+  const names = new Set<string>();
+  for (const t of catalog.tools) {
+    const n = String(t.name);
+    if (names.has(n)) findings.push({ id: 'live-tool-shadowing', severity: 'MEDIUM', description: `Tool '${oneLine(n).slice(0, 80)}' is listed twice by the same server. Only one definition can be baselined, so a swap between them would go unseen.`, fixRecommendation: 'Duplicate names in one catalog are a bug or an attempt to hide a definition. Review both.' });
+    names.add(n);
+  }
   const toolNames = catalog.tools.map(t => String(t.name));
   const seen = new Set<string>();
 
   for (const item of items) {
+    spent += item.text.length;
+    if (spent > BUDGET) {
+      findings.push({ id: 'live-incomplete', severity: 'MEDIUM', description: 'The server serves more tool text than the scan analyzes (4 MB); the rest was not checked.', fixRecommendation: 'Review this server by hand.' });
+      break;
+    }
     const who = item.kind === 'instructions' ? 'The server instructions' : `${item.kind[0].toUpperCase()}${item.kind.slice(1)} '${oneLine(item.name).slice(0, 80)}'`;
     const push = (severity: Severity, id: string, description: string, fixRecommendation: string) => {
       const key = `${id}|${description}`;
@@ -233,7 +249,7 @@ export function crossServerShadows(catalogs: Array<{ id: string; name: string; t
       out.set(s.id, [...(out.get(s.id) ?? []), {
         id: 'live-tool-shadowing',
         severity: 'MEDIUM',
-        description: `Tool '${tool}' on server '${s.name}' has the same name as a tool on ${others}. The model chooses between them by description.`,
+        description: `Tool '${oneLine(tool).slice(0, 80)}' on server '${oneLine(s.name).slice(0, 80)}' has the same name as a tool on ${others}. The model chooses between them by description.`,
         fixRecommendation: 'Duplicate tool names across servers let one server shadow another. Remove one server or confirm both are yours.',
       }]);
     }

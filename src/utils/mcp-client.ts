@@ -1,7 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { StringDecoder } from 'string_decoder';
 import { ResolvedServer } from '../types/config.js';
-import { clean } from '../scanners/live-scanner.js';
+import { clean, oneLine } from '../scanners/live-scanner.js';
 
 // Minimal MCP client for `scan --live`: connect, list what the server puts in
 // front of the model, disconnect. No SDK dependency on purpose; the server
@@ -29,7 +29,8 @@ export interface IntrospectOptions {
 
 export class IntrospectError extends Error {
   constructor(message: string) {
-    super(message);
+    // Messages can carry server-controlled text (JSON-RPC errors, stderr): one clean line.
+    super(oneLine(message));
     this.name = 'IntrospectError';
   }
 }
@@ -128,6 +129,8 @@ let hooked = false;
 function killTree(child: ChildProcess) {
   running.delete(child);
   try {
+    // taskkill /T takes the whole tree on Windows, where there are no process groups
+    if (process.platform === 'win32' && child.pid) spawn('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore', windowsHide: true }).on('error', () => {});
     // detached gave it its own process group: take npx's grandchildren too,
     // even when the direct child has already exited
     if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');

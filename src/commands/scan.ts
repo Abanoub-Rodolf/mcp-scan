@@ -375,7 +375,14 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       }
     } else {
       for (const [key, { name, catalog }] of liveCatalogs) {
-        const cur = snapshotOf(catalog);
+        let cur: ServerSnapshot;
+        try {
+          cur = snapshotOf(catalog);
+        } catch (e) {
+          // One hostile definition must not take the rest of the scan down with it.
+          add(key, { id: 'live-incomplete', severity: 'HIGH', description: `Server '${name}' serves a definition that cannot be fingerprinted (${e instanceof Error ? e.message : String(e)}), so rug-pull detection did not run for it.`, fixRecommendation: 'Schemas nested this deep are not legitimate. Do not use this server.' });
+          continue;
+        }
         if (catalog.truncated) {
           // Never baseline a partial list. With a baseline already on file, what was
           // read is still compared (a rug pull must not hide behind a flood of tools).
