@@ -17,7 +17,7 @@ MCP servers run with full access to your filesystem, API keys, and network. mcp-
 npx mcp-scan@latest
 ```
 
-> **Not the same project as Snyk's `agent-scan`.** Invariant Labs published a Python tool also called `mcp-scan` on PyPI; Snyk acquired Invariant and it now ships as [`agent-scan`](https://github.com/snyk/agent-scan). This package is an independent, MIT-licensed Node.js project on npm. It shares no code with that one, is not affiliated with Snyk, Invariant Labs or Cisco, and never sends your configuration or tool text to a hosted service.
+> **Not the same project as Snyk's `agent-scan`.** Invariant Labs published a Python tool also called `mcp-scan` on PyPI; Snyk acquired Invariant and it now ships as [`agent-scan`](https://github.com/snyk/agent-scan). This package is an independent, MIT-licensed Node.js project on npm. It shares no code with that one, is not affiliated with Snyk, Invariant Labs or Cisco, and never sends your configuration contents or tool text to a hosted analysis service (supply-chain checks look up package names on npm, OSV and GitHub; `--offline` stops all lookups).
 
 No installation. No sign-up. No telemetry. No data leaves your machine. Supply chain scanning makes registry lookups (npm, OSV.dev, GitHub API) - disable with `--offline`.
 
