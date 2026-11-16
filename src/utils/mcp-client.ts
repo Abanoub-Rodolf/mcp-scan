@@ -58,6 +58,8 @@ const PASSTHROUGH_ENV = [
 export function liveEnv(server: Pick<ResolvedServer, 'env'>, from: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const env: Record<string, string> = {};
   for (const k of PASSTHROUGH_ENV) if (from[k] !== undefined) env[k] = from[k] as string;
+  // A proxy or registry URL may carry user:password@; the server does not need the secret to know the host.
+  for (const k of Object.keys(env)) env[k] = env[k].replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/i, '$1');
   return { ...env, ...(server.env ?? {}) };
 }
 
@@ -135,8 +137,12 @@ function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => void): Promi
 // terminal's signal does not reach them.
 const running = new Set<ChildProcess>();
 let hooked = false;
+const killed = new WeakSet<ChildProcess>();
 function killTree(child: ChildProcess) {
   running.delete(child);
+  // Once is enough: a second group kill could hit a recycled pid.
+  if (killed.has(child)) return;
+  killed.add(child);
   try {
     // taskkill /T takes the whole tree on Windows, where there are no process groups
     if (process.platform === 'win32' && child.pid) spawn('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore', windowsHide: true }).on('error', () => {});

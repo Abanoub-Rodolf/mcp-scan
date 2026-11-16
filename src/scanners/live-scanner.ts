@@ -155,17 +155,18 @@ function decodeTags(s: string): string {
 function checkText(who: string, text: string, rawPush: (sev: Severity, id: string, desc: string, fix: string) => void) {
   let highs = 0;
   const push: typeof rawPush = (sev, ...rest) => { if (sev === 'HIGH') highs++; rawPush(sev, ...rest); };
-  const body = text.length > MAX_SCAN ? text.slice(0, MAX_SCAN) : text;
+  // Past the cap the head and the tail are both read: a payload parked at the end is the obvious place.
+  const body = text.length > MAX_SCAN ? text.slice(0, MAX_SCAN / 2) + '\n' + text.slice(-MAX_SCAN / 2) : text;
   if (text.length > MAX_SCAN) {
-    push('MEDIUM', 'live-oversize-description', `${who} carries ${text.length} characters of text; only the first ${MAX_SCAN} were inspected.`, 'Text this long is not documentation. Read it in full before trusting the server.');
+    push('MEDIUM', 'live-oversize-description', `${who} carries ${text.length} characters of text; only the first and last ${MAX_SCAN / 2} were inspected.`, 'Text this long is not documentation. Read it in full before trusting the server.');
   } else if (text.length > OVERSIZE) {
     push('LOW', 'live-oversize-description', `${who} carries ${text.length} characters of text, far more than a description needs.`, 'Read it in full: long descriptions are where injected instructions hide.');
   }
 
   // Linear character-class checks run on the whole text, not just the clipped part.
-  // Subdivision flag emoji (England, Scotland, Wales, US states) are a black flag plus tag letters; short
-  // codes are not payloads. Anything longer, or tags outside that shape, still counts.
-  const unflagged = text.replace(/\u{1F3F4}([\u{E0061}-\u{E007A}\u{E0030}-\u{E0039}]{2,6})\u{E007F}/gu, '');
+  // Only the three real subdivision flags (England, Scotland, Wales) are exempt: a black flag plus their
+  // exact tag codes. Any other tag sequence still counts, so no payload fits inside the exemption.
+  const unflagged = text.replace(/\u{1F3F4}(?:\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|\u{E0073}\u{E0063}\u{E0074}|\u{E0077}\u{E006C}\u{E0073}))\u{E007F}/gu, '');
   if (TAG_CHARS.test(unflagged) || VARIATION_SUPP.test(text)) {
     const hidden = decodeTags(unflagged);
     push('HIGH', 'live-hidden-text', `${who} contains invisible Unicode tag characters${hidden ? ` that spell: "${clip(hidden)}"` : ''}.`, 'Text the user cannot see but the model can read is an attack, not formatting. Do not use this server.');
@@ -234,7 +235,8 @@ const BUDGET = 4 * 1024 * 1024; // chars of item text analyzed per server
 export function scanLive(catalog: LiveCatalog): Finding[] {
   const findings: Finding[] = [];
   const items = itemsOf(catalog);
-  if (walkCapped) findings.push({ id: 'live-incomplete', severity: 'MEDIUM', description: 'A tool schema is wider or deeper than the scan walks (more than 5000 entries or 32 levels), so part of it was not checked.', fixRecommendation: 'Schemas this large or nested are not typical. Review the server by hand.' });
+  if (catalog.tools.length > 1000) walkCapped = true;
+  if (walkCapped) findings.push({ id: 'live-incomplete', severity: 'MEDIUM', description: 'Part of the catalog is beyond what the scan walks (a schema wider than 5000 entries or deeper than 32 levels, or more than 1000 tools), so it was not checked.', fixRecommendation: 'Schemas this large or nested are not typical. Review the server by hand.' });
   let spent = 0;
   const names = new Set<string>();
   for (const t of catalog.tools) {
@@ -266,7 +268,7 @@ export function scanLive(catalog: LiveCatalog): Finding[] {
     if (item.kind === 'tool') {
       const hay = item.text.slice(0, MAX_SCAN);
       const lower = hay.toLowerCase();
-      for (const other of toolNames.slice(0, 200)) {
+      for (const other of toolNames.slice(0, 1000)) {
         if (other === item.name || other.length < 4 || !lower.includes(other.toLowerCase())) continue;
         const e = other.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         // 'search' or 'read' alone is plain vocabulary; a compound name, a quoted

@@ -235,9 +235,11 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       let liveCatalog: LiveCatalog | undefined;
       // A server the policy blocks, a known-malicious or typosquatted package, or one the user told us to ignore is never started.
       const skipLive = allFindings.some(f => f.id === 'blocked-package-policy' || f.id === 'known-malicious' || f.id === 'typosquat-detection')
+        || allFindings.some(f => f.severity === 'CRITICAL' || f.severity === 'HIGH')
         || ignoreList.includes(server.name) || ignoreList.some(i => server.configPath.endsWith(i));
       if (options.live && skipLive) {
-        allFindings.push({ id: 'live-skipped', severity: 'INFO', description: `Server '${server.name}' was not started for --live: it is blocked, known malicious, a typosquat, or ignored.` });
+        // Not INFO: the default severity filter would hide that a risky server was never inspected.
+        allFindings.push({ id: 'live-skipped', severity: 'LOW', description: `Server '${server.name}' was not started for --live: it is ignored, or an earlier check rated it HIGH or CRITICAL (blocked, known malicious, typosquat, policy violation).`, fixRecommendation: 'Resolve the earlier finding, then scan again with --live to read what the server serves.' });
       } else if (options.live) {
         if (spinner) spinner.text = `Connecting to ${server.name}...`;
         try {

@@ -156,7 +156,8 @@ export function loadSnapshots(everSaved: boolean): LoadedStore {
     return { status: 'tampered', reason: 'not a snapshot store this version understands', servers: {} };
   }
   const body: StoreBody = { schema: SCHEMA, servers: parsed.servers };
-  const mac = baselineHmac(stable(body), false);
+  let mac: ReturnType<typeof baselineHmac>;
+  try { mac = baselineHmac(stable(body), false); } catch (_e) { return { status: 'tampered', reason: 'store nests deeper than any real snapshot', servers: {} }; }
   if (mac.status !== 'ok') return { status: 'tampered', reason: mac.status === 'missing' ? 'signed store but the baseline key is gone' : `baseline key unreadable (${mac.reason})`, servers: parsed.servers };
   const have = typeof parsed.sig === 'string' && /^[0-9a-f]{64}$/.test(parsed.sig) ? Buffer.from(parsed.sig, 'hex') : null;
   if (!have || !crypto.timingSafeEqual(have, Buffer.from(mac.mac, 'hex'))) {
