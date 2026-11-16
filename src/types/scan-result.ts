@@ -78,6 +78,8 @@ export const FINDING_IDS = [
   'live-unreachable',
   'live-baseline-recorded',
   'live-snapshot-tampered',
+  'live-snapshot-unsaved',
+  'live-incomplete',
   'tool-definition-changed',
   'tool-added',
   'tool-removed',

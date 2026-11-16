@@ -10,17 +10,20 @@ import { findEncodedInstruction } from '../utils/encoded-text.js';
 // word like 'run' or 'system' in a schema is ordinary vocabulary.
 
 const MAX_SCAN = 20000;      // chars of one item inspected; more is itself a finding
-const OVERSIZE = 4000;       // a description this long is not documentation
+const OVERSIZE = 8000;       // well past the longest honest descriptions seen (about 6k)
 
 type Item = { kind: 'tool' | 'prompt' | 'resource' | 'instructions'; name: string; text: string; params: Array<{ name: string; text: string }> };
 
+// Text from the server lands in findings, which reach a terminal: no control
+// or escape characters survive.
+export const clean = (s: string) => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
 const clip = (s: string, n = 80) => {
-  const one = s.replace(/\s+/g, ' ').trim();
+  const one = clean(s).replace(/\s+/g, ' ').trim();
   return one.length > n ? one.slice(0, n - 3) + '...' : one;
 };
 
 // Every string the model can read: description, titles, and nested schema
-// descriptions, enums, defaults, examples. Property names are collected apart.
+// descriptions, enums, defaults, examples.
 function strings(value: unknown, out: string[], depth = 0): void {
   if (depth > 12 || value == null) return;
   if (typeof value === 'string') { out.push(value); return; }
@@ -50,7 +53,9 @@ export function itemsOf(c: LiveCatalog): Item[] {
     for (const [k, v] of Object.entries(o)) if (!skip.includes(k)) strings(v, parts);
     return parts.join('\n');
   };
-  for (const t of c.tools) items.push({ kind: 'tool', name: String(t.name), text: text(t, ['name', 'inputSchema', 'outputSchema', '_meta']), params: paramsOf(t.inputSchema) });
+  // Schemas are scanned whole (every nested description, enum and default), not
+  // only the top-level description: that is where full-schema poisoning hides.
+  for (const t of c.tools) items.push({ kind: 'tool', name: String(t.name), text: text(t, ['name', '_meta']) + '\n' + paramsOf(t.inputSchema).map(p => p.name).join('\n'), params: paramsOf(t.inputSchema) });
   for (const p of c.prompts) items.push({ kind: 'prompt', name: String(p.name), text: text(p, ['name', '_meta']), params: [] });
   for (const r of c.resources) items.push({ kind: 'resource', name: String(r.name ?? r.uri), text: text(r, ['name', 'uri', '_meta']), params: [] });
   for (const r of c.resourceTemplates) items.push({ kind: 'resource', name: String(r.name ?? r.uriTemplate), text: text(r, ['name', 'uriTemplate', '_meta']), params: [] });
@@ -58,7 +63,15 @@ export function itemsOf(c: LiveCatalog): Item[] {
   return items;
 }
 
-const SENSITIVE_PATH = /(?:~\/\.(?:ssh|aws|gnupg|kube|docker)\b|\bid_(?:rsa|ed25519|ecdsa)\b|\.env\b|\bmcp\.json\b|claude_desktop_config|\.cursor\/mcp|\/etc\/(?:passwd|shadow)|\.npmrc|\.netrc|\bcredentials?\.json\b|\bkeychain\b|\bwallet\.dat\b)/i;
+// Locations no tool description has a reason to send the model to.
+const STRONG_PATH = /(?:~\/\.(?:ssh|aws|gnupg|kube|docker)\b|\bid_(?:rsa|ed25519|ecdsa)\b|\bmcp\.json\b|claude_desktop_config|\.cursor\/mcp|\/etc\/(?:passwd|shadow)|\bwallet\.dat\b)/i;
+// Ordinary words in many honest tools (a dotenv loader, a keychain helper):
+// only a finding when paired with a directive or a transfer.
+const WEAK_PATH = /(?:\.env\b|\.npmrc|\.netrc|\bcredentials?\.json\b|\bkeychain\b)/i;
+// "Never read ~/.ssh/id_rsa" is documentation, not an instruction. Two words or more
+// between the negation and the verb ("do not forget to read") stay flagged.
+const NEGATED = /\b(?:never|(?:do|does|must|should|will|can)(?:\s+not|n't)|won't)\s+(?:\w+\s+){0,1}(?:read|open|access|cat|send|upload|copy|print|load|fetch|include)\b[^.\n]{0,40}$/i;
+const READ_VERB = /\b(?:read|open|cat|load|access|fetch|include|send|upload|copy|print)\b[^.\n]{0,60}$/i;
 const DIRECTIVE = /\b(?:before (?:using|calling|running)|prior to (?:using|calling)|you must|you should|always|first,? (?:you )?(?:must|should)?)\b/i;
 const CONCEAL = [
   /\b(?:do not|don't|never)\s+(?:mention|tell|reveal|disclose|inform|show|let)\b[^.\n]{0,60}\b(?:user|human|anyone)\b/i,
@@ -70,7 +83,7 @@ const INJECTION: Array<[RegExp, string]> = [
   [/\bignore\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|rules?|prompts?)\b/i, 'ignore previous instructions'],
   [/\bdisregard\s+(?:all\s+)?(?:previous|prior|your|the)\b[^.\n]{0,30}\b(?:instructions?|rules?|guidelines?)\b/i, 'disregard instructions'],
   [/\boverride\s+(?:your|the)\s+(?:instructions?|rules?|system prompt|safety)\b/i, 'override instructions'],
-  [/\byou\s+are\s+now\b/i, 'you are now'],
+  [/\byou\s+are\s+now\s+(?:an?|the|my|in)\b/i, 'you are now'],
   [/\bnew\s+(?:system\s+)?instructions?\s*:/i, 'new instructions'],
   [/\b(?:reveal|print|output|repeat)\s+(?:your|the)\s+system\s+prompt\b/i, 'reveal system prompt'],
   [/\b(?:disable|bypass|turn off)\s+(?:your\s+)?(?:safety|guardrails?|content (?:filter|policy))\b/i, 'bypass safety'],
@@ -84,10 +97,13 @@ const SHADOW: Array<[RegExp, string]> = [
 ];
 const EXFIL = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bsidenote\b|\bparameter\b|\bargument\b)/i;
 const CHANNEL_NAME = /^(?:side_?note|notes?|memo|context|extra|metadata|feedback|reason|explanation|comment|remarks?|thoughts?|scratchpad|debug|trace|info)$/i;
-const CHANNEL_DESC = /\b(?:contents?|output|history|conversation|transcript|system prompt|private key|credentials?|secrets?|tokens?|api keys?|passwords?)\b/i;
+const CHANNEL_DESC = /\b(?:conversation|chat history|transcript|system prompt|private keys?|credentials?|secrets?|api keys?|passwords?|file contents?|contents of)\b/i;
 const TAG_CHARS = /[\u{E0000}-\u{E007F}]/u;
-const INVISIBLE = /[​-‏‪-‮⁠-⁤⁦-⁩᠎﻿­]/;
-const PADDING = /[ \t\r\n ]{50,}/g;
+// ZWJ/ZWNJ and the soft hyphen are ordinary in emoji and Indic/Persian text: not flagged.
+const INVISIBLE = /[\u200B\u2060-\u2064\u202A-\u202E\u2066-\u2069\u180E\uFEFF]/;
+// Padding that pushes text out of view: a long run on one line, or a very long
+// blank stretch. Template-literal indentation (newline, 24 spaces, newline) is neither.
+const PADDING = /[ \t\u00A0]{50,}|[ \t\r\n\u00A0]{200,}/g;
 
 function decodeTags(s: string): string {
   let out = '';
@@ -134,9 +150,14 @@ function checkText(who: string, text: string, push: (sev: Severity, id: string, 
   for (const [rx, label] of INJECTION) {
     if (rx.test(body)) push('HIGH', 'live-tool-poisoning', `${who} contains an instruction-override phrase (${label}).`, 'Review the full text of this tool; instruction overrides do not belong in tool metadata.');
   }
-  const path = SENSITIVE_PATH.exec(body);
-  if (path && (DIRECTIVE.test(body) || EXFIL.test(body) || /\b(?:read|open|cat|load|access|fetch|include)\b/i.test(body))) {
-    push('HIGH', 'live-tool-poisoning', `${who} directs the model to a sensitive location (${clip(path[0])}).`, 'Tool descriptions have no reason to reference SSH keys, credentials or other tools\' config. Remove the server.');
+  const strong = STRONG_PATH.exec(body);
+  const weak = WEAK_PATH.exec(body);
+  const before = (m: RegExpExecArray) => body.slice(Math.max(0, m.index - 80), m.index);
+  const near = (m: RegExpExecArray) => READ_VERB.test(before(m)) && !NEGATED.test(before(m));
+  if (strong && !NEGATED.test(before(strong)) && (near(strong) || DIRECTIVE.test(body) || EXFIL.test(body))) {
+    push('HIGH', 'live-tool-poisoning', `${who} directs the model to a sensitive location (${clip(strong[0])}).`, 'Tool descriptions have no reason to reference SSH keys, cloud credentials or other tools\' config. Remove the server.');
+  } else if (weak && (DIRECTIVE.test(body) || EXFIL.test(body)) && near(weak)) {
+    push('HIGH', 'live-tool-poisoning', `${who} directs the model to read ${clip(weak[0])} and act on it.`, 'Review what the instruction does with that file.');
   } else if (EXFIL.test(body) && DIRECTIVE.test(body)) {
     push('HIGH', 'live-tool-poisoning', `${who} tells the model to move data into a parameter or URL: "${clip(EXFIL.exec(body)![0])}".`, 'Review what data the instruction moves and where it goes.');
   }
@@ -155,7 +176,7 @@ export function scanLive(catalog: LiveCatalog): Finding[] {
   const seen = new Set<string>();
 
   for (const item of items) {
-    const who = item.kind === 'instructions' ? 'The server instructions' : `${item.kind[0].toUpperCase()}${item.kind.slice(1)} '${item.name}'`;
+    const who = item.kind === 'instructions' ? 'The server instructions' : `${item.kind[0].toUpperCase()}${item.kind.slice(1)} '${clean(item.name).slice(0, 80)}'`;
     const push = (severity: Severity, id: string, description: string, fixRecommendation: string) => {
       const key = `${id}|${description}`;
       if (seen.has(key)) return;
@@ -166,12 +187,21 @@ export function scanLive(catalog: LiveCatalog): Finding[] {
     checkText(who, [item.name, item.text].join('\n'), push);
 
     // Cross-reference: a description that names a sibling tool and gives it an order.
+    // Bounded: clipped text, a cheap substring test before any regex, first 200 siblings.
     if (item.kind === 'tool') {
-      for (const other of toolNames) {
-        if (other === item.name || other.length < 4) continue;
-        const rx = new RegExp(`\\b${other.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b[^.\\n]{0,60}\\b(?:must|should|always)\\b|\\b(?:must|should|always|then|first)\\b[^.\\n]{0,60}\\b${other.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-        if (rx.test(item.text)) {
-          push('MEDIUM', 'live-tool-shadowing', `${who} gives instructions about another tool of this server ('${other}').`, 'Cross-tool directives in a description are how one tool hijacks another. Review them.');
+      const hay = item.text.slice(0, MAX_SCAN);
+      const lower = hay.toLowerCase();
+      for (const other of toolNames.slice(0, 200)) {
+        if (other === item.name || other.length < 4 || !lower.includes(other.toLowerCase())) continue;
+        const e = other.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // 'search' or 'read' alone is plain vocabulary; a compound name, a quoted
+        // name or "the X tool" is a reference.
+        const ref = /^[a-z0-9]+$/i.test(other) ? `(?:[\`"']${e}[\`"']|\\b${e}\\s+tool\\b)` : `\\b${e}\\b`;
+        const rx = new RegExp(`${ref}[^.\\n]{0,60}\\b(?:must|should|always)\\b|\\b(?:must|should|always|then|first)\\b[^.\\n]{0,60}${ref}`, 'i');
+        const hit = rx.exec(hay);
+        // Naming a sibling is normal ("prefer this over 'click'"); redirecting it is not.
+        if (hit && /\b(?:instead|replace|override|ignore|redirect|route|forward|send|rather than|(?:before|after) (?:calling|using))\b/i.test(hit[0])) {
+          push('MEDIUM', 'live-tool-shadowing', `${who} gives instructions about another tool of this server ('${clean(other).slice(0, 80)}').`, 'Cross-tool directives in a description are how one tool hijacks another. Review them.');
           break;
         }
       }
