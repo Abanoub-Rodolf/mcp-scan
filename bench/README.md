@@ -20,7 +20,7 @@ One verdict per sample: did the scanner flag it. The sample is the catalog a ser
 | mcp-scan static (2.3.0 checks) | `scanToolPoisoning` + `scanPromptInjection` over the schema blob, the checks 2.3.0 applied to tool text | any HIGH finding |
 | mcp-scan `--live` | `scanLive` on the catalog (what `scan --live` runs after connecting) | any MEDIUM or HIGH finding |
 | Cisco mcp-scanner 4.8.7 | `--analyzers yara static`, the only mode that needs no credentials | `is_safe: false` |
-| Snyk agent-scan 0.6.11 | not scored unless `SNYK_TOKEN` is set; its analysis runs on api.snyk.io | any issue code |
+| Snyk agent-scan 0.6.11 | not scored unless `SNYK_TOKEN` is set; its analysis runs on api.snyk.io | `prompt_injection_tool_desc` score of 300 or more |
 
 Rug pulls are scored apart: for samples that carry a `before` catalog, did the snapshot diff report a change.
 
@@ -37,4 +37,6 @@ Benign samples carry a `set`: `tuning` servers were visible while the mcp-scan h
 - Cisco ran with its YARA analyzer only. Its LLM and API analyzers need keys, so its recall with those on is not measured here.
 - Catalog-level attacks only. Payloads that appear in tool output or sampling requests need a running agent and are excluded.
 - Full-schema poisoning has no samples: the primary write-up could not be fetched.
-- The mcp-scan heuristics were not tuned on the poisoned samples. Anyone who tunes them on this corpus must say so: recall would stop being a held-out number.
+- The mcp-scan rules were written from the published attack patterns, not from these samples, with one disclosed exception: reviewers' false-negative examples widened two rules (an absolute-path credentials read, a secret sent through a sidenote parameter), moving recall from 62.7% to 66.7%. Those two points are in-sample. Anyone who tunes the rules on this corpus must say so.
+- Cisco is given `tools`, `prompts` and `resources` only, not server `instructions`, so an instruction-only sample cannot be caught by it.
+- The rug-pull row shows the snapshot diff reports a changed definition; the corpus has no benign before/after control, so it is not a false-positive measure.

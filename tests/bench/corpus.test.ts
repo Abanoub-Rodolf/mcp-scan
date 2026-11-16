@@ -45,8 +45,8 @@ describe('benchmark corpus', () => {
 
   it('recall on published proofs of concept stays at or above the floor', () => {
     const hit = poisoned.filter(flagged).length;
-    // 32 of 51 when this was written. A drop means a regression; a rise should raise the floor.
-    expect(hit).toBeGreaterThanOrEqual(31);
+    // 34 of 51 when this was written. A drop means a regression; a rise should raise the floor.
+    expect(hit).toBeGreaterThanOrEqual(33);
   });
 
   it('reports every recorded rug pull as a changed or added definition', () => {

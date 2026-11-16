@@ -138,14 +138,14 @@ Not covered yet: the legacy SSE transport, servers that need OAuth, and per-sess
 
 ## Benchmark
 
-Same catalogs, same verdict rule, three scanners. The corpus is 51 poisoned tool, prompt and resource definitions taken from public write-ups and proof-of-concept repositories (Invariant Labs, Trail of Bits, Elastic, Embrace The Red, Cisco, Snyk, MCPTox and others, each attributed), and 27 benign catalogs recorded from real npm MCP servers. None of the poisoned samples was written or picked by mcp-scan's own checks.
+Same catalogs, each scanner judged by its own verdict (mcp-scan static: a HIGH finding; `--live`: MEDIUM or higher; Cisco: unsafe; Snyk: prompt-injection score of 300 or more), four scanners. The corpus is 51 poisoned tool, prompt and resource definitions taken from public write-ups and proof-of-concept repositories (Invariant Labs, Trail of Bits, Elastic, Embrace The Red, Cisco, Snyk, MCPTox and others, each attributed), and 27 benign catalogs recorded from real npm MCP servers. None of the poisoned samples was written or picked by mcp-scan's own checks.
 
 | Scanner | Precision | Recall | F1 | TP | FP | FN | TN |
 |---|---|---|---|---|---|---|---|
 | mcp-scan static checks (2.3.0) | 53.8% | 13.7% | 0.22 | 7 | 6 | 44 | 21 |
 | **mcp-scan `--live`** | **100%** | **66.7%** | **0.80** | 34 | 0 | 17 | 27 |
 | Cisco mcp-scanner 4.8.7 (YARA analyzer) | 69.0% | 39.2% | 0.50 | 20 | 9 | 31 | 18 |
-| Snyk agent-scan 0.6.11 | not run: analysis needs a Snyk account token | | | | | | |
+| Snyk agent-scan 0.6.11 | 100% | 45.1% | 0.62 | 23 | 0 | 28 | 27 |
 
 Rug pulls (a tool's text changes after approval): the snapshot diff caught 4 of 4 recorded cases.
 
@@ -153,7 +153,7 @@ What this does and does not show:
 
 - 14 of the 27 benign servers were recorded after the `--live` rules were written and scanned before any further change (`holdout`); 235 items, no finding at MEDIUM or above. The other 13 were visible while tuning, so read the 100% precision as measured on those 14, not as a general claim. The poisoned samples were not used for tuning, with one disclosed exception: the recall figure moved from 62.7% to 66.7% across two rounds of review, when reviewers' false-negative examples (an absolute-path credentials read, a secret sent through a sidenote parameter) widened two rules. Those two points are not held out.
 - 51 and 27 samples are small; one sample is about two points of recall. 11 poisoned samples are Cisco's own test data and 2 are Snyk's.
-- Cisco ran with its YARA analyzer only; its LLM and API analyzers need keys and are not measured. Snyk needs a token to analyze anything; the harness runs it when `SNYK_TOKEN` is set.
+- Cisco ran with its YARA analyzer only; its LLM and API analyzers need keys and are not measured. Snyk ran with a free account token: its analysis happens on Snyk's servers, so the corpus text (public proofs of concept and public servers' catalogs) was sent there. A sample counts as flagged when Snyk's `prompt_injection_tool_desc` score is 300 or higher; its other risk indexes describe capabilities, not poisoning. That threshold is my reading of its output, not Snyk's own verdict.
 - Per-catalog scoring: `scanLive` runs on each catalog alone, so the cross-server name-collision check is not part of these numbers. Catalog-level attacks only (what `tools/list`, `prompts/list` and `resources/list` return). Attacks that arrive in tool output need a running agent.
 - No full-schema-poisoning samples (the original write-up could not be fetched).
 

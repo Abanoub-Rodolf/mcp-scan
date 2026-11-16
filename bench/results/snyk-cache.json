@@ -1,0 +1,392 @@
+{
+ "cisco-eval-hidden-system-instructions": {
+  "key": "d07c7c29fba153d6",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:300"
+ },
+ "cisco-eval-jailbreak-mode-context-manipulation": {
+  "key": "61dc030096076763",
+  "flagged": false,
+  "detail": ""
+ },
+ "cisco-eval-nested-ignore-trust-escalation": {
+  "key": "b8ecdf7334406dd9",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:300"
+ },
+ "cisco-eval-safety-bypass-emergency-access": {
+  "key": "eb45c0ef3978d75f",
+  "flagged": false,
+  "detail": ""
+ },
+ "cisco-example-add-sidenote": {
+  "key": "11982b5124a31248",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "cisco-example-malicious-prompt": {
+  "key": "ab10cc9043abbc93",
+  "flagged": false,
+  "detail": ""
+ },
+ "cisco-example-secret-document-resource": {
+  "key": "badbe05c65d020ce",
+  "flagged": false,
+  "detail": ""
+ },
+ "cisco-example-send-email-shadow": {
+  "key": "509e560cc69c8859",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "cisco-line-jumping-retrieve-logs-disguised": {
+  "key": "8f5bbc085e661ce2",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "cisco-line-jumping-send-mail-bcc": {
+  "key": "d6808b5fd4fcf742",
+  "flagged": false,
+  "detail": ""
+ },
+ "cisco-line-jumping-workstation": {
+  "key": "ed17df179a0fe93b",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "dvmcp-ch10-get-user-profile": {
+  "key": "b954fc925d8b343b",
+  "flagged": false,
+  "detail": ""
+ },
+ "dvmcp-ch2-enhanced-search": {
+  "key": "48b1c8b6d48cd379",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "dvmcp-ch5-calculate-advanced": {
+  "key": "4d2cf3104a917f9a",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "dvmcp-ch5-get-user-roles": {
+  "key": "508c4cb307459336",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "elastic-daily-quote-implicit-call": {
+  "key": "455f9fc1977a3448",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "elastic-format-python-code-context-leak": {
+  "key": "0c232fa3fd9dbd50",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:300"
+ },
+ "elastic-query-database-override": {
+  "key": "69b911d5df14d64e",
+  "flagged": false,
+  "detail": ""
+ },
+ "elastic-read-text-file-shadow": {
+  "key": "79c42f4b11ce8940",
+  "flagged": false,
+  "detail": ""
+ },
+ "elastic-send-message-side-note": {
+  "key": "7e52a5ee8cdfb6f1",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "embracethered-motd-pirate": {
+  "key": "63b446118f012466",
+  "flagged": false,
+  "detail": ""
+ },
+ "embracethered-motd-unicode-tags": {
+  "key": "3017d512e7116997",
+  "flagged": false,
+  "detail": ""
+ },
+ "invariantlabs-blog-add-sidenote": {
+  "key": "995364303eb6ebf9",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "invariantlabs-blog-shadowing-add-sidenote": {
+  "key": "ef8ca4db34f2354e",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "invariantlabs-direct-poisoning-add": {
+  "key": "653cbb751a1a859c",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "invariantlabs-shadowing-add": {
+  "key": "ef7ff5ca874b8c18",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "invariantlabs-whatsapp-blog-rugpull": {
+  "key": "58826357610bc775",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "invariantlabs-whatsapp-rugpull-fact": {
+  "key": "35af61dd7f120c31",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "mcp-shield-calculate-sum-instructions": {
+  "key": "e91acbbac50ace1e",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "mcp-shield-fact-of-the-day-rugpull": {
+  "key": "4447ac605203747e",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "mcp-shield-fetch-weather-exfil-params": {
+  "key": "18f05bbb2c19ee8b",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcp-shield-read-file-secret": {
+  "key": "65969f2aa0ea8eed",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "mcp-shield-send-email-metadata": {
+  "key": "ca96f5d8d1e894ce",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "mcpsecbench-add-tool-poison": {
+  "key": "87da3cea2eda6559",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcpsecbench-aft-check-cross-tool": {
+  "key": "0c9727c99f2e7134",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcpsecbench-m-check-shadow": {
+  "key": "6e5d4d9ac2c41ca4",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcpsecbench-modify-cross-tool": {
+  "key": "385f36539b473c4a",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcptox-t1-clickhouse": {
+  "key": "53988704785f44b3",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcptox-t1-email": {
+  "key": "93ff411cd5d744d1",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcptox-t1-prisma": {
+  "key": "b5dfb0ab4c82f350",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcptox-t2-commander": {
+  "key": "4678a05e00e3f56d",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcptox-t2-email": {
+  "key": "fe57cc2b9276970f",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcptox-t2-github": {
+  "key": "c8716a9ad89e0ab2",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcptox-t3-email": {
+  "key": "eb742ecc24b92a80",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcptox-t3-github": {
+  "key": "8236083fb466a521",
+  "flagged": false,
+  "detail": ""
+ },
+ "mcptox-t3-slack": {
+  "key": "9b8f30ba69a79993",
+  "flagged": false,
+  "detail": ""
+ },
+ "repello-docker-analyzer-rce": {
+  "key": "40a25f953deec5eb",
+  "flagged": false,
+  "detail": ""
+ },
+ "snyk-agent-scan-multiply-rugpull": {
+  "key": "4314970a1f1c2983",
+  "flagged": false,
+  "detail": ""
+ },
+ "snyk-agent-scan-sum-weak-injection": {
+  "key": "52cacf845af84346",
+  "flagged": false,
+  "detail": ""
+ },
+ "trailofbits-ansi-send-instructions": {
+  "key": "aeaceadc789d3bf1",
+  "flagged": false,
+  "detail": ""
+ },
+ "trailofbits-jumping-the-line-workstation": {
+  "key": "d8def69ee2d3c7f2",
+  "flagged": true,
+  "detail": "prompt_injection_tool_desc:1000"
+ },
+ "aws-kb": {
+  "key": "1010f61f9a97686c",
+  "flagged": false,
+  "detail": ""
+ },
+ "browser-tools": {
+  "key": "b5745c68e78a2306",
+  "flagged": false,
+  "detail": ""
+ },
+ "chrome-devtools": {
+  "key": "3763a4e171b4b2b1",
+  "flagged": false,
+  "detail": ""
+ },
+ "circleci": {
+  "key": "77dfe6444fbfecf1",
+  "flagged": false,
+  "detail": ""
+ },
+ "context7": {
+  "key": "52588bc3eb0c8331",
+  "flagged": false,
+  "detail": ""
+ },
+ "desktop-commander": {
+  "key": "f7c36ce57925c35f",
+  "flagged": false,
+  "detail": ""
+ },
+ "duckduckgo": {
+  "key": "5b8eb4f60778e639",
+  "flagged": false,
+  "detail": ""
+ },
+ "everything": {
+  "key": "36e8e66bad588975",
+  "flagged": false,
+  "detail": ""
+ },
+ "exa": {
+  "key": "1e8f52c793511b37",
+  "flagged": false,
+  "detail": ""
+ },
+ "excel": {
+  "key": "c699e887b08836fe",
+  "flagged": false,
+  "detail": ""
+ },
+ "executeautomation-playwright": {
+  "key": "6178d15082cc96a7",
+  "flagged": false,
+  "detail": ""
+ },
+ "firecrawl": {
+  "key": "bb946bf7f73ab502",
+  "flagged": false,
+  "detail": ""
+ },
+ "fs": {
+  "key": "763ec99e7c640228",
+  "flagged": false,
+  "detail": ""
+ },
+ "git-mcp": {
+  "key": "fa11b6fbe167bbd9",
+  "flagged": false,
+  "detail": ""
+ },
+ "github": {
+  "key": "d527686d4e13e84f",
+  "flagged": false,
+  "detail": ""
+ },
+ "heroku": {
+  "key": "9cc5b5da64d4fbad",
+  "flagged": false,
+  "detail": ""
+ },
+ "kubernetes": {
+  "key": "5a3d1390554b980a",
+  "flagged": false,
+  "detail": ""
+ },
+ "mapbox": {
+  "key": "582775a7138c0c23",
+  "flagged": false,
+  "detail": ""
+ },
+ "memory": {
+  "key": "3e9929d4ef790534",
+  "flagged": false,
+  "detail": ""
+ },
+ "notion": {
+  "key": "a23a664f770a5d49",
+  "flagged": false,
+  "detail": ""
+ },
+ "pinecone": {
+  "key": "b1f45bc3292d3e67",
+  "flagged": false,
+  "detail": ""
+ },
+ "playwright": {
+  "key": "d962cc3f53d75998",
+  "flagged": false,
+  "detail": ""
+ },
+ "sequential-thinking": {
+  "key": "edb589200cf5850c",
+  "flagged": false,
+  "detail": ""
+ },
+ "shopify": {
+  "key": "7a7f648f46a82174",
+  "flagged": false,
+  "detail": ""
+ },
+ "ssh": {
+  "key": "caafe34459674ff5",
+  "flagged": false,
+  "detail": ""
+ },
+ "tavily": {
+  "key": "7d53d4b8c710bdfb",
+  "flagged": false,
+  "detail": ""
+ },
+ "time": {
+  "key": "6c84d96a7f26f79e",
+  "flagged": false,
+  "detail": ""
+ }
+}
