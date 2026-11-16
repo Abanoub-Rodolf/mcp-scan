@@ -47,6 +47,16 @@ describe('hash-chained decision log', () => {
     expect(v.ok === false && v.reason).toMatch(/head file records entry 4/);
   });
 
+  it('rejects a head file that was forged to match a truncated log', () => {
+    const c = AuditChain.open(file);
+    c.append({ n: 1 }); c.append({ n: 2 });
+    const l = lines();
+    fs.writeFileSync(file, l[0] + '\n');
+    const e = JSON.parse(l[0]);
+    fs.writeFileSync(file + '.head', JSON.stringify({ seq: 1, hash: e.hash, mac: e.mac }));
+    expect(verifyChain(file)).toMatchObject({ ok: false, reason: 'the head file is not signed by this install' });
+  });
+
   it('rejects a chain rebuilt without the key (hashes right, signature wrong)', () => {
     const c = AuditChain.open(file);
     c.append({ n: 1 });
@@ -110,6 +120,19 @@ describe('enforcing proxy', () => {
     ic.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: { evil: 1 } } }) + '\n' + JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n');
     expect(replies).toHaveLength(1);
     expect(JSON.parse(out[0]).method).toBe('tools/list');
+  });
+
+  it('drops a line that is not valid JSON instead of forwarding it', () => {
+    const { ic, out } = setup({ deny: ['shell'] });
+    ic.write('{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"shell"},}\n');
+    expect(out).toHaveLength(0);
+  });
+
+  it('forwards the screened JSON, so duplicate keys cannot be read two ways', () => {
+    const { ic, out } = setup({ deny: ['shell'] });
+    ic.write('{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"shell"},"params":{"name":"read_file"}}\n');
+    expect(JSON.parse(out[0]).params.name).toBe('read_file');
+    expect(out[0]).not.toContain('shell');
   });
 
   it('logs every decision with argument keys and a hash, never the values', () => {

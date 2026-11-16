@@ -152,6 +152,12 @@ export class JsonRpcInterceptor extends Transform {
       json = JSON.parse(line);
     } catch (_e) {
       if (this.refusing) return; // nobody to answer, and nowhere to send it
+      // With enforcement on, only what was parsed and screened may pass: a line this parser rejects
+      // could still be read as a tools/call by a more lenient one downstream.
+      if (this.enforcer) {
+        warnStderr(`dropped a ${this.direction} line that is not valid JSON (enforcement is on)`);
+        return;
+      }
       // Not JSON: forward it, but never put the raw line in the
       // log or dashboard. It may hold secrets the string detectors miss.
       const note = `<unparsed line, ${line.length} chars, not logged>`;
@@ -183,8 +189,10 @@ export class JsonRpcInterceptor extends Transform {
         if (this.replyToSender) this.replyToSender(JSON.stringify(batch ? out : out[0]) + '\n');
         if (screened.forward === null) return;
         json = screened.forward;
-        line = JSON.stringify(json);
       }
+      // Forward what was screened, not the raw text: with duplicate keys two parsers can disagree
+      // about which tool a call names.
+      line = JSON.stringify(json);
     }
 
     // Masking off: the line goes through byte for byte. Re-serializing it

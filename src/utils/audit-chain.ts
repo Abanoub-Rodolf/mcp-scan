@@ -54,7 +54,7 @@ export class AuditChain {
     const hash = sha(this.last + '\n' + bodyOf(seq, ts, event, this.last));
     const entry: ChainEntry = { seq, ts, event, prev: this.last, hash, mac: macOf(hash, true) };
     fs.appendFileSync(this.file, JSON.stringify(entry) + '\n', { mode: 0o600 });
-    fs.writeFileSync(this.file + '.head', JSON.stringify({ seq, hash, mac: entry.mac } satisfies Head), { mode: 0o600 });
+    fs.writeFileSync(this.file + '.head', JSON.stringify({ seq, hash, mac: macOf(`head:${seq}:${hash}`, true) } satisfies Head), { mode: 0o600 });
     this.seq = seq;
     this.last = hash;
     return entry;
@@ -85,6 +85,9 @@ export function verifyChain(file: string): Verdict {
   let head: Head | null = null;
   try { head = JSON.parse(fs.readFileSync(file + '.head', 'utf8')); } catch (_e) { /* checked below */ }
   if (!head) return { ok: false, at: lines.length, reason: 'the head file is missing or unreadable, so a cut-off tail cannot be ruled out' };
+  let headMac: string;
+  try { headMac = macOf(`head:${head.seq}:${head.hash}`, false); } catch (err) { return { ok: false, at: lines.length, reason: (err as Error).message }; }
+  if (typeof head.mac !== 'string' || head.mac.length !== headMac.length || !crypto.timingSafeEqual(Buffer.from(head.mac), Buffer.from(headMac))) return { ok: false, at: lines.length, reason: 'the head file is not signed by this install' };
   if (head.seq !== lines.length || head.hash !== prev) return { ok: false, at: lines.length, reason: `the log ends at entry ${lines.length} but the head file records entry ${head.seq}` };
   return { ok: true, entries: lines.length, head: prev };
 }
