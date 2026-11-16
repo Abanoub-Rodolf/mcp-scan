@@ -20,8 +20,10 @@ interface Head { seq: number; hash: string; mac: string }
 export class ChainError extends Error {}
 
 const bodyOf = (seq: number, ts: string, event: Record<string, unknown>, prev: string) => stable({ seq, ts, event, prev });
-export const macOf = (hash: string, create: boolean): string => {
-  const m = baselineHmac(hash, create);
+// The baseline key also signs the --live snapshot store, so every payload here carries a prefix that store's
+// payloads cannot have: nothing a client sends can be turned into a valid MAC for another purpose.
+export const macOf = (payload: string, create: boolean): string => {
+  const m = baselineHmac('mcp-scan/proxy-chain/1\n' + payload, create);
   if (m.status === 'ok') return m.mac;
   throw new ChainError(m.status === 'missing' ? 'the baseline key is missing' : `the baseline key is unusable (${m.reason})`);
 };

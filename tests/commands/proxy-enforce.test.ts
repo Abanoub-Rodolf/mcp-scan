@@ -243,3 +243,27 @@ describe('enforcement edge cases', () => {
     expect(fs.existsSync(file + '.lock')).toBe(false);
   });
 });
+
+describe('chain key separation and responses', () => {
+  it('a client-chosen argument cannot be turned into a snapshot-store signature', async () => {
+    const { baselineHmac } = await import('../../src/utils/audit-logger.js');
+    const { stable } = await import('../../src/utils/live-snapshot.js');
+    const forged = { schema: 'mcp-scan/tool-snapshots/1', servers: {} };
+    const chain = AuditChain.open(file);
+    const enf = new Enforcer({}, chain);
+    enf.screen({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'x', arguments: forged } });
+    const logged = JSON.parse(fs.readFileSync(file, 'utf8').trim()).event.argsHmac;
+    const m = baselineHmac(stable(forged), false);
+    expect(m.status === 'ok' && m.mac).not.toBe(logged);
+  });
+
+  it('passes a client response that has look-alike keys instead of treating it as a call', () => {
+    const replies: string[] = [];
+    const ic = new JsonRpcInterceptor('CLIENT -> SERVER', null, undefined, undefined, l => replies.push(l));
+    ic.enforcer = new Enforcer({ deny: ['x'] }, AuditChain.open(file));
+    const out: string[] = [];
+    ic.on('data', d => out.push(String(d)));
+    ic.write('{"jsonrpc":"2.0","id":"srv-1","ID":2,"result":{}}\n');
+    expect(out).toHaveLength(1);
+  });
+});
