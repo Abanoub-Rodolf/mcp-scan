@@ -214,6 +214,19 @@ function signatureMatches(data: Record<string, string>, key: Buffer): boolean {
   return crypto.timingSafeEqual(Buffer.from(have, 'hex'), Buffer.from(sign(data, key), 'hex'));
 }
 
+// Other stores kept beside known-servers.json (the --live tool snapshots)
+// sign with the same per-install key. 'missing' only when no key exists and
+// create is false; a damaged key is reported, never replaced here.
+export function baselineHmac(payload: string, create: boolean): { status: 'ok'; mac: string } | { status: 'missing' } | { status: 'bad'; reason: string } {
+  const k = readKey();
+  if (k.status === 'bad' || k.status === 'notfile') return { status: 'bad', reason: k.reason };
+  let key: Buffer;
+  if (k.status === 'ok') key = k.key;
+  else if (!create) return { status: 'missing' };
+  else key = loadOrCreateKey().key;
+  return { status: 'ok', mac: crypto.createHmac('sha256', key).update(payload).digest('hex') };
+}
+
 // Signs that this install has kept a baseline before: the key is created
 // with the first store, and the audit log is appended on every scan, so a
 // store missing next to either one was removed, not never written.
