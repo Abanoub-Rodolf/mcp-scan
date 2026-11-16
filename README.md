@@ -63,6 +63,8 @@ mcp-scan was built after analyzing hundreds of publicly available MCP server con
 | Custom Registry | HIGH (http), MEDIUM (https) | Package installed from a registry other than the npm registry, so its name proves nothing |
 | Data Minimization | LOW | Tool requests significantly more data fields than necessary |
 | Missing Transport | HIGH | MCP server communicates over unencrypted transport |
+| Live Tool Poisoning (`--live`) | HIGH | The tool, prompt or resource text a running server actually sends the model hides instructions, sensitive file paths, invisible Unicode or data side channels |
+| Rug Pull (`--live`) | HIGH | A tool's definition changed since the baseline mcp-scan recorded |
 
 ---
 
@@ -92,6 +94,33 @@ mcp-scan automatically detects configurations for **17 AI tool clients**:
 
 ---
 
+## Live introspection (`--live`)
+
+Config scanning reads what a server is *configured* to do. The tool-poisoning attack lives in what the server *says* once it runs: tool descriptions, parameter descriptions, prompts and resources are all read by the model. `--live` connects to each server over stdio or streamable HTTP, runs `initialize`, then pages through `tools/list`, `prompts/list`, `resources/list` and `resources/templates/list`, and checks every item on its own.
+
+```bash
+npx mcp-scan@latest --live
+npx mcp-scan@latest --live --live-timeout 60000   # slow npx cold starts
+npx mcp-scan@latest --live --accept-tool-changes   # I reviewed a change, make it the baseline
+```
+
+**This executes the server command from your config.** It is not a sandbox. Only run it on servers you would start anyway. The child gets a minimal environment (PATH, HOME, proxy and CA settings, plus the `env` from its own config entry), never the rest of your shell. It is killed with its whole process group when the scan ends, and its output, message count and paging are capped. Server requests back to the client (sampling, roots) are refused. `--offline` skips servers reached over a URL; stdio servers still start (and `npx` may fetch the package).
+
+What it flags, always naming the tool, prompt or resource:
+
+- fake `<IMPORTANT>` / `[SYSTEM]` markers and "do not tell the user" instructions
+- instructions that point at SSH keys, cloud credentials or other tools' config
+- a free-text parameter (`sidenote`, `context`, ...) described as taking file contents, history or keys: a data side channel
+- invisible Unicode tag characters (decoded in the finding), zero-width and direction-control characters, and instructions pushed off-screen behind whitespace
+- one tool rewriting how the model uses another tool, and the same tool name served by two servers
+- instruction-override phrases, encoded blobs, and unreasonably long descriptions
+
+**Rug pulls.** The first live scan records a SHA-256 per tool, prompt, resource and the server instructions in `tool-snapshots.json` (next to `known-servers.json`, signed with the same per-install key). Later scans report `tool-definition-changed` (HIGH for tools), `tool-added` and `tool-removed`, naming the field that moved. A changed definition keeps being reported until you run `--accept-tool-changes`, so a rug pull is not a one-scan event. A server that fails to connect produces a `live-unreachable` finding and never touches the baseline. An edited or deleted snapshot store is reported as `live-snapshot-tampered`.
+
+Not covered yet: the legacy SSE transport, servers that need OAuth, and per-session or per-client tool lists (the baseline sees what this scan sees).
+
+---
+
 ## All Commands
 
 ```bash
@@ -100,6 +129,10 @@ npx mcp-scan@latest
 
 # Output as JSON for CI/CD pipelines
 npx mcp-scan@latest --json
+
+# Live introspection: start each server, read its real tools/prompts/resources
+# (tools/list etc.), flag poisoned descriptions, and detect rug pulls
+npx mcp-scan@latest --live
 
 # Privacy impact assessment and data map
 npx mcp-scan@latest privacy
