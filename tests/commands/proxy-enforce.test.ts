@@ -1,0 +1,135 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { JsonRpcInterceptor } from '../../src/commands/proxy.js';
+import { AuditChain, verifyChain, ChainError } from '../../src/utils/audit-chain.js';
+import { Enforcer } from '../../src/utils/proxy-enforce.js';
+
+let dir: string;
+let file: string;
+beforeEach(() => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'enforce-'));
+  process.env.MCP_SCAN_HOME = path.join(dir, 'home');
+  file = path.join(dir, 'chain.jsonl');
+});
+afterEach(() => { delete process.env.MCP_SCAN_HOME; fs.rmSync(dir, { recursive: true, force: true }); });
+
+const lines = () => fs.readFileSync(file, 'utf8').trim().split('\n');
+
+describe('hash-chained decision log', () => {
+  it('verifies, and keeps verifying across reopen', () => {
+    let c = AuditChain.open(file);
+    c.append({ n: 1 }); c.append({ n: 2 });
+    c = AuditChain.open(file);
+    c.append({ n: 3 });
+    expect(verifyChain(file)).toMatchObject({ ok: true, entries: 3 });
+  });
+
+  it('detects an edited entry', () => {
+    const c = AuditChain.open(file);
+    c.append({ tool: 'a', decision: 'refused' }); c.append({ n: 2 });
+    const l = lines();
+    l[0] = l[0].replace('refused', 'allowed');
+    fs.writeFileSync(file, l.join('\n') + '\n');
+    expect(verifyChain(file)).toMatchObject({ ok: false, at: 1, reason: 'the entry was changed' });
+  });
+
+  it('detects a removed middle entry and a cut-off tail', () => {
+    const c = AuditChain.open(file);
+    for (let i = 0; i < 4; i++) c.append({ n: i });
+    const l = lines();
+    fs.writeFileSync(file, [l[0], l[2], l[3]].join('\n') + '\n');
+    expect(verifyChain(file).ok).toBe(false);
+    fs.writeFileSync(file, l.slice(0, 3).join('\n') + '\n');
+    const v = verifyChain(file);
+    expect(v.ok).toBe(false);
+    expect(v.ok === false && v.reason).toMatch(/head file records entry 4/);
+  });
+
+  it('rejects a chain rebuilt without the key (hashes right, signature wrong)', () => {
+    const c = AuditChain.open(file);
+    c.append({ n: 1 });
+    const e = JSON.parse(lines()[0]);
+    e.mac = '0'.repeat(64);
+    fs.writeFileSync(file, JSON.stringify(e) + '\n');
+    expect(verifyChain(file)).toMatchObject({ ok: false, reason: 'the signature does not match' });
+  });
+
+  it('will not extend a broken chain, or one whose log was deleted', () => {
+    const c = AuditChain.open(file);
+    c.append({ n: 1 });
+    fs.writeFileSync(file, lines()[0].replace('"n":1', '"n":9') + '\n');
+    expect(() => AuditChain.open(file)).toThrow(ChainError);
+    fs.rmSync(file);
+    expect(() => AuditChain.open(file)).toThrow(/removed/);
+  });
+});
+
+describe('enforcing proxy', () => {
+  const call = (id: number, name: string, args: unknown = { path: '/etc/passwd' }) => JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } }) + '\n';
+  const setup = (opts: { allow?: string[]; deny?: string[] }) => {
+    const replies: string[] = [];
+    const ic = new JsonRpcInterceptor('CLIENT -> SERVER', null, undefined, undefined, l => replies.push(l));
+    ic.enforcer = new Enforcer(opts, AuditChain.open(file));
+    const out: string[] = [];
+    ic.on('data', d => out.push(String(d)));
+    return { ic, out, replies };
+  };
+
+  it('refuses a denied tool with a JSON-RPC error and forwards the rest untouched', () => {
+    const { ic, out, replies } = setup({ deny: ['delete_*'] });
+    ic.write(call(1, 'delete_all') + call(2, 'read_file'));
+    expect(out).toHaveLength(1);
+    expect(JSON.parse(out[0]).params.name).toBe('read_file');
+    const r = JSON.parse(replies[0]);
+    expect(r).toMatchObject({ id: 1, error: { code: -32001 } });
+    expect(r.error.message).toMatch(/Blocked by mcp-scan policy/);
+  });
+
+  it('with an allow list, refuses anything not on it, and deny wins over allow', () => {
+    const { ic, out, replies } = setup({ allow: ['read_file', 'write_file'], deny: ['write_file'] });
+    ic.write(call(1, 'read_file') + call(2, 'write_file') + call(3, 'shell'));
+    expect(out.map(o => JSON.parse(o).id)).toEqual([1]);
+    expect(replies.map(r => JSON.parse(r).id)).toEqual([2, 3]);
+  });
+
+  it('answers only the refused member of a batch and forwards the others', () => {
+    const { ic, out, replies } = setup({ deny: ['shell'] });
+    ic.write(JSON.stringify([
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'shell', arguments: {} } },
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'read_file', arguments: {} } },
+    ]) + '\n');
+    expect(JSON.parse(out[0])).toHaveLength(1);
+    expect(JSON.parse(out[0])[0].id).toBe(2);
+    expect(JSON.parse(replies[0])).toEqual([expect.objectContaining({ id: 1 })]);
+  });
+
+  it('refuses a tools/call with no usable tool name, and passes other methods through', () => {
+    const { ic, out, replies } = setup({ deny: ['x'] });
+    ic.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: { evil: 1 } } }) + '\n' + JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n');
+    expect(replies).toHaveLength(1);
+    expect(JSON.parse(out[0]).method).toBe('tools/list');
+  });
+
+  it('logs every decision with argument keys and a hash, never the values', () => {
+    const { ic } = setup({ deny: ['shell'] });
+    ic.write(call(1, 'shell', { cmd: 'cat ~/.ssh/id_rsa' }) + call(2, 'read_file', { path: 'secret-value-123' }));
+    const text = fs.readFileSync(file, 'utf8');
+    expect(text).not.toContain('id_rsa');
+    expect(text).not.toContain('secret-value-123');
+    const events = lines().map(l => JSON.parse(l).event);
+    expect(events.map(e => e.decision)).toEqual(['refused', 'allowed']);
+    expect(events[0]).toMatchObject({ tool: 'shell', argKeys: ['cmd'] });
+    expect(events[0].argsSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(verifyChain(file).ok).toBe(true);
+  });
+
+  it('fails closed: if the decision cannot be recorded, the call is not forwarded', () => {
+    const { ic, out, replies } = setup({});
+    fs.mkdirSync(file); // a directory where the log should be: appends fail
+    ic.write(call(1, 'read_file'));
+    expect(out).toHaveLength(0);
+    expect(JSON.parse(replies[0]).error.message).toMatch(/not forwarded/);
+  });
+});

@@ -94,6 +94,22 @@ mcp-scan automatically detects configurations for **17 AI tool clients**:
 
 ---
 
+## Enforcing proxy (`proxy --enforce`)
+
+`mcp-scan proxy` sits between an AI client and a stdio MCP server. With `--enforce` it also decides which tool calls get through:
+
+```bash
+mcp-scan proxy --enforce --deny-tools 'delete_*,shell' -c npx -a '-y,@modelcontextprotocol/server-filesystem,/tmp/work'
+mcp-scan proxy --enforce --allow-tools read_file,list_directory -c ...   # anything else is refused
+mcp-scan verify-chain ~/.mcp-scan/proxy-chain.jsonl
+```
+
+A refused call never reaches the server; the client gets a JSON-RPC error (`-32001`, "Blocked by mcp-scan policy"). Every `tools/call`, allowed or refused, is appended to a log where each entry carries the hash of the one before it plus an HMAC under this install's baseline key. Editing or deleting an entry, or cutting off the end, makes `verify-chain` fail, and the proxy refuses to extend a log that does not verify. Arguments are not stored: only their key names and a SHA-256 of the whole value, so the log can be shared with an auditor.
+
+Limits: it filters by tool name on `tools/call`, not by what the arguments do; it does not see traffic that bypasses the proxy; and anyone who can read the baseline key can forge a chain, so keep `~/.mcp-scan` private.
+
+---
+
 ## Live introspection (`--live`)
 
 Config scanning reads what a server is *configured* to do. The tool-poisoning attack lives in what the server *says* once it runs: tool descriptions, parameter descriptions, prompts and resources are all read by the model. `--live` connects to each server over stdio or streamable HTTP, runs `initialize`, then pages through `tools/list`, `prompts/list`, `resources/list` and `resources/templates/list`, and checks every item on its own.

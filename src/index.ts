@@ -244,8 +244,23 @@ program
   .option('-c, --command <cmd>', 'Command to run the MCP server')
   .option('-a, --args <args>', 'Arguments for the MCP server (comma separated or quoted)')
   .option('--ui', 'Launch the TUI dashboard alongside the proxy')
+  .option('--enforce', 'Refuse tools/call requests the allow and deny lists do not permit, and record every decision in a hash-chained log')
+  .option('--allow-tools <names>', 'With --enforce: comma-separated tool names the client may call (trailing * allowed). Anything else is refused')
+  .option('--deny-tools <names>', 'With --enforce: comma-separated tool names that are always refused (trailing * allowed)')
+  .option('--audit-chain <file>', 'With --enforce: where the hash-chained decision log lives (default: the mcp-scan audit directory)')
   .action(async (options) => {
     await runProxy(options);
+  });
+
+program
+  .command('verify-chain <file>')
+  .description('Check a proxy decision log written with --enforce: every link, every signature, and that nothing was cut off the end')
+  .action(async (file: string) => {
+    const { verifyChain } = await import('./utils/audit-chain.js');
+    const v = verifyChain(file);
+    if (v.ok) { console.log(`OK: ${v.entries} entries, chain intact.`); return; }
+    console.error(`BROKEN at entry ${v.at}: ${v.reason}`);
+    process.exitCode = 1;
   });
 
 program

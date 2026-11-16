@@ -9,6 +9,9 @@ import { loadPolicy } from '../config/parser.js';
 import { PolicyError, policyFileExists } from '../utils/policy-file.js';
 import { maskPii, maskString, PrivacyOptions } from '../utils/privacy-engine.js';
 import { reportBlessedImportError } from '../utils/dashboard-deps-hint.js';
+import { Enforcer } from '../utils/proxy-enforce.js';
+import { AuditChain, ChainError } from '../utils/audit-chain.js';
+import { auditDir } from '../utils/audit-logger.js';
 
 // The proxy's stdout is the protocol channel to the client, so its own
 // warnings go to stderr. Quiet while the dashboard owns the terminal.
@@ -56,6 +59,8 @@ export class JsonRpcInterceptor extends Transform {
   private replyToSender?: (line: string) => void;
   private refusing = false;
   private discarding = false;
+  // Set on the client side only: refuses tools/call requests the policy does not allow.
+  enforcer?: Enforcer;
   // One entry per line pushed, in order: the requests it carries, with their
   // ids as the sender wrote them (masking may have changed the pushed copy).
   // Kept only for a consumer that reports back through settled(), or it grows forever.
@@ -161,6 +166,25 @@ export class JsonRpcInterceptor extends Transform {
       const { batch, requests } = this.snapshotIds(json);
       if (requests.length > 0 && this.replyToSender) this.replyToSender(this.errorLines(requests, batch, UNREACHABLE));
       return;
+    }
+
+    if (this.enforcer) {
+      let screened: ReturnType<Enforcer['screen']>;
+      try {
+        screened = this.enforcer.screen(json);
+      } catch (_e) {
+        // Fail closed: if the decision could not be recorded, the call is not made.
+        this.answerDropped(this.snapshotIds(json));
+        return;
+      }
+      if (screened.refused.length > 0) {
+        const batch = Array.isArray(json);
+        const out = screened.refused.map(r => ({ jsonrpc: '2.0', id: r.id, error: { code: -32001, message: `Blocked by mcp-scan policy: tool '${r.tool.slice(0, 80)}' is ${r.reason}.` } }));
+        if (this.replyToSender) this.replyToSender(JSON.stringify(batch ? out : out[0]) + '\n');
+        if (screened.forward === null) return;
+        json = screened.forward;
+        line = JSON.stringify(json);
+      }
     }
 
     // Masking off: the line goes through byte for byte. Re-serializing it
@@ -270,7 +294,7 @@ export function splitArgs(input: string): string[] {
   return tokens;
 }
 
-export async function runProxy(options: { command?: string, args?: string, ui?: boolean }) {
+export async function runProxy(options: { command?: string, args?: string, ui?: boolean, enforce?: boolean, allowTools?: string, denyTools?: string, auditChain?: string }) {
   logger.toStderr = true;
   if (!options.command) {
     console.error('No command specified for proxy. Use --command <cmd>.');
@@ -352,12 +376,29 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     logger.warn(`Proxy logging disabled: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  let enforcer: Enforcer | undefined;
+  if (options.enforce) {
+    const list = (v?: string) => (v ? v.split(',').map(x => x.trim()).filter(Boolean) : undefined);
+    try {
+      const chain = AuditChain.open(options.auditChain || path.join(auditDir(), 'proxy-chain.jsonl'));
+      enforcer = new Enforcer({ allow: list(options.allowTools), deny: list(options.denyTools) }, chain);
+    } catch (err) {
+      if (!(err instanceof ChainError)) throw err;
+      logger.error(`Not starting: ${err.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    logger.info(`Enforcement: on (tools/call decisions are written to a hash-chained log)`);
+  }
+
   const child = spawn(options.command, args, {
     stdio: ['pipe', 'pipe', 'inherit']
   });
 
   const clientInterceptor = new JsonRpcInterceptor('CLIENT -> SERVER', logStream, privacyOpts, dashboardCallback, line => process.stdout.write(line));
   const serverInterceptor = new JsonRpcInterceptor('SERVER -> CLIENT', logStream, privacyOpts, dashboardCallback, line => child.stdin.write(line));
+
+  clientInterceptor.enforcer = enforcer;
 
   // The server can close its stdin or die while the client is still talking.
   // An unhandled 'error' on either writable would crash the proxy with a

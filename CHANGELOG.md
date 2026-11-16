@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- `proxy --enforce`: refuses `tools/call` requests that `--allow-tools` / `--deny-tools` do not permit (exact names or a trailing `*`, deny wins) with a JSON-RPC error, and writes every decision to a hash-chained, HMAC-signed log (`--audit-chain`). Arguments are never stored, only their keys and a hash. If a decision cannot be recorded the call is not forwarded. `mcp-scan verify-chain <file>` checks every link, every signature and that the tail was not cut off.
 - `scan --live`: starts each configured server (stdio or streamable HTTP), reads its real `tools/list`, `prompts/list`, `resources/list` and instructions, and checks every item individually for tool-description poisoning (`live-tool-poisoning`, `live-hidden-text`, `live-tool-shadowing`, `live-oversize-description`). Servers that cannot be reached report `live-unreachable` instead of passing. It executes the configured command, with a minimal environment, a hard timeout, output caps and process-group cleanup.
 - Rug-pull detection: per-item SHA-256 snapshots in a signed `tool-snapshots.json`; `tool-definition-changed`, `tool-added`, `tool-removed`, `live-baseline-recorded`, `live-snapshot-tampered`. `--accept-tool-changes` takes a reviewed change as the new baseline, `--live-timeout <ms>` sets the per-server connect timeout.
 

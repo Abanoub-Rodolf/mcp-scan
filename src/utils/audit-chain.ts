@@ -1,0 +1,90 @@
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { baselineHmac } from './audit-logger.js';
+import { stable } from './live-snapshot.js';
+
+// Tamper-evident log for the enforcing proxy. Each entry carries the hash of
+// the one before it, so editing or removing an entry breaks every later link,
+// and an HMAC under the per-install baseline key, so someone who can write the
+// file but not the key cannot rebuild a valid chain. A small head file records
+// the last entry, which catches a tail that was cut off. Arguments are never
+// stored, only their keys and a hash: the log must be safe to hand to an auditor.
+
+const GENESIS = '0'.repeat(64);
+const sha = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
+
+export interface ChainEntry { seq: number; ts: string; event: Record<string, unknown>; prev: string; hash: string; mac: string }
+interface Head { seq: number; hash: string; mac: string }
+
+export class ChainError extends Error {}
+
+const bodyOf = (seq: number, ts: string, event: Record<string, unknown>, prev: string) => stable({ seq, ts, event, prev });
+const macOf = (hash: string, create: boolean): string => {
+  const m = baselineHmac(hash, create);
+  if (m.status === 'ok') return m.mac;
+  throw new ChainError(m.status === 'missing' ? 'the baseline key is missing' : `the baseline key is unusable (${m.reason})`);
+};
+
+export class AuditChain {
+  private seq = 0;
+  private last = GENESIS;
+  private constructor(private file: string) {}
+
+  // Opens or continues a chain. A chain that does not verify is never extended:
+  // appending to a broken log would launder it.
+  static open(file: string): AuditChain {
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    const c = new AuditChain(file);
+    if (fs.existsSync(file) && fs.statSync(file).size > 0) {
+      const v = verifyChain(file);
+      if (!v.ok) throw new ChainError(`${file} does not verify (${v.reason} at entry ${v.at}); move it aside to start a new chain`);
+      c.seq = v.entries;
+      c.last = v.head;
+    } else if (fs.existsSync(file + '.head')) {
+      throw new ChainError(`${file} is empty or missing but its head file exists: the log was removed`);
+    }
+    macOf(GENESIS, true); // fail now, not on the first call, if there is no usable key
+    return c;
+  }
+
+  append(event: Record<string, unknown>): ChainEntry {
+    const seq = this.seq + 1;
+    const ts = new Date().toISOString();
+    const hash = sha(this.last + '\n' + bodyOf(seq, ts, event, this.last));
+    const entry: ChainEntry = { seq, ts, event, prev: this.last, hash, mac: macOf(hash, true) };
+    fs.appendFileSync(this.file, JSON.stringify(entry) + '\n', { mode: 0o600 });
+    fs.writeFileSync(this.file + '.head', JSON.stringify({ seq, hash, mac: entry.mac } satisfies Head), { mode: 0o600 });
+    this.seq = seq;
+    this.last = hash;
+    return entry;
+  }
+}
+
+export type Verdict = { ok: true; entries: number; head: string } | { ok: false; at: number; reason: string };
+
+export function verifyChain(file: string): Verdict {
+  let raw: string;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { return { ok: false, at: 0, reason: `cannot read the log (${(e as Error).message})` }; }
+  const lines = raw.split('\n').filter(l => l.trim());
+  let prev = GENESIS;
+  for (let i = 0; i < lines.length; i++) {
+    const at = i + 1;
+    let e: ChainEntry;
+    try { e = JSON.parse(lines[i]); } catch (_e) { return { ok: false, at, reason: 'not valid JSON' }; }
+    if (e.seq !== at) return { ok: false, at, reason: `sequence is ${e.seq}, expected ${at}` };
+    if (e.prev !== prev) return { ok: false, at, reason: 'the link to the previous entry is broken' };
+    let hash: string;
+    try { hash = sha(prev + '\n' + bodyOf(e.seq, e.ts, e.event, e.prev)); } catch (_e) { return { ok: false, at, reason: 'entry is malformed' }; }
+    if (hash !== e.hash) return { ok: false, at, reason: 'the entry was changed' };
+    let mac: string;
+    try { mac = macOf(hash, false); } catch (err) { return { ok: false, at, reason: (err as Error).message }; }
+    if (typeof e.mac !== 'string' || e.mac.length !== mac.length || !crypto.timingSafeEqual(Buffer.from(e.mac), Buffer.from(mac))) return { ok: false, at, reason: 'the signature does not match' };
+    prev = hash;
+  }
+  let head: Head | null = null;
+  try { head = JSON.parse(fs.readFileSync(file + '.head', 'utf8')); } catch (_e) { /* checked below */ }
+  if (!head) return { ok: false, at: lines.length, reason: 'the head file is missing or unreadable, so a cut-off tail cannot be ruled out' };
+  if (head.seq !== lines.length || head.hash !== prev) return { ok: false, at: lines.length, reason: `the log ends at entry ${lines.length} but the head file records entry ${head.seq}` };
+  return { ok: true, entries: lines.length, head: prev };
+}
