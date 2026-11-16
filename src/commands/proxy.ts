@@ -388,6 +388,14 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
   let enforcer: Enforcer | undefined;
   if (options.enforce) {
     const list = (v?: string) => (v ? v.split(',').map(x => x.trim()).filter(Boolean) : undefined);
+    // An allow list that parses to nothing would silently allow everything: refuse to start instead.
+    for (const [flag, v] of [['--allow-tools', options.allowTools], ['--deny-tools', options.denyTools]] as const) {
+      if (v !== undefined && !list(v)?.length) {
+        logger.error(`Not starting: ${flag} was given but names no tools.`);
+        process.exitCode = 1;
+        return;
+      }
+    }
     try {
       const chain = AuditChain.open(options.auditChain || path.join(auditDir(), 'proxy-chain.jsonl'));
       enforcer = new Enforcer({ allow: list(options.allowTools), deny: list(options.denyTools) }, chain);

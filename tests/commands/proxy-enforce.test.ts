@@ -188,3 +188,13 @@ describe('enforcing proxy', () => {
     expect(JSON.parse(replies[0]).error.message).toMatch(/not forwarded/);
   });
 });
+
+describe('runProxy --enforce flags', () => {
+  it('will not start with an allow list that names nothing', async () => {
+    const { runProxy } = await import('../../src/commands/proxy.js');
+    process.exitCode = undefined;
+    await runProxy({ command: 'node', enforce: true, allowTools: ' , ', auditChain: path.join(os.tmpdir(), 'never-written.jsonl') });
+    expect(process.exitCode).toBe(1);
+    process.exitCode = undefined;
+  });
+});
