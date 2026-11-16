@@ -230,32 +230,6 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         });
       }
 
-      // --live: the only place we execute the configured server. What it
-      // serves is the text the model actually reads.
-      let liveCatalog: LiveCatalog | undefined;
-      // A server the policy blocks, a known-malicious or typosquatted package, or one the user told us to ignore is never started.
-      const skipLive = allFindings.some(f => f.id === 'blocked-package-policy' || f.id === 'known-malicious' || f.id === 'typosquat-detection')
-        || allFindings.some(f => f.severity === 'CRITICAL' || f.severity === 'HIGH')
-        || ignoreList.includes(server.name) || ignoreList.some(i => server.configPath.endsWith(i));
-      if (options.live && skipLive) {
-        // Not INFO: the default severity filter would hide that a risky server was never inspected.
-        allFindings.push({ id: 'live-skipped', severity: 'LOW', description: `Server '${server.name}' was not started for --live: it is ignored, or an earlier check rated it HIGH or CRITICAL (blocked, known malicious, typosquat, policy violation).`, fixRecommendation: 'Resolve the earlier finding, then scan again with --live to read what the server serves.' });
-      } else if (options.live) {
-        if (spinner) spinner.text = `Connecting to ${server.name}...`;
-        try {
-          liveCatalog = await introspect(server, { timeoutMs: options.liveTimeout, noNetwork: options.offline });
-          allFindings.push(...await runScanner('live', () => scanLive(liveCatalog!)));
-        } catch (err) {
-          allFindings.push({
-            id: 'live-unreachable',
-            // A server that needs credentials we deliberately do not hand over is expected, not alarming.
-            severity: /HTTP 40[13]|--offline/.test(err instanceof Error ? err.message : '') ? 'LOW' : 'MEDIUM',
-            description: `Could not introspect server '${server.name}': ${err instanceof Error ? err.message : String(err)}. Its tool descriptions were not checked.`,
-            fixRecommendation: 'Run the server command by hand to see why it does not answer, or scan it without --live. A server that fails only under a scanner deserves a look.',
-          });
-        }
-      }
-
       // Apply policy: Required Env Var Prefix
       if (policy && policy.requiredEnvVarPrefix && server.env) {
         for (const key of Object.keys(server.env)) {
@@ -297,6 +271,32 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
           ...await runScanner('supply-chain', async () => (await scanSupplyChain(alt, options.offline)).findings),
         ];
         allFindings.push(...extra.filter(f => !seen.has(`${f.id}|${f.description}`)));
+      }
+
+      // --live: the only place we execute the configured server. What it
+      // serves is the text the model actually reads.
+      let liveCatalog: LiveCatalog | undefined;
+      // Runs after the package and CVE checks, so a server pinned to a vulnerable or malicious version is never started. A server the policy blocks, a known-malicious or typosquatted package, or one the user told us to ignore is never started.
+      const skipLive = allFindings.some(f => f.id === 'blocked-package-policy' || f.id === 'known-malicious' || f.id === 'typosquat-detection')
+        || allFindings.some(f => f.severity === 'CRITICAL' || f.severity === 'HIGH')
+        || ignoreList.includes(server.name) || ignoreList.some(i => server.configPath.endsWith(i));
+      if (options.live && skipLive) {
+        // Not INFO: the default severity filter would hide that a risky server was never inspected.
+        allFindings.push({ id: 'live-skipped', severity: 'LOW', description: `Server '${server.name}' was not started for --live: it is ignored, or an earlier check rated it HIGH or CRITICAL (blocked, known malicious, typosquat, policy violation).`, fixRecommendation: 'Resolve the earlier finding, then scan again with --live to read what the server serves.' });
+      } else if (options.live) {
+        if (spinner) spinner.text = `Connecting to ${server.name}...`;
+        try {
+          liveCatalog = await introspect(server, { timeoutMs: options.liveTimeout, noNetwork: options.offline });
+          allFindings.push(...await runScanner('live', () => scanLive(liveCatalog!)));
+        } catch (err) {
+          allFindings.push({
+            id: 'live-unreachable',
+            // A server that needs credentials we deliberately do not hand over is expected, not alarming.
+            severity: /HTTP 40[13]|--offline/.test(err instanceof Error ? err.message : '') ? 'LOW' : 'MEDIUM',
+            description: `Could not introspect server '${server.name}': ${err instanceof Error ? err.message : String(err)}. Its tool descriptions were not checked.`,
+            fixRecommendation: 'Run the server command by hand to see why it does not answer, or scan it without --live. A server that fails only under a scanner deserves a look.',
+          });
+        }
       }
       
       const licenseFindings = await runScanner('license', () => scanLicense(metadata));
