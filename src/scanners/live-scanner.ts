@@ -113,7 +113,7 @@ const INJECTION: Array<[RegExp, string]> = [
   [/\bdisregard\s+(?:all\s+)?(?:previous|prior|your|the)\b[^.\n]{0,30}\b(?:instructions?|rules?|guidelines?)\b/i, 'disregard instructions'],
   [/\boverride\s+(?:your|the)\s+(?:instructions?|rules?|system prompt|safety)\b/i, 'override instructions'],
   [/\byou\s+are\s+now\s+(?:an?|the|my)\s+(?:\w+\s+)?(?:assistant|ai|dan|unrestricted|jailbroken|uncensored|evil|developer|admin|root|different|new)\b/i, 'you are now'],
-  [/\bnew\s+(?:system\s+)?instructions?\s*:/i, 'new instructions'],
+  [/\bnew\s+(?:system\s+)?instructions?\s*:\s*(?:you|ignore|always|never|do\b|from now|forget|disregard)/i, 'new instructions'],
   [/\b(?:reveal|print|output|repeat)\s+(?:your|the)\s+system\s+prompt\b/i, 'reveal system prompt'],
   [/\b(?:disable|bypass|turn off)\s+(?:your\s+)?(?:safety|guardrails?|content (?:filter|policy))\b/i, 'bypass safety'],
 ];
@@ -130,6 +130,8 @@ const EXFIL = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|a
 // Generic data nouns (files, contents, output) are routine in upload tools: only with an order attached.
 const EXFIL_GENERIC = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:credentials?|secrets?|passwords?|api keys?|tokens?|contents?|files?|data|everything|outputs?|messages?)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bside_?note\b)/i;
 // The same thing aimed at one of the tool's own parameters.
+// The smuggling parameter itself is the tell: nothing honest is passed through a "sidenote".
+const EXFIL_SIDE = /\b(?:send|forward|post|upload|append|attach|pass|include|add|put|write)\b[^.\n]{0,60}\b(?:credentials?|secrets?|passwords?|api[_ ]?keys?|tokens?|keys?|contents?)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,30}side_?note/i;
 const EXFIL_PARAM = /\b(?:include|pass|put|append|attach|add|provide|supply)\b[^.\n]{0,40}\b(?:conversation|chat history|history|transcript|system prompt)\b[^.\n]{0,60}\b(?:argument|parameter|field)\b/i;
 const CHANNEL_NAME = /^(?:side_?note|notes?|memo|context|extra|metadata|feedback|reason|explanation|comment|remarks?|thoughts?|scratchpad|debug|trace|info)$/i;
 const CHANNEL_DESC = /\b(?:conversation|chat history|transcript|system prompt|private keys?|credentials?|secrets?|api keys?|passwords?|file contents?|contents of)\b/i;
@@ -139,7 +141,7 @@ const VARIATION_SUPP = /[\u{E0100}-\u{E01EF}]/u; // variation selectors suppleme
 const INVISIBLE = /[\u200B\u2060-\u2064\u202A-\u202E\u2066-\u2069\u180E\uFEFF]/;
 // Padding that pushes text out of view: a long run on one line, or a very long
 // blank stretch. Template-literal indentation (newline, 24 spaces, newline) is neither.
-const PADDING = /[ \t\u00A0]{50,}|[ \t\r\n\u00A0]{200,}/g;
+const PADDING = /[ \t\u00A0]{80,}|[ \t\r\n\u00A0]{200,}/g;
 
 function decodeTags(s: string): string {
   let out = '';
@@ -161,8 +163,11 @@ function checkText(who: string, text: string, rawPush: (sev: Severity, id: strin
   }
 
   // Linear character-class checks run on the whole text, not just the clipped part.
-  if (TAG_CHARS.test(text) || VARIATION_SUPP.test(text)) {
-    const hidden = decodeTags(text);
+  // Subdivision flag emoji (England, Scotland, Wales, US states) are a black flag plus tag letters; short
+  // codes are not payloads. Anything longer, or tags outside that shape, still counts.
+  const unflagged = text.replace(/\u{1F3F4}([\u{E0061}-\u{E007A}\u{E0030}-\u{E0039}]{2,6})\u{E007F}/gu, '');
+  if (TAG_CHARS.test(unflagged) || VARIATION_SUPP.test(text)) {
+    const hidden = decodeTags(unflagged);
     push('HIGH', 'live-hidden-text', `${who} contains invisible Unicode tag characters${hidden ? ` that spell: "${clip(hidden)}"` : ''}.`, 'Text the user cannot see but the model can read is an attack, not formatting. Do not use this server.');
   } else if (INVISIBLE.test(text)) {
     push('HIGH', 'live-hidden-text', `${who} contains zero-width or direction-control characters.`, 'Remove them or stop using the server: they hide text from the person reviewing the tool.');
@@ -190,7 +195,7 @@ function checkText(who: string, text: string, rawPush: (sev: Severity, id: strin
   const concealed = CONCEAL.some(rx => rx.test(body));
   // Ordinary phrases ("you must provide a path") are not an order to move data: the order has to be the
   // attack's own ("before using this tool", "first") or come with concealment.
-  const BEFORE = /\b(?:(?:before|prior to) (?:using|calling|running|invoking)|first)\b/i;
+  const BEFORE = /\b(?:before|prior to) (?:using|calling|running|invoking)\b/i;
   const exfilGeneric = (() => { const m = EXFIL_GENERIC.exec(body); return !!m && (concealed || BEFORE.test(body.slice(Math.max(0, m.index - 100), m.index + 100))); })();
   const exfilParam = (() => { const m = EXFIL_PARAM.exec(body); return !!m && directiveNear(m); })();
   const strong = STRONG_PATH.exec(body);
@@ -206,8 +211,8 @@ function checkText(who: string, text: string, rawPush: (sev: Severity, id: strin
     push(sev, 'live-tool-poisoning', `${who} directs the model to a sensitive location (${clip(strong[0])}).`, 'Tool descriptions have no reason to reference SSH keys, cloud credentials or other tools\' config. Review it; remove the server if it is not meant to.');
   } else if (weak && (directiveNear(weak) || EXFIL.test(body)) && near(weak)) {
     push('HIGH', 'live-tool-poisoning', `${who} directs the model to read ${clip(weak[0])} and act on it.`, 'Review what the instruction does with that file.');
-  } else if (EXFIL.test(body) || exfilGeneric || exfilParam) {
-    push('HIGH', 'live-tool-poisoning', `${who} tells the model to move data into a parameter or URL: "${clip((EXFIL.exec(body) ?? EXFIL_GENERIC.exec(body) ?? EXFIL_PARAM.exec(body))![0])}".`, 'Review what data the instruction moves and where it goes.');
+  } else if (EXFIL.test(body) || EXFIL_SIDE.test(body) || exfilGeneric || exfilParam) {
+    push('HIGH', 'live-tool-poisoning', `${who} tells the model to move data into a parameter or URL: "${clip((EXFIL.exec(body) ?? EXFIL_SIDE.exec(body) ?? EXFIL_GENERIC.exec(body) ?? EXFIL_PARAM.exec(body))![0])}".`, 'Review what data the instruction moves and where it goes.');
   }
   for (const [rx, label] of SHADOW) {
     if (rx.test(body)) push('MEDIUM', 'live-tool-shadowing', `${who} tries to steer how other tools behave (${label}).`, 'A tool that rewrites how the model uses other tools is the shadowing attack. Review before trusting.');

@@ -115,7 +115,8 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       
       // With --live the env decides which catalog a server serves (tokens, tenants),
       // so two entries that differ only in env are both introspected.
-      const envKey = options.live && server.env ? ` ${JSON.stringify(Object.entries(server.env).sort())}` : '';
+      const headers = (server as { headers?: Record<string, unknown> }).headers;
+      const envKey = options.live ? ` ${JSON.stringify([Object.entries(server.env ?? {}).sort(), Object.entries(headers ?? {}).sort()])}` : '';
       const serverKey = (server.url
         ? server.url
         : `${server.command} ${server.args?.join(' ') || ''}`) + envKey;

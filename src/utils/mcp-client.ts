@@ -79,7 +79,9 @@ async function listAll(rpc: Rpc, method: string, key: string, out: { truncated?:
     }
     const next = res?.nextCursor;
     // A server that hands back the same cursor would page forever.
-    if (typeof next !== 'string' || next === '' || seen.has(next)) break;
+    if (typeof next !== 'string' || next === '') break;
+    // A repeated cursor is a cycle: the rest of the list is not reachable, so the catalog is partial.
+    if (seen.has(next)) { out.truncated = true; break; }
     seen.add(next);
     cursor = next;
   }
@@ -109,7 +111,11 @@ async function catalog(rpc: Rpc, notify: Notify): Promise<LiveCatalog> {
     out.resources = await listAll(rpc, 'resources/list', 'resources', out);
     try {
       out.resourceTemplates = await listAll(rpc, 'resources/templates/list', 'resourceTemplates', out);
-    } catch (_e) { /* optional in the spec */ }
+    } catch (e) {
+      // Optional in the spec: only a plain "not supported" answer is ignored. Any other failure
+      // means some templates were not read, so the catalog is partial.
+      if (!/not found|not supported|unsupported|-32601/i.test(e instanceof Error ? e.message : '')) out.truncated = true;
+    }
   }
   return out;
 }
@@ -258,6 +264,8 @@ function introspectHttp(server: ResolvedServer, timeoutMs: number): Promise<Live
   }
   let session: string | undefined;
   let version: string | undefined;
+  // One byte budget for the whole introspection, not per request.
+  let received = 0;
   let nextId = 1;
 
   const post = async (body: Record<string, unknown>) => {
@@ -288,7 +296,8 @@ function introspectHttp(server: ResolvedServer, timeoutMs: number): Promise<Live
       const { done, value } = await reader.read();
       if (done) break;
       text += decoder.decode(value, { stream: true });
-      if (text.length > MAX_TOTAL) { await reader.cancel(); throw new IntrospectError(`response exceeded ${MAX_TOTAL} bytes`); }
+      received += value.length;
+      if (received > MAX_TOTAL) { await reader.cancel(); throw new IntrospectError(`server sent more than ${MAX_TOTAL} bytes`); }
     }
     return text;
   };

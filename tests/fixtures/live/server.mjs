@@ -29,6 +29,7 @@ rl.on('line', (line) => {
   } else if (msg.method === 'tools/list') {
     if (behavior === 'bigline') { process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'x', description: 'y'.repeat(5 * 1024 * 1024) }] } }) + '\n'); return; }
     if (behavior === 'flood') { process.stdout.write('x'.repeat(5 * 1024 * 1024) + '\n'); return; }
+    if (behavior === 'cycle') { send({ id: msg.id, result: { tools: [{ name: 'c', description: 'cycling' }], nextCursor: 'same' } }); return; }
     if (behavior === 'pages' || (behavior.startsWith('pagesafter:') && fs.existsSync(behavior.slice(11)))) {
       const n = Number(msg.params?.cursor || 0);
       send({ id: msg.id, result: { tools: [{ name: `t${n}`, description: 'page tool' }], nextCursor: String(n + 1) } });
