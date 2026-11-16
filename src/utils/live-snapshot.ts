@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { Finding } from '../types/scan-result.js';
 import { LiveCatalog } from './mcp-client.js';
+import { clean } from '../scanners/live-scanner.js';
 import { auditDir, baselineHmac } from './audit-logger.js';
 import { atomicWriteConfig } from '../config/writer.js';
 
@@ -13,9 +14,11 @@ import { atomicWriteConfig } from '../config/writer.js';
 // baseline that re-learns on its own would flag a rug pull exactly once.
 
 const SCHEMA = 'mcp-scan/tool-snapshots/1';
-const TEXT_CAP = 4000;
+const TEXT_CAP = 300;
 
-export interface SnapshotItem { hash: string; text: string }
+// hash covers the whole definition; fields keep a short hash and excerpt of each
+// top-level field so a change can be named even when the definition is large.
+export interface SnapshotItem { hash: string; fields: Record<string, { h: string; t: string }> }
 export interface ServerSnapshot { capturedAt: string; items: Record<string, SnapshotItem> }
 interface StoreBody { schema: string; servers: Record<string, ServerSnapshot> }
 
@@ -55,8 +58,14 @@ export function catalogItems(c: LiveCatalog): Record<string, Record<string, unkn
 export function snapshotOf(c: LiveCatalog, now = new Date()): ServerSnapshot {
   const items: Record<string, SnapshotItem> = {};
   for (const [k, def] of Object.entries(catalogItems(c))) {
-    const text = stable(def);
-    items[k] = { hash: crypto.createHash('sha256').update(text).digest('hex'), text: text.slice(0, TEXT_CAP) };
+    const sha = (t: string) => crypto.createHash('sha256').update(t).digest('hex');
+    const fields: SnapshotItem['fields'] = {};
+    for (const [fk, fv] of Object.entries(def)) {
+      if (fv === undefined) continue;
+      const t = stable(fv);
+      fields[fk] = { h: sha(t).slice(0, 16), t: t.slice(0, TEXT_CAP) };
+    }
+    items[k] = { hash: sha(stable(def)), fields };
   }
   return { capturedAt: now.toISOString(), items };
 }
@@ -65,22 +74,20 @@ const label = (key: string) => {
   const i = key.indexOf(':');
   return i === -1 ? 'Server instructions' : `${key[0].toUpperCase()}${key.slice(1, i)} '${key.slice(i + 1)}'`;
 };
-const clip = (s: string) => (s.length > 160 ? s.slice(0, 157) + '...' : s);
+const clip = (s: string) => { const c = clean(s); return c.length > 160 ? c.slice(0, 157) + '...' : c; };
 
 // Names the first top-level field that differs, with both values, so the
 // finding says what moved without dumping two whole schemas.
-function whatChanged(oldText: string, newText: string): string {
-  let a: Record<string, unknown> = {};
-  let b: Record<string, unknown> = {};
-  try { a = JSON.parse(oldText); b = JSON.parse(newText); } catch (_e) { return 'definition changed'; }
-  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
-  const fields = keys.filter(k => stable(a[k]) !== stable(b[k]));
+function whatChanged(before: SnapshotItem, after: SnapshotItem): string {
+  const keys = [...new Set([...Object.keys(before.fields ?? {}), ...Object.keys(after.fields ?? {})])].sort();
+  const fields = keys.filter(k => before.fields?.[k]?.h !== after.fields?.[k]?.h);
   if (fields.length === 0) return 'definition changed';
-  const show = (v: unknown) => (v === undefined ? '(absent)' : typeof v === 'string' ? JSON.stringify(clip(v)) : clip(stable(v)));
+  const show = (f?: { t: string }) => (f === undefined ? '(absent)' : clip(f.t.startsWith('"') ? safeJson(f.t) : f.t));
   const first = fields[0];
   const more = fields.length > 1 ? ` (also: ${fields.slice(1).join(', ')})` : '';
-  return `${first}: ${show(a[first])} -> ${show(b[first])}${more}`;
+  return `${first}: ${show(before.fields?.[first])} -> ${show(after.fields?.[first])}${more}`;
 }
+const safeJson = (t: string) => { try { return JSON.stringify(JSON.parse(t)); } catch (_e) { return t; } };
 
 export function diffSnapshots(serverName: string, prev: ServerSnapshot, cur: ServerSnapshot): Finding[] {
   const findings: Finding[] = [];
@@ -99,7 +106,7 @@ export function diffSnapshots(serverName: string, prev: ServerSnapshot, cur: Ser
       findings.push({
         id: 'tool-definition-changed',
         severity: key.startsWith('tool:') || key === 'instructions' ? 'HIGH' : 'MEDIUM',
-        description: `${label(key)} on server '${serverName}' changed since the snapshot of ${since} (possible rug pull): ${whatChanged(before.text, item.text)}.`,
+        description: `${label(key)} on server '${serverName}' changed since the snapshot of ${since} (possible rug pull): ${whatChanged(before, item)}.`,
         fixRecommendation: `A server that rewrites its tool text after it was approved is the rug-pull pattern. ${accept}`,
       });
     }
@@ -121,12 +128,13 @@ const isSnap = (v: unknown): v is ServerSnapshot => {
   if (!v || typeof v !== 'object') return false;
   const s = v as ServerSnapshot;
   return typeof s.capturedAt === 'string' && !!s.items && typeof s.items === 'object'
-    && Object.values(s.items).every(i => i && typeof i.hash === 'string' && typeof i.text === 'string');
+    && Object.values(s.items).every(i => i && typeof i.hash === 'string' && i.fields && typeof i.fields === 'object');
 };
 
-// everSaved: the audit log says an earlier scan kept snapshots. A store that
-// is missing after that was deleted, which would otherwise re-baseline every
-// server silently.
+// everSaved: a marker file written beside the store the first time it is saved.
+// A store that is missing after that was deleted, which would otherwise
+// re-baseline every server silently. (Someone who can delete the store can
+// delete the marker too; this catches accidents and lazy tampering.)
 export function loadSnapshots(everSaved: boolean): LoadedStore {
   let raw: string;
   try {

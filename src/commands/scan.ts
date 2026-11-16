@@ -357,26 +357,35 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
     for (const [key, fs_] of crossServerShadows([...liveCatalogs].map(([id, v]) => ({ id, name: v.name, tools: v.catalog.tools.map(t => String(t.name)) })))) add(key, ...fs_);
 
     const marker = `${snapshotFile()}.seen`;
-    const store = loadSnapshots(fs.existsSync(marker));
+    let store = loadSnapshots(fs.existsSync(marker));
+    // Recovery: after review, --accept-tool-changes starts a fresh baseline from what
+    // the servers serve now (older baselines are not trusted, so they are dropped).
+    if (store.status === 'tampered' && options.acceptToolChanges) store = { status: 'missing', servers: {} };
     const next: Record<string, ServerSnapshot> = { ...store.servers };
     let dirty = false;
+    const fresh: Array<{ key: string; name: string; count: number }> = [];
     if (store.status === 'tampered') {
       for (const key of liveCatalogs.keys()) {
         add(key, {
           id: 'live-snapshot-tampered',
           severity: 'HIGH',
           description: `Tool snapshots could not be trusted: ${store.reason}. Rug-pull checks for this server did not run; treat the baseline as possibly modified.`,
-          fixRecommendation: 'Review the servers, then delete the snapshot store (tool-snapshots.json in the mcp-scan audit directory) to record a fresh baseline.',
+          fixRecommendation: 'Review what these servers serve now, then run mcp-scan --live --accept-tool-changes to discard the old baseline and record a new one.',
         });
       }
     } else {
       for (const [key, { name, catalog }] of liveCatalogs) {
+        if (catalog.truncated) {
+          // A partial list would become a baseline that hides everything past the cap.
+          add(key, { id: 'live-incomplete', severity: 'MEDIUM', description: `Server '${name}' served more than the scan reads (page or item cap hit), so only part of its catalog was checked and no baseline was recorded for it.`, fixRecommendation: 'A server with thousands of tools is unusual. Review it by hand.' });
+          continue;
+        }
         const cur = snapshotOf(catalog);
         const prev = store.servers[key];
         if (!prev) {
           next[key] = cur;
           dirty = true;
-          add(key, { id: 'live-baseline-recorded', severity: 'INFO', description: `Recorded a baseline of ${Object.keys(cur.items).length} tool, prompt and resource definitions for '${name}'. Later --live scans report any change.` });
+          fresh.push({ key, name, count: Object.keys(cur.items).length });
         } else if (options.acceptToolChanges) {
           next[key] = cur;
           dirty = true;
@@ -384,8 +393,14 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
           add(key, ...diffSnapshots(name, prev, cur));
         }
       }
-      if (dirty && saveSnapshots(next)) {
+      const saved = dirty ? saveSnapshots(next) : true;
+      if (dirty && saved) {
         try { fs.writeFileSync(marker, 'tool snapshots have been recorded on this install\n'); } catch (_e) { /* the store still works */ }
+      }
+      for (const f of fresh) {
+        add(f.key, saved
+          ? { id: 'live-baseline-recorded', severity: 'INFO', description: `Recorded a baseline of ${f.count} tool, prompt and resource definitions for '${f.name}'. Later --live scans report any change.` }
+          : { id: 'live-snapshot-unsaved', severity: 'MEDIUM', description: `Could not save the tool baseline for '${f.name}' (is ${snapshotFile()} writable?). Rug-pull detection is off for it until a scan can save.`, fixRecommendation: 'Fix the permissions on the mcp-scan audit directory, then scan again.' });
       }
     }
 
