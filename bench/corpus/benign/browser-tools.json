@@ -1,0 +1,1393 @@
+{
+  "id": "browser-tools",
+  "label": "benign",
+  "source": "npm:@agentdeskai/browser-tools-mcp",
+  "capturedAt": "2026-11-16",
+  "serverInfo": {
+    "name": "browser-tools-mcp",
+    "version": "2.0.0"
+  },
+  "tools": [
+    {
+      "name": "listBrowserTabs",
+      "title": "List browser tabs",
+      "description": "Every browser tab that currently has DevTools open, with the tabId you can pass to any other tool. Call this when a result reported otherTabs above 0, or when the user mentions a page other than the one you have been reading. The tab marked isCurrent is the one every other tool uses when you do not pass tabId.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "title": "List browser tabs",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "tabs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "currentTabId": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "connectedTabs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "tabs",
+          "currentTabId",
+          "connectedTabs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getConsoleLogs",
+      "title": "Get console logs",
+      "description": "Console output from the current tab. Use keywords and limit to keep responses small \u2014 an unfiltered read can be large. Pass tabId for a different tab, or allTabs to read every tab; the result reports which tab it came from.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "description": "Case-insensitive substrings; an entry matches if it contains any of them",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "allTabs": {
+            "description": "Read every connected tab at once instead of just the current one.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Maximum entries to return",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "offset": {
+            "description": "How many of the most recent entries to skip, for paging backwards",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "annotations": {
+        "title": "Get console logs",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Entries matching the filter before paging"
+          },
+          "returned": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Entries actually included"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when some matching entries were withheld"
+          },
+          "tabId": {
+            "description": "The tab these entries came from, or null when reading every tab",
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "The page that tab is on"
+          },
+          "otherTabs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Connected tabs NOT covered here. If above 0, call listBrowserTabs."
+          }
+        },
+        "required": [
+          "entries",
+          "total",
+          "returned",
+          "truncated",
+          "tabId",
+          "url",
+          "otherTabs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getConsoleErrors",
+      "title": "Get console errors",
+      "description": "Only error-level console output and uncaught exceptions from the current tab. Start here when diagnosing a failure. Pass tabId for a different tab, or allTabs to read every tab.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "description": "Case-insensitive substrings; an entry matches if it contains any of them",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "allTabs": {
+            "description": "Read every connected tab at once instead of just the current one.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Maximum entries to return",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "offset": {
+            "description": "How many of the most recent entries to skip, for paging backwards",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "annotations": {
+        "title": "Get console errors",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Entries matching the filter before paging"
+          },
+          "returned": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Entries actually included"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when some matching entries were withheld"
+          },
+          "tabId": {
+            "description": "The tab these entries came from, or null when reading every tab",
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "The page that tab is on"
+          },
+          "otherTabs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Connected tabs NOT covered here. If above 0, call listBrowserTabs."
+          }
+        },
+        "required": [
+          "entries",
+          "total",
+          "returned",
+          "truncated",
+          "tabId",
+          "url",
+          "otherTabs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getNetworkLogs",
+      "title": "Get network requests",
+      "description": "XHR and fetch requests from the current tab, including status and timing. Credential headers are redacted. Pass tabId for a different tab, or allTabs to read every tab.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "urlKeywords": {
+            "description": "Match against the request URL",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bodyKeywords": {
+            "description": "Match against the request or response body",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "allTabs": {
+            "description": "Read every connected tab at once instead of just the current one.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Maximum entries to return",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "offset": {
+            "description": "How many of the most recent entries to skip, for paging backwards",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "annotations": {
+        "title": "Get network requests",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Entries matching the filter before paging"
+          },
+          "returned": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Entries actually included"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when some matching entries were withheld"
+          },
+          "tabId": {
+            "description": "The tab these entries came from, or null when reading every tab",
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "The page that tab is on"
+          },
+          "otherTabs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Connected tabs NOT covered here. If above 0, call listBrowserTabs."
+          }
+        },
+        "required": [
+          "entries",
+          "total",
+          "returned",
+          "truncated",
+          "tabId",
+          "url",
+          "otherTabs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getNetworkErrors",
+      "title": "Get failed network requests",
+      "description": "Only requests that failed or returned a 4xx/5xx status. An empty result means there were no failures, which is a success, not an error.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "urlKeywords": {
+            "description": "Match against the request URL",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "allTabs": {
+            "description": "Read every connected tab at once instead of just the current one.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Maximum entries to return",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "offset": {
+            "description": "How many of the most recent entries to skip, for paging backwards",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "annotations": {
+        "title": "Get failed network requests",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Entries matching the filter before paging"
+          },
+          "returned": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Entries actually included"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when some matching entries were withheld"
+          },
+          "tabId": {
+            "description": "The tab these entries came from, or null when reading every tab",
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "The page that tab is on"
+          },
+          "otherTabs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Connected tabs NOT covered here. If above 0, call listBrowserTabs."
+          }
+        },
+        "required": [
+          "entries",
+          "total",
+          "returned",
+          "truncated",
+          "tabId",
+          "url",
+          "otherTabs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getSelectedElement",
+      "title": "Get selected element",
+      "description": "The DOM element the user has selected in the Chrome DevTools Elements panel, with its attributes and markup.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "title": "Get selected element",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "element": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "element"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getPageInfo",
+      "title": "Get current page",
+      "description": "Which page the browser is currently on. Call this before reading telemetry so you know what the logs describe. If connectedTabs is above 1, call listBrowserTabs before assuming this is the page the user means.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "title": "Get current page",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "tabId": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "extensionConnected": {
+            "type": "boolean"
+          },
+          "connectedTabs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "How many tabs have DevTools open. Above 1 means other pages exist."
+          }
+        },
+        "required": [
+          "url",
+          "tabId",
+          "extensionConnected",
+          "connectedTabs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getConnectionStatus",
+      "title": "Check browser connection",
+      "description": "Whether the Chrome extension is connected and how much telemetry has been captured. Call this first when something returns nothing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "title": "Check browser connection",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "extensionConnected": {
+            "type": "boolean"
+          },
+          "connections": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "tabs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "currentTabId": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "screenshotDir": {
+            "type": "string"
+          },
+          "counts": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "extensionConnected",
+          "connections",
+          "tabs",
+          "currentTabId",
+          "screenshotDir",
+          "counts"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "takeScreenshot",
+      "title": "Take a screenshot",
+      "description": "Captures the visible area of the current tab and returns the image directly, plus the path it was saved to and the url captured. Pass tabId to capture a different tab.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Filename to save as, relative to the screenshot directory",
+            "type": "string"
+          },
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "title": "Take a screenshot",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "imageIncluded": {
+            "type": "boolean"
+          },
+          "tabId": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "The page captured \u2014 check this is the one you meant"
+          }
+        },
+        "required": [
+          "path",
+          "name",
+          "mimeType",
+          "bytes",
+          "imageIncluded",
+          "tabId",
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "refreshBrowser",
+      "title": "Reload the page",
+      "description": "Reloads the inspected tab. Useful for capturing a clean reproduction after calling wipeLogs.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "title": "Reload the page",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getBrowserStorage",
+      "title": "Inspect browser storage",
+      "description": "Lists localStorage, sessionStorage and cookie entries for the current page. Values are withheld unless includeValues is set, because they routinely contain session tokens.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "description": "Which stores to read. Defaults to localStorage and sessionStorage.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "localStorage",
+                "sessionStorage",
+                "cookies"
+              ]
+            }
+          },
+          "includeValues": {
+            "description": "Return the actual values. Only set this when the user has asked for them \u2014 these are credentials.",
+            "type": "boolean"
+          },
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "title": "Inspect browser storage",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "storage": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "includedValues": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "storage",
+          "includedValues"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "wipeLogs",
+      "title": "Clear captured telemetry",
+      "description": "Discards captured console and network entries for every tab, or one tab if you name it. Use before reproducing a problem so the next read contains only relevant output.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "title": "Clear captured telemetry",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "runAccessibilityAudit",
+      "title": "Run an accessibility audit",
+      "description": "Lighthouse accessibility audit of the current page: contrast, labels, semantics and screen-reader support. Takes up to a minute and launches a separate headless browser.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "url": {
+            "description": "Page to audit. Defaults to the page currently open in the browser. Pages on localhost or a private network can only be audited while open in a connected tab.",
+            "type": "string"
+          },
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "title": "Run an accessibility audit",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "score": {
+            "description": "0-100, or null if the category was not measured",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "summary": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "groups": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "metrics": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "category",
+          "score",
+          "metadata",
+          "summary",
+          "issues"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "runPerformanceAudit",
+      "title": "Run a performance audit",
+      "description": "Lighthouse performance audit of the current page, including Core Web Vitals. Takes up to a minute and launches a separate headless browser.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "url": {
+            "description": "Page to audit. Defaults to the page currently open in the browser. Pages on localhost or a private network can only be audited while open in a connected tab.",
+            "type": "string"
+          },
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "title": "Run a performance audit",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "score": {
+            "description": "0-100, or null if the category was not measured",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "summary": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "groups": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "metrics": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "category",
+          "score",
+          "metadata",
+          "summary",
+          "issues"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "runSEOAudit",
+      "title": "Run an SEO audit",
+      "description": "Lighthouse SEO audit of the current page: metadata, indexability and crawlability. Takes up to a minute and launches a separate headless browser.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "url": {
+            "description": "Page to audit. Defaults to the page currently open in the browser. Pages on localhost or a private network can only be audited while open in a connected tab.",
+            "type": "string"
+          },
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "title": "Run an SEO audit",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "score": {
+            "description": "0-100, or null if the category was not measured",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "summary": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "groups": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "metrics": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "category",
+          "score",
+          "metadata",
+          "summary",
+          "issues"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "runBestPracticesAudit",
+      "title": "Run a best-practices audit",
+      "description": "Lighthouse best-practices audit of the current page: security, deprecated APIs and modern-web hygiene. Takes up to a minute and launches a separate headless browser.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "url": {
+            "description": "Page to audit. Defaults to the page currently open in the browser. Pages on localhost or a private network can only be audited while open in a connected tab.",
+            "type": "string"
+          },
+          "tabId": {
+            "description": "Which browser tab to use, from listBrowserTabs. Omit to use the current tab \u2014 the one DevTools was most recently opened on, which is right in almost every session. Only pass this when a result reported otherTabs above 0 and you need a specific tab.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "title": "Run a best-practices audit",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "score": {
+            "description": "0-100, or null if the category was not measured",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "summary": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "groups": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "metrics": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "category",
+          "score",
+          "metadata",
+          "summary",
+          "issues"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "name": "debuggerMode",
+      "title": "Debug this page",
+      "description": "A systematic workflow for diagnosing a problem on the live page using console and network telemetry."
+    },
+    {
+      "name": "auditMode",
+      "title": "Audit this page",
+      "description": "A workflow for running and interpreting accessibility, performance, SEO and best-practices audits."
+    },
+    {
+      "name": "nextjsSeoAudit",
+      "title": "Next.js SEO audit",
+      "description": "SEO review tailored to Next.js applications, combining a live SEO audit with framework-specific causes."
+    }
+  ],
+  "resources": [],
+  "set": "holdout"
+}

@@ -38,3 +38,7 @@ test-runner*.js
 /PRD.md
 /RESEARCH-V2.md
 /TASKS*.md
+
+# benchmark competitor install
+bench/.venv-cisco/
+bench/.venv-snyk/

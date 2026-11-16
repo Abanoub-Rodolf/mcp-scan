@@ -1,0 +1,541 @@
+{
+  "id": "git-mcp",
+  "label": "benign",
+  "source": "npm:git-mcp-server",
+  "capturedAt": "2026-11-16",
+  "serverInfo": {
+    "name": "git-mcp-server",
+    "version": "1.0.0"
+  },
+  "tools": [
+    {
+      "name": "init",
+      "description": "Initialize a new Git repository",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to initialize the repository in. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "clone",
+      "description": "Clone a repository",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL of the repository to clone"
+          },
+          "path": {
+            "type": "string",
+            "description": "Path to clone into. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "status",
+      "description": "Get repository status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "add",
+      "description": "Stage files",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "MUST be an absolute path (e.g., /Users/username/projects/my-repo/src/file.js)"
+            },
+            "description": "Files to stage"
+          }
+        },
+        "required": [
+          "files"
+        ]
+      }
+    },
+    {
+      "name": "commit",
+      "description": "Create a commit",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Commit message"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      }
+    },
+    {
+      "name": "push",
+      "description": "Push commits to remote",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "remote": {
+            "type": "string",
+            "description": "Remote name",
+            "default": "origin"
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch name"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Force push changes",
+            "default": false
+          },
+          "noVerify": {
+            "type": "boolean",
+            "description": "Skip pre-push hooks",
+            "default": false
+          },
+          "tags": {
+            "type": "boolean",
+            "description": "Push all tags",
+            "default": false
+          }
+        },
+        "required": [
+          "branch"
+        ]
+      }
+    },
+    {
+      "name": "pull",
+      "description": "Pull changes from remote",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "remote": {
+            "type": "string",
+            "description": "Remote name",
+            "default": "origin"
+          },
+          "branch": {
+            "type": "string",
+            "description": "Branch name"
+          }
+        },
+        "required": [
+          "branch"
+        ]
+      }
+    },
+    {
+      "name": "branch_list",
+      "description": "List all branches",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "branch_create",
+      "description": "Create a new branch",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Branch name"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Force create branch even if it exists",
+            "default": false
+          },
+          "track": {
+            "type": "boolean",
+            "description": "Set up tracking mode",
+            "default": true
+          },
+          "setUpstream": {
+            "type": "boolean",
+            "description": "Set upstream for push/pull",
+            "default": false
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "branch_delete",
+      "description": "Delete a branch",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Branch name"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "checkout",
+      "description": "Switch branches or restore working tree files",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "target": {
+            "type": "string",
+            "description": "Branch name, commit hash, or file path"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "tag_list",
+      "description": "List tags",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "tag_create",
+      "description": "Create a tag",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Tag name"
+          },
+          "message": {
+            "type": "string",
+            "description": "Tag message"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Force create tag even if it exists",
+            "default": false
+          },
+          "annotated": {
+            "type": "boolean",
+            "description": "Create an annotated tag",
+            "default": true
+          },
+          "sign": {
+            "type": "boolean",
+            "description": "Create a signed tag",
+            "default": false
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "tag_delete",
+      "description": "Delete a tag",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Tag name"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "remote_list",
+      "description": "List remotes",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "remote_add",
+      "description": "Add a remote",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Remote name"
+          },
+          "url": {
+            "type": "string",
+            "description": "Remote URL"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "remote_remove",
+      "description": "Remove a remote",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Remote name"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "stash_list",
+      "description": "List stashes",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "stash_save",
+      "description": "Save changes to stash",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Stash message"
+          },
+          "includeUntracked": {
+            "type": "boolean",
+            "description": "Include untracked files",
+            "default": false
+          },
+          "keepIndex": {
+            "type": "boolean",
+            "description": "Keep staged changes",
+            "default": false
+          },
+          "all": {
+            "type": "boolean",
+            "description": "Include ignored files",
+            "default": false
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "stash_pop",
+      "description": "Apply and remove a stash",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "index": {
+            "type": "number",
+            "description": "Stash index",
+            "default": 0
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "bulk_action",
+      "description": "Execute multiple Git operations in sequence. This is the preferred way to execute multiple operations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to repository. MUST be an absolute path (e.g., /Users/username/projects/my-repo)"
+          },
+          "actions": {
+            "type": "array",
+            "description": "Array of Git operations to execute in sequence",
+            "items": {
+              "type": "object",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "stage"
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "description": "MUST be an absolute path (e.g., /Users/username/projects/my-repo/src/file.js)"
+                      },
+                      "description": "Files to stage. If not provided, stages all changes."
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "commit"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Commit message"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "message"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "push"
+                    },
+                    "remote": {
+                      "type": "string",
+                      "description": "Remote name",
+                      "default": "origin"
+                    },
+                    "branch": {
+                      "type": "string",
+                      "description": "Branch name"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "branch"
+                  ]
+                }
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "actions"
+        ]
+      }
+    }
+  ],
+  "prompts": [],
+  "resources": [],
+  "set": "holdout"
+}

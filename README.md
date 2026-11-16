@@ -96,7 +96,7 @@ mcp-scan automatically detects configurations for **17 AI tool clients**:
 
 ## Live introspection (`--live`)
 
-Config scanning reads what a server is *configured* to do. The tool-poisoning attack lives in what the server *says* once it runs: tool descriptions, parameter descriptions, prompts and resources are all read by the model. `--live` connects to each server over stdio or streamable HTTP, runs `initialize`, then pages through `tools/list`, `prompts/list`, `resources/list` and `resources/templates/list`, and checks every item on its own.
+Config scanning reads what a server is *configured* to do. The tool-poisoning attack lives in what the server *says* once it runs: tool descriptions, parameter descriptions, prompts and resources are all read by the model. `--live` connects to each server over stdio or streamable HTTP, runs `initialize`, then pages through `tools/list`, `prompts/list`, `resources/list` and `resources/templates/list`, and checks every item on its own. It reads the catalog, not what a tool returns when called: `resources/read` contents are not fetched, so a resource whose listing is clean but whose body is poisoned is out of scope.
 
 ```bash
 npx mcp-scan@latest --live
@@ -118,6 +118,31 @@ What it flags, always naming the tool, prompt or resource:
 **Rug pulls.** The first live scan records a SHA-256 per tool, prompt, resource and the server instructions in `tool-snapshots.json` (next to `known-servers.json`, signed with the same per-install key). Later scans report `tool-definition-changed` (HIGH for tools), `tool-added` and `tool-removed`, naming the field that moved. A changed definition keeps being reported until you run `--accept-tool-changes`, so a rug pull is not a one-scan event. A server that fails to connect produces a `live-unreachable` finding and never touches the baseline. An edited or deleted snapshot store is reported as `live-snapshot-tampered`.
 
 Not covered yet: the legacy SSE transport, servers that need OAuth, and per-session or per-client tool lists (the baseline sees what this scan sees).
+
+---
+
+## Benchmark
+
+Same catalogs, same verdict rule, three scanners. The corpus is 51 poisoned tool, prompt and resource definitions taken from public write-ups and proof-of-concept repositories (Invariant Labs, Trail of Bits, Elastic, Embrace The Red, Cisco, Snyk, MCPTox and others, each attributed), and 27 benign catalogs recorded from real npm MCP servers. None of the poisoned samples was written or picked by mcp-scan's own checks.
+
+| Scanner | Precision | Recall | F1 | TP | FP | FN | TN |
+|---|---|---|---|---|---|---|---|
+| mcp-scan static checks (2.3.0) | 53.8% | 13.7% | 0.22 | 7 | 6 | 44 | 21 |
+| **mcp-scan `--live`** | **100%** | **66.7%** | **0.80** | 34 | 0 | 17 | 27 |
+| Cisco mcp-scanner 4.8.7 (YARA analyzer) | 69.0% | 39.2% | 0.50 | 20 | 9 | 31 | 18 |
+| Snyk agent-scan 0.6.11 | not run: analysis needs a Snyk account token | | | | | | |
+
+Rug pulls (a tool's text changes after approval): the snapshot diff caught 4 of 4 recorded cases.
+
+What this does and does not show:
+
+- 14 of the 27 benign servers were recorded after the `--live` rules were written and scanned before any further change (`holdout`); 235 items, no finding at MEDIUM or above. The other 13 were visible while tuning, so read the 100% precision as measured on those 14, not as a general claim. The poisoned samples were not used for tuning, with one disclosed exception: the recall figure moved from 62.7% to 66.7% across two rounds of review, when reviewers' false-negative examples (an absolute-path credentials read, a secret sent through a sidenote parameter) widened two rules. Those two points are not held out.
+- 51 and 27 samples are small; one sample is about two points of recall. 11 poisoned samples are Cisco's own test data and 2 are Snyk's.
+- Cisco ran with its YARA analyzer only; its LLM and API analyzers need keys and are not measured. Snyk needs a token to analyze anything; the harness runs it when `SNYK_TOKEN` is set.
+- Per-catalog scoring: `scanLive` runs on each catalog alone, so the cross-server name-collision check is not part of these numbers. Catalog-level attacks only (what `tools/list`, `prompts/list` and `resources/list` return). Attacks that arrive in tool output need a running agent.
+- No full-schema-poisoning samples (the original write-up could not be fetched).
+
+Reproduce it with `bench/setup.sh` and `node bench/run.mjs`; methodology, per-category recall and per-sample results are in [`bench/`](bench/README.md).
 
 ---
 

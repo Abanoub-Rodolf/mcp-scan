@@ -1,0 +1,1878 @@
+{
+  "date": "2026-11-16T01:56:37.563Z",
+  "corpus": {
+    "poisoned": 51,
+    "benign": 27
+  },
+  "table": {
+    "mcp-scan static (2.3.0 checks)": {
+      "tp": 7,
+      "fp": 6,
+      "fn": 44,
+      "tn": 21,
+      "precision": 0.5384615384615384,
+      "recall": 0.13725490196078433,
+      "f1": 0.21875,
+      "errors": 0
+    },
+    "mcp-scan --live": {
+      "tp": 34,
+      "fp": 0,
+      "fn": 17,
+      "tn": 27,
+      "precision": 1,
+      "recall": 0.6666666666666666,
+      "f1": 0.8,
+      "errors": 0
+    },
+    "cisco mcp-scanner 4.8.7 (yara)": {
+      "tp": 20,
+      "fp": 9,
+      "fn": 31,
+      "tn": 18,
+      "precision": 0.6896551724137931,
+      "recall": 0.39215686274509803,
+      "f1": 0.5,
+      "errors": 0
+    }
+  },
+  "categories": [
+    "cross-tool",
+    "exfil-param",
+    "hidden-unicode",
+    "prompt-injection-prompt",
+    "resource-injection",
+    "rug-pull-after",
+    "tool-poisoning",
+    "tool-shadowing"
+  ],
+  "rugPulls": {
+    "total": 4,
+    "detected": 4
+  },
+  "falsePositives": {
+    "mcp-scan static (2.3.0 checks)": [
+      "chrome-devtools (tool-exfiltration-risk,tool-name-shadow)",
+      "desktop-commander (hidden-instruction-risk,tool-name-shadow,tool-name-shadow,tool-name-shadow,tool-name-shadow,tool-name-shadow)",
+      "executeautomation-playwright (tool-exfiltration-risk,tool-name-shadow)",
+      "firecrawl (tool-exfiltration-risk,tool-name-shadow,tool-name-shadow,tool-name-shadow,tool-name-shadow,tool-name-shadow)",
+      "playwright (tool-exfiltration-risk,tool-name-shadow)",
+      "ssh (tool-exfiltration-risk,tool-name-shadow,tool-name-shadow,tool-name-shadow,tool-name-shadow)"
+    ],
+    "mcp-scan --live": [],
+    "cisco mcp-scanner 4.8.7 (yara)": [
+      "chrome-devtools (tool:list_console_messages:CODE EXECUTION)",
+      "circleci (tool:get_build_failure_logs:CREDENTIAL HARVESTING,tool:list_followed_projects:PROMPT INJECTION,tool:download_usage_api_data:CREDENTIAL HARVESTING,tool:find_underused_resource_classes:PROMPT INJECTION+CREDENTIAL HARVESTING,tool:list_component_versions:PROMPT INJECTION)",
+      "context7 (tool:resolve-library-id:PROMPT INJECTION,tool:query-docs:PROMPT INJECTION)",
+      "desktop-commander (tool:start_search:CREDENTIAL HARVESTING,tool:start_process:SYSTEM MANIPULATION)",
+      "executeautomation-playwright (tool:playwright_assert_response:CODE EXECUTION,tool:playwright_get_visible_html:INJECTION ATTACK)",
+      "kubernetes (tool:kubectl_apply:TOOL POISONING,tool:kubectl_create:TOOL POISONING,tool:kubectl_patch:TOOL POISONING)",
+      "mapbox (tool:directions_tool:PROMPT INJECTION,tool:reverse_geocode_tool:PROMPT INJECTION)",
+      "shopify (tool:learn_shopify_api:PROMPT INJECTION)",
+      "ssh (tool:read-command:PROMPT INJECTION,tool:sftp-upload:DATA EXFILTRATION,tool:sftp-upload-file:PROMPT INJECTION+SYSTEM MANIPULATION,tool:sftp-download-file:PROMPT INJECTION)"
+    ]
+  },
+  "snykRun": false,
+  "rows": {
+    "mcp-scan static (2.3.0 checks)": [
+      {
+        "id": "cisco-eval-hidden-system-instructions",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "prompt-injection-pattern,tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "cisco-eval-jailbreak-mode-context-manipulation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "prompt-injection-pattern,prompt-injection-pattern,tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "cisco-eval-nested-ignore-trust-escalation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "prompt-injection-pattern,prompt-injection-pattern,tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "cisco-eval-safety-bypass-emergency-access",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "prompt-injection-pattern,tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "cisco-example-add-sidenote",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-example-malicious-prompt",
+        "label": "poisoned",
+        "category": "prompt-injection-prompt",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-example-secret-document-resource",
+        "label": "poisoned",
+        "category": "resource-injection",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-example-send-email-shadow",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-line-jumping-retrieve-logs-disguised",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-line-jumping-send-mail-bcc",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-line-jumping-workstation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "dvmcp-ch10-get-user-profile",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "dvmcp-ch2-enhanced-search",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "dvmcp-ch5-calculate-advanced",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "dvmcp-ch5-get-user-roles",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "elastic-daily-quote-implicit-call",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "elastic-format-python-code-context-leak",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "tool-exfiltration-risk,tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "elastic-query-database-override",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "elastic-read-text-file-shadow",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "elastic-send-message-side-note",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "embracethered-motd-pirate",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "embracethered-motd-unicode-tags",
+        "label": "poisoned",
+        "category": "hidden-unicode",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "invariantlabs-blog-add-sidenote",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "invariantlabs-blog-shadowing-add-sidenote",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "invariantlabs-direct-poisoning-add",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "invariantlabs-shadowing-add",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "invariantlabs-whatsapp-blog-rugpull",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "invariantlabs-whatsapp-rugpull-fact",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "mcp-shield-calculate-sum-instructions",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "mcp-shield-fact-of-the-day-rugpull",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "mcp-shield-fetch-weather-exfil-params",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "tool-exfiltration-risk"
+      },
+      {
+        "id": "mcp-shield-read-file-secret",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "mcp-shield-send-email-metadata",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "mcpsecbench-add-tool-poison",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "mcpsecbench-aft-check-cross-tool",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "mcpsecbench-m-check-shadow",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "mcpsecbench-modify-cross-tool",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t1-clickhouse",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t1-email",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "mcptox-t1-prisma",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t2-commander",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t2-email",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "mcptox-t2-github",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t3-email",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "mcptox-t3-github",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t3-slack",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "repello-docker-analyzer-rce",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "prompt-injection-pattern,prompt-injection-pattern,tool-name-shadow,tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "snyk-agent-scan-multiply-rugpull",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "snyk-agent-scan-sum-weak-injection",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "trailofbits-ansi-send-instructions",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "trailofbits-jumping-the-line-workstation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "aws-kb",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "browser-tools",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "chrome-devtools",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "tool-exfiltration-risk,tool-name-shadow"
+      },
+      {
+        "id": "circleci",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "context7",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "desktop-commander",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "hidden-instruction-risk,tool-name-shadow,tool-name-shadow,tool-name-shadow,tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "duckduckgo",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "everything",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "exa",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "excel",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "executeautomation-playwright",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "tool-exfiltration-risk,tool-name-shadow"
+      },
+      {
+        "id": "firecrawl",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "tool-exfiltration-risk,tool-name-shadow,tool-name-shadow,tool-name-shadow,tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "fs",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "git-mcp",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "github",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "heroku",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "kubernetes",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "mapbox",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow,tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "memory",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "notion",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "pinecone",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "playwright",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "tool-exfiltration-risk,tool-name-shadow"
+      },
+      {
+        "id": "sequential-thinking",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "shopify",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": true,
+        "detail": "tool-name-shadow"
+      },
+      {
+        "id": "ssh",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "flaggedMedium": true,
+        "detail": "tool-exfiltration-risk,tool-name-shadow,tool-name-shadow,tool-name-shadow,tool-name-shadow"
+      },
+      {
+        "id": "tavily",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      },
+      {
+        "id": "time",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedMedium": false,
+        "detail": ""
+      }
+    ],
+    "mcp-scan --live": [
+      {
+        "id": "cisco-eval-hidden-system-instructions",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-eval-jailbreak-mode-context-manipulation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-eval-nested-ignore-trust-escalation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "cisco-eval-safety-bypass-emergency-access",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "cisco-example-add-sidenote",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "cisco-example-malicious-prompt",
+        "label": "poisoned",
+        "category": "prompt-injection-prompt",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-example-secret-document-resource",
+        "label": "poisoned",
+        "category": "resource-injection",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-example-send-email-shadow",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "cisco-line-jumping-retrieve-logs-disguised",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "cisco-line-jumping-send-mail-bcc",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-line-jumping-workstation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "dvmcp-ch10-get-user-profile",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "dvmcp-ch2-enhanced-search",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "dvmcp-ch5-calculate-advanced",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "dvmcp-ch5-get-user-roles",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "elastic-daily-quote-implicit-call",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "elastic-format-python-code-context-leak",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "elastic-query-database-override",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "elastic-read-text-file-shadow",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "elastic-send-message-side-note",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "embracethered-motd-pirate",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "embracethered-motd-unicode-tags",
+        "label": "poisoned",
+        "category": "hidden-unicode",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-hidden-text"
+      },
+      {
+        "id": "invariantlabs-blog-add-sidenote",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "invariantlabs-blog-shadowing-add-sidenote",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning,MEDIUM:live-tool-shadowing,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "invariantlabs-direct-poisoning-add",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "invariantlabs-shadowing-add",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning,MEDIUM:live-tool-shadowing,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "invariantlabs-whatsapp-blog-rugpull",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-hidden-text,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "invariantlabs-whatsapp-rugpull-fact",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-hidden-text,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcp-shield-calculate-sum-instructions",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcp-shield-fact-of-the-day-rugpull",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcp-shield-fetch-weather-exfil-params",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "mcp-shield-read-file-secret",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "mcp-shield-send-email-metadata",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcpsecbench-add-tool-poison",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcpsecbench-aft-check-cross-tool",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcpsecbench-m-check-shadow",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcpsecbench-modify-cross-tool",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t1-clickhouse",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcptox-t1-email",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcptox-t1-prisma",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcptox-t2-commander",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcptox-t2-email",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcptox-t2-github",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcptox-t3-email",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "mcptox-t3-github",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t3-slack",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "repello-docker-analyzer-rce",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning,HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "snyk-agent-scan-multiply-rugpull",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "snyk-agent-scan-sum-weak-injection",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "flaggedHigh": true,
+        "detail": "HIGH:live-tool-poisoning"
+      },
+      {
+        "id": "trailofbits-ansi-send-instructions",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "trailofbits-jumping-the-line-workstation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "aws-kb",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "browser-tools",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "chrome-devtools",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "circleci",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "context7",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "desktop-commander",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "duckduckgo",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "everything",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "exa",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "excel",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "executeautomation-playwright",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "firecrawl",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "fs",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "git-mcp",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "github",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "heroku",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "kubernetes",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "mapbox",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": "LOW:live-oversize-description,LOW:live-oversize-description"
+      },
+      {
+        "id": "memory",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "notion",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "pinecone",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "playwright",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "sequential-thinking",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "shopify",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": "LOW:live-oversize-description"
+      },
+      {
+        "id": "ssh",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "tavily",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      },
+      {
+        "id": "time",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "flaggedHigh": false,
+        "detail": ""
+      }
+    ],
+    "cisco mcp-scanner 4.8.7 (yara)": [
+      {
+        "id": "cisco-eval-hidden-system-instructions",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:read_file_safely:PROMPT INJECTION"
+      },
+      {
+        "id": "cisco-eval-jailbreak-mode-context-manipulation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-eval-nested-ignore-trust-escalation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-eval-safety-bypass-emergency-access",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-example-add-sidenote",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:add:PROMPT INJECTION+CREDENTIAL HARVESTING"
+      },
+      {
+        "id": "cisco-example-malicious-prompt",
+        "label": "poisoned",
+        "category": "prompt-injection-prompt",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-example-secret-document-resource",
+        "label": "poisoned",
+        "category": "resource-injection",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-example-send-email-shadow",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "detail": "tool:send_email:PROMPT INJECTION"
+      },
+      {
+        "id": "cisco-line-jumping-retrieve-logs-disguised",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:retrieve_logs:PROMPT INJECTION+CREDENTIAL HARVESTING"
+      },
+      {
+        "id": "cisco-line-jumping-send-mail-bcc",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "cisco-line-jumping-workstation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:get_workstation_environment:PROMPT INJECTION"
+      },
+      {
+        "id": "dvmcp-ch10-get-user-profile",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "dvmcp-ch2-enhanced-search",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:enhanced_search:PROMPT INJECTION"
+      },
+      {
+        "id": "dvmcp-ch5-calculate-advanced",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "dvmcp-ch5-get-user-roles",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "elastic-daily-quote-implicit-call",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "elastic-format-python-code-context-leak",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": true,
+        "detail": "tool:format_python_code:PROMPT INJECTION"
+      },
+      {
+        "id": "elastic-query-database-override",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "elastic-read-text-file-shadow",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "elastic-send-message-side-note",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "embracethered-motd-pirate",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "embracethered-motd-unicode-tags",
+        "label": "poisoned",
+        "category": "hidden-unicode",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "invariantlabs-blog-add-sidenote",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:add:PROMPT INJECTION+CREDENTIAL HARVESTING"
+      },
+      {
+        "id": "invariantlabs-blog-shadowing-add-sidenote",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "detail": "tool:add:PROMPT INJECTION"
+      },
+      {
+        "id": "invariantlabs-direct-poisoning-add",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:add:PROMPT INJECTION+CREDENTIAL HARVESTING"
+      },
+      {
+        "id": "invariantlabs-shadowing-add",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "detail": "tool:add:PROMPT INJECTION"
+      },
+      {
+        "id": "invariantlabs-whatsapp-blog-rugpull",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": true,
+        "detail": "tool:get_fact_of_the_day:DATA EXFILTRATION"
+      },
+      {
+        "id": "invariantlabs-whatsapp-rugpull-fact",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": true,
+        "detail": "tool:get_fact_of_the_day:DATA EXFILTRATION"
+      },
+      {
+        "id": "mcp-shield-calculate-sum-instructions",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:calculateSum:PROMPT INJECTION+CREDENTIAL HARVESTING"
+      },
+      {
+        "id": "mcp-shield-fact-of-the-day-rugpull",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": true,
+        "detail": "tool:getFactOfTheDay:DATA EXFILTRATION"
+      },
+      {
+        "id": "mcp-shield-fetch-weather-exfil-params",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcp-shield-read-file-secret",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:readFile:CREDENTIAL HARVESTING"
+      },
+      {
+        "id": "mcp-shield-send-email-metadata",
+        "label": "poisoned",
+        "category": "exfil-param",
+        "flagged": true,
+        "detail": "tool:sendEmail:PROMPT INJECTION+DATA EXFILTRATION"
+      },
+      {
+        "id": "mcpsecbench-add-tool-poison",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcpsecbench-aft-check-cross-tool",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcpsecbench-m-check-shadow",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcpsecbench-modify-cross-tool",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t1-clickhouse",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t1-email",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t1-prisma",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t2-commander",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t2-email",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t2-github",
+        "label": "poisoned",
+        "category": "tool-shadowing",
+        "flagged": true,
+        "detail": "tool:big:CREDENTIAL HARVESTING"
+      },
+      {
+        "id": "mcptox-t3-email",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t3-github",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "mcptox-t3-slack",
+        "label": "poisoned",
+        "category": "cross-tool",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "repello-docker-analyzer-rce",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "snyk-agent-scan-multiply-rugpull",
+        "label": "poisoned",
+        "category": "rug-pull-after",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "snyk-agent-scan-sum-weak-injection",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "trailofbits-ansi-send-instructions",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:send_instructions:PROMPT INJECTION"
+      },
+      {
+        "id": "trailofbits-jumping-the-line-workstation",
+        "label": "poisoned",
+        "category": "tool-poisoning",
+        "flagged": true,
+        "detail": "tool:get_workstation_environment:PROMPT INJECTION"
+      },
+      {
+        "id": "aws-kb",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "browser-tools",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "chrome-devtools",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "detail": "tool:list_console_messages:CODE EXECUTION"
+      },
+      {
+        "id": "circleci",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "detail": "tool:get_build_failure_logs:CREDENTIAL HARVESTING,tool:list_followed_projects:PROMPT INJECTION,tool:download_usage_api_data:CREDENTIAL HARVESTING,tool:find_underused_resource_classes:PROMPT INJECTION+CREDENTIAL HARVESTING,tool:list_component_versions:PROMPT INJECTION"
+      },
+      {
+        "id": "context7",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "detail": "tool:resolve-library-id:PROMPT INJECTION,tool:query-docs:PROMPT INJECTION"
+      },
+      {
+        "id": "desktop-commander",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "detail": "tool:start_search:CREDENTIAL HARVESTING,tool:start_process:SYSTEM MANIPULATION"
+      },
+      {
+        "id": "duckduckgo",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "everything",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "exa",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "excel",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "executeautomation-playwright",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "detail": "tool:playwright_assert_response:CODE EXECUTION,tool:playwright_get_visible_html:INJECTION ATTACK"
+      },
+      {
+        "id": "firecrawl",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "fs",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "git-mcp",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "github",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "heroku",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "kubernetes",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "detail": "tool:kubectl_apply:TOOL POISONING,tool:kubectl_create:TOOL POISONING,tool:kubectl_patch:TOOL POISONING"
+      },
+      {
+        "id": "mapbox",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "detail": "tool:directions_tool:PROMPT INJECTION,tool:reverse_geocode_tool:PROMPT INJECTION"
+      },
+      {
+        "id": "memory",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "notion",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "pinecone",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "playwright",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "sequential-thinking",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "shopify",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "detail": "tool:learn_shopify_api:PROMPT INJECTION"
+      },
+      {
+        "id": "ssh",
+        "label": "benign",
+        "category": "benign",
+        "flagged": true,
+        "detail": "tool:read-command:PROMPT INJECTION,tool:sftp-upload:DATA EXFILTRATION,tool:sftp-upload-file:PROMPT INJECTION+SYSTEM MANIPULATION,tool:sftp-download-file:PROMPT INJECTION"
+      },
+      {
+        "id": "tavily",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      },
+      {
+        "id": "time",
+        "label": "benign",
+        "category": "benign",
+        "flagged": false,
+        "detail": ""
+      }
+    ]
+  }
+}

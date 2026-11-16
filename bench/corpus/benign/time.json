@@ -1,0 +1,273 @@
+{
+  "id": "time",
+  "label": "benign",
+  "source": "npm:@mcpcentral/mcp-time",
+  "capturedAt": "2026-11-16",
+  "serverInfo": {
+    "name": "mcp-time",
+    "version": "0.0.5"
+  },
+  "tools": [
+    {
+      "name": "current_time",
+      "title": "Get Current Time",
+      "description": "Returns the current time in UTC and a specified or guessed IANA timezone.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "description": "Format for the returned time string (default YYYY-MM-DD HH:mm:ss)"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA timezone name (e.g., \"America/New_York\"). Defaults to the server's guessed timezone"
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "utcTime": {
+            "type": "string"
+          },
+          "localTime": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "utcTime",
+          "localTime",
+          "timezone"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "relative_time",
+      "title": "Get Relative Time",
+      "description": "Calculates the relative time from now to a given date-time string.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string",
+            "description": "The time to compare (format: YYYY-MM-DD HH:mm:ss)"
+          }
+        },
+        "required": [
+          "time"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "relativeTime": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "relativeTime"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "days_in_month",
+      "title": "Get Days in Month",
+      "description": "Returns the number of days in the month of a given date.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "The date to check (format: YYYY-MM-DD). Defaults to current date"
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "days"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_timestamp",
+      "title": "Get Unix Timestamp",
+      "description": "Converts a date-time string to a Unix timestamp in milliseconds.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string",
+            "description": "The time to convert (format: YYYY-MM-DD HH:mm:ss). Defaults to current time"
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "timestamp"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "convert_time",
+      "title": "Convert Timezone",
+      "description": "Converts a time from a source IANA timezone to a target IANA timezone.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string",
+            "description": "The time to convert (e.g., \"2025-03-23 12:30:00\")"
+          },
+          "sourceTimezone": {
+            "type": "string",
+            "description": "Source IANA timezone name (e.g., \"Asia/Shanghai\")"
+          },
+          "targetTimezone": {
+            "type": "string",
+            "description": "Target IANA timezone name (e.g., \"Europe/London\")"
+          }
+        },
+        "required": [
+          "time",
+          "sourceTimezone",
+          "targetTimezone"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "convertedTime": {
+            "type": "string"
+          },
+          "hourDifference": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "convertedTime",
+          "hourDifference"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_week_year",
+      "title": "Get Week of Year",
+      "description": "Returns the week number and ISO week number for a given date.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "The date to check (e.g., \"2025-03-23\"). Defaults to current date"
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "week": {
+            "type": "integer"
+          },
+          "isoWeek": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "week",
+          "isoWeek"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    }
+  ],
+  "prompts": [],
+  "resources": [],
+  "set": "tuning"
+}

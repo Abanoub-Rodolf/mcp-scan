@@ -1,0 +1,481 @@
+{
+  "id": "ssh",
+  "label": "benign",
+  "source": "npm:ssh-mcp",
+  "capturedAt": "2026-11-16",
+  "serverInfo": {
+    "name": "SSH MCP Server",
+    "version": "2.26.0"
+  },
+  "tools": [
+    {
+      "name": "list-connections",
+      "description": "List all configured SSH profiles and their connection status. Use this to discover available hosts before running commands.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list-sessions",
+      "description": "List active sessions for a given SSH profile.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "profile": {
+            "description": "Profile name (uses default if omitted)",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "open-session",
+      "description": "Open a named session on a remote host. Use type=\"interactive\" for stateful shell (CWD/env persists between commands) or type=\"background\" for long-running processes.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Session name (alphanumeric, dash, underscore, max 64 chars)"
+          },
+          "type": {
+            "default": "interactive",
+            "description": "Session type",
+            "type": "string",
+            "enum": [
+              "interactive",
+              "background"
+            ]
+          },
+          "command": {
+            "description": "Command for background sessions",
+            "type": "string"
+          },
+          "ttlMs": {
+            "description": "Idle timeout for THIS session in ms (the profile default applies when omitted). May shorten the profile timeout; may lengthen it only up to sessionBackgroundMaxMs for a background session, or not at all for an interactive one",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "profile": {
+            "description": "Profile name (uses default if omitted)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "close-session",
+      "description": "Close a named session. A background session's command is signalled on the host (INT, then TERM, then KILL) before its channel is dropped; an interactive session's shell is ended. The response says so if the command could not be signalled or had not stopped in time.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Session name to close"
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "read-session-output",
+      "description": "Read recent output from a background session (e.g., tail -f logs).",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Background session name"
+          },
+          "lines": {
+            "default": 50,
+            "description": "Number of recent lines to read",
+            "type": "number"
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "read-command",
+      "description": "Execute a READ-ONLY command from an allowlist (ls, cat, grep, find, stat, df, etc.). This tool does NOT modify the system. Prefer this tool for all read operations. Single-line only: a command containing a line break is refused, so upload a multi-line script with sftp-upload and run it by path.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Read-only shell command (must be in the allowlist)"
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "run-command",
+      "description": "Execute an arbitrary shell command on the remote server. May modify the system. Commands classified destructive or privileged go through the approval gate; approvalPolicy on the profile decides whether that is a prompt, an automatic allow, or a refusal. Single-line only: a command containing a line break is refused, so upload a multi-line script with sftp-upload and run it by path.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Shell command to execute"
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          },
+          "session": {
+            "description": "Run in an existing interactive session (stateful)",
+            "type": "string"
+          },
+          "tty": {
+            "description": "Allocate a pseudo-terminal",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "privileged-command",
+      "description": "Execute a command with sudo elevation. Goes through the approval gate; approvalPolicy on the profile decides whether that is a prompt, an automatic allow, or a refusal. The sudo password is piped via stdin for the prompt only (never visible in process list); the command itself runs with stdin at /dev/null, so it can never read the password back. Single-line only: a command containing a line break is refused, so upload a multi-line script with sftp-upload and run it by path.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Command to execute with sudo"
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "signal-process",
+      "description": "Send a signal (INT, TERM, KILL) to a remote process by PID.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "pid": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "description": "Process ID to signal (positive integer)"
+          },
+          "signal": {
+            "default": "TERM",
+            "description": "Signal to send",
+            "type": "string",
+            "enum": [
+              "INT",
+              "TERM",
+              "KILL"
+            ]
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pid"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "sftp-upload",
+      "description": "Upload a file to the remote server via SFTP (secure file transfer, not shell-based). Replaces an existing file at that path unconditionally \u2014 there is no overwrite flag and no way to require a new destination.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "remotePath": {
+            "type": "string",
+            "description": "Remote file path. No leading or trailing whitespace, and no control, bidirectional or zero-width characters: the approval prompt and the audit record quote this path back."
+          },
+          "content": {
+            "type": "string",
+            "description": "File content to upload"
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "remotePath",
+          "content"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "sftp-download",
+      "description": "Download a file from the remote server via SFTP.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "remotePath": {
+            "type": "string",
+            "description": "Remote file path. No leading or trailing whitespace, and no control, bidirectional or zero-width characters: the approval prompt and the audit record quote this path back."
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "remotePath"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "sftp-list",
+      "description": "List a remote directory over SFTP, with a bounded number of entries and a bounded response size. Read-only.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "remotePath": {
+            "type": "string",
+            "description": "Remote directory to list. No leading or trailing whitespace, and no control, bidirectional or zero-width characters."
+          },
+          "maxEntries": {
+            "description": "Max entries to return (default 200, hard cap 1000)",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "remotePath"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "sftp-upload-file",
+      "description": "Upload a local file to the remote host over SFTP, streaming it without passing the contents through model context. The local file must be inside the transferRoot directory the operator configured; without that setting this tool refuses. Use this for binary or large files; use sftp-upload for short text you already have.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "localPath": {
+            "type": "string",
+            "description": "Local file to upload, inside defaults.transferRoot"
+          },
+          "remotePath": {
+            "type": "string",
+            "description": "Remote destination path. No leading or trailing whitespace, and no control, bidirectional or zero-width characters."
+          },
+          "overwrite": {
+            "description": "Replace an existing remote file (default false)",
+            "type": "boolean"
+          },
+          "mode": {
+            "description": "Remote file mode, 1 to 511 (0o777); setuid, setgid and the sticky bit are refused. e.g. 420 for 0644. Omit for 0600 on a new file, or the replaced file\u2019s permission bits.",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "localPath",
+          "remotePath"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "sftp-download-file",
+      "description": "Download a remote file to local disk over SFTP, streaming it without passing the contents through model context. The destination must be inside the transferRoot directory the operator configured; without that setting this tool refuses. Use this for binary or large files; use sftp-download when you need to read the contents.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "remotePath": {
+            "type": "string",
+            "description": "Remote file to download. No leading or trailing whitespace, and no control, bidirectional or zero-width characters."
+          },
+          "localPath": {
+            "type": "string",
+            "description": "Local destination, inside defaults.transferRoot"
+          },
+          "overwrite": {
+            "description": "Replace an existing local file (default false)",
+            "type": "boolean"
+          },
+          "profile": {
+            "description": "Profile name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "remotePath",
+          "localPath"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "reload-config",
+      "description": "Report or reload the server's config file. action=\"status\" (the default) shows the config path, when it was loaded, the sha256 of its bytes and the result of the last reload; never the contents. action=\"reload\" re-reads the file, validates it exactly as startup does, and applies it only if every check passes; a refused reload changes nothing. Command-line flags are never reloaded. Applying closes connections, with their sessions, whose profile was removed or whose connection fields changed, and clears approval grants.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "\"status\" (default) reports the loaded config; \"reload\" re-reads and applies the file",
+            "type": "string",
+            "enum": [
+              "status",
+              "reload"
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ],
+  "prompts": [],
+  "resources": [
+    {
+      "uri": "ssh://connections",
+      "name": "connections",
+      "description": "List all SSH profiles and their connection status",
+      "mimeType": "application/json"
+    }
+  ],
+  "set": "holdout"
+}

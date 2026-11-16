@@ -1,0 +1,1 @@
+Samples are tool, prompt and resource definitions published by their authors for research and defence, kept verbatim with attribution (`source` in each file, full table in `poisoned/SOURCES.md`). Benign samples are catalogs served by openly published npm packages, recorded by `../capture.mjs`. If you own a sample and want it removed, open an issue and it goes.
