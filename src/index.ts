@@ -52,11 +52,15 @@ program
   .option('--webhook <url>', 'POST scan results to a webhook URL')
   .option('--slack-webhook <url>', 'POST scan results to a Slack webhook URL')
   .option('--offline', 'Skip all external network calls and use bundled CVE snapshot')
+  .option('--live', 'Start each server and scan the tools, prompts and resources it actually serves; detects tool-description poisoning and rug pulls. Executes the configured command.')
+  .option('--accept-tool-changes', 'With --live: accept changed tool definitions as the new baseline')
+  .option('--live-timeout <ms>', 'With --live: per-server connect timeout in milliseconds', (v: string) => { const n = Number(v); if (!Number.isInteger(n) || n < 1000) throw new Error('--live-timeout must be an integer of at least 1000'); return n; })
   .addHelpText('after', `
 Examples:
   $ mcp-scan
   $ mcp-scan --severity high
   $ mcp-scan --offline
+  $ mcp-scan --live
   $ mcp-scan --config ~/.cursor/mcp.json
   $ mcp-scan --json > report.json
   $ mcp-scan --html report.html

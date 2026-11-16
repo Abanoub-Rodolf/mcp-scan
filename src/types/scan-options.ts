@@ -17,4 +17,10 @@ export interface ScanOptions {
   policy?: string;
   offline?: boolean;
   submit?: boolean;
+  /** Start each stdio/HTTP server and scan the tools, prompts and resources it really serves. */
+  live?: boolean;
+  /** With live: accept changed tool definitions as the new baseline. */
+  acceptToolChanges?: boolean;
+  /** With live: per-server connect timeout in ms. */
+  liveTimeout?: number;
 }

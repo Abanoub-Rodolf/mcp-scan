@@ -33,6 +33,9 @@ import { repoHint, reportHint, findReportablePackage } from '../utils/repo-hint.
 import { loadCustomRules, evaluateCustomRules } from '../utils/rule-engine.js';
 import { SEVERITY_ORDER, Severity, isSeverity } from '../types/severity.js';
 import { logger } from '../utils/logger.js';
+import { introspect, LiveCatalog } from '../utils/mcp-client.js';
+import { scanLive, crossServerShadows } from '../scanners/live-scanner.js';
+import { snapshotOf, loadSnapshots, saveSnapshots, diffSnapshots, snapshotFile, ServerSnapshot } from '../utils/live-snapshot.js';
 
 export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   const startTime = Date.now();
@@ -90,6 +93,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   };
 
   const seenServers = new Set<string>();
+  const liveCatalogs = new Map<string, { name: string; catalog: LiveCatalog }>();
   
   const minSeverityLevel = (options.severity || policy?.maxSeverity || 'low').toUpperCase() as Severity;
   if (!isSeverity(minSeverityLevel)) {
@@ -168,6 +172,24 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       let allFindings: Finding[] = [];
       for (const [name, fn] of scannerRuns) {
         allFindings.push(...await runScanner(name, fn));
+      }
+
+      // --live: the only place we execute the configured server. What it
+      // serves is the text the model actually reads.
+      let liveCatalog: LiveCatalog | undefined;
+      if (options.live) {
+        if (spinner) spinner.text = `Connecting to ${server.name}...`;
+        try {
+          liveCatalog = await introspect(server, { timeoutMs: options.liveTimeout, noNetwork: options.offline });
+          allFindings.push(...await runScanner('live', () => scanLive(liveCatalog!)));
+        } catch (err) {
+          allFindings.push({
+            id: 'live-unreachable',
+            severity: 'MEDIUM',
+            description: `Could not introspect server '${server.name}': ${err instanceof Error ? err.message : String(err)}. Its tool descriptions were not checked.`,
+            fixRecommendation: 'Run the server command by hand to see why it does not answer, or scan it without --live. A server that fails only under a scanner deserves a look.',
+          });
+        }
       }
 
       // Simple heuristic for package name from supply-chain-scanner
@@ -315,6 +337,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
       report.results.push(serverResult);
       report.totalScanned++;
+      if (liveCatalog) liveCatalogs.set(fingerprintKey(serverResult), { name: server.name, catalog: liveCatalog });
 
       for (const finding of findings) {
         if (finding.severity === 'CRITICAL') report.criticalCount++;
@@ -323,6 +346,54 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         else if (finding.severity === 'LOW') report.lowCount++;
         else if (finding.severity === 'INFO') report.infoCount++;
       }
+    }
+  }
+
+  // Live: tool-definition snapshots (rug pulls) and cross-server shadowing.
+  if (options.live && liveCatalogs.size > 0) {
+    const extra = new Map<string, Finding[]>();
+    const add = (key: string, ...f: Finding[]) => extra.set(key, [...(extra.get(key) ?? []), ...f]);
+
+    for (const [key, fs_] of crossServerShadows([...liveCatalogs].map(([id, v]) => ({ id, name: v.name, tools: v.catalog.tools.map(t => String(t.name)) })))) add(key, ...fs_);
+
+    const marker = `${snapshotFile()}.seen`;
+    const store = loadSnapshots(fs.existsSync(marker));
+    const next: Record<string, ServerSnapshot> = { ...store.servers };
+    let dirty = false;
+    if (store.status === 'tampered') {
+      for (const key of liveCatalogs.keys()) {
+        add(key, {
+          id: 'live-snapshot-tampered',
+          severity: 'HIGH',
+          description: `Tool snapshots could not be trusted: ${store.reason}. Rug-pull checks for this server did not run; treat the baseline as possibly modified.`,
+          fixRecommendation: 'Review the servers, then delete the snapshot store (tool-snapshots.json in the mcp-scan audit directory) to record a fresh baseline.',
+        });
+      }
+    } else {
+      for (const [key, { name, catalog }] of liveCatalogs) {
+        const cur = snapshotOf(catalog);
+        const prev = store.servers[key];
+        if (!prev) {
+          next[key] = cur;
+          dirty = true;
+          add(key, { id: 'live-baseline-recorded', severity: 'INFO', description: `Recorded a baseline of ${Object.keys(cur.items).length} tool, prompt and resource definitions for '${name}'. Later --live scans report any change.` });
+        } else if (options.acceptToolChanges) {
+          next[key] = cur;
+          dirty = true;
+        } else {
+          add(key, ...diffSnapshots(name, prev, cur));
+        }
+      }
+      if (dirty && saveSnapshots(next)) {
+        try { fs.writeFileSync(marker, 'tool snapshots have been recorded on this install\n'); } catch (_e) { /* the store still works */ }
+      }
+    }
+
+    for (const result of report.results) {
+      const found = (extra.get(fingerprintKey(result)) ?? [])
+        .filter(f => SEVERITY_ORDER[f.severity] >= minSeverity)
+        .filter(f => !(policy?.suppressRules ?? []).includes(f.id) && !ignoreList.includes(f.id));
+      result.findings.push(...found);
     }
   }
 
