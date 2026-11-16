@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { StringDecoder } from 'string_decoder';
 import { ResolvedServer } from '../types/config.js';
+import { clean } from '../scanners/live-scanner.js';
 
 // Minimal MCP client for `scan --live`: connect, list what the server puts in
 // front of the model, disconnect. No SDK dependency on purpose; the server
@@ -119,14 +120,33 @@ function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => void): Promi
   ]).finally(() => clearTimeout(timer));
 }
 
+// Children still running. An interrupted scan (Ctrl-C, kill) must not leave
+// servers behind: they are detached into their own process group, so the
+// terminal's signal does not reach them.
+const running = new Set<ChildProcess>();
+let hooked = false;
 function killTree(child: ChildProcess) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
+  running.delete(child);
   try {
-    // detached gave it its own process group: take npx's grandchildren too
+    // detached gave it its own process group: take npx's grandchildren too,
+    // even when the direct child has already exited
     if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
-    else child.kill('SIGKILL');
+    else if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
   } catch (_e) {
-    try { child.kill('SIGKILL'); } catch (_e2) {}
+    try { child.kill('SIGKILL'); } catch (_e2) { /* already gone */ }
+  }
+}
+function trackChild(child: ChildProcess) {
+  running.add(child);
+  if (hooked) return;
+  hooked = true;
+  process.on('exit', () => { for (const c of [...running]) killTree(c); });
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(sig, () => {
+      for (const c of [...running]) killTree(c);
+      // the listener replaced the default: re-raise so the signal still ends us
+      process.kill(process.pid, sig);
+    });
   }
 }
 
@@ -141,6 +161,7 @@ function introspectStdio(server: ResolvedServer, timeoutMs: number): Promise<Liv
     windowsHide: true,
   });
 
+  trackChild(child);
   let nextId = 1;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
   let dead: Error | null = null;
@@ -167,6 +188,7 @@ function introspectStdio(server: ResolvedServer, timeoutMs: number): Promise<Liv
     while ((nl = buffer.indexOf('\n')) !== -1) {
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
+      if (line.length > MAX_LINE) { failAll(new IntrospectError(`a single message exceeded ${MAX_LINE} bytes`)); killTree(child); return; }
       if (line) onLine(line);
     }
     if (buffer.length > MAX_LINE) { failAll(new IntrospectError(`a single message exceeded ${MAX_LINE} bytes`)); killTree(child); }
@@ -176,7 +198,7 @@ function introspectStdio(server: ResolvedServer, timeoutMs: number): Promise<Liv
   child.stdin!.on('error', () => {});
   child.on('error', (e) => failAll(new IntrospectError(`could not start '${server.command}': ${e.message}`)));
   child.on('exit', (code, signal) => {
-    const tail = stderrTail.trim().split('\n').slice(-2).join(' | ');
+    const tail = clean(stderrTail).trim().split('\n').slice(-2).join(' | ');
     failAll(new IntrospectError(`server exited (${signal ?? `code ${code}`}) before answering${tail ? `: ${tail}` : ''}`));
   });
 
@@ -298,7 +320,7 @@ function introspectHttp(server: ResolvedServer, timeoutMs: number): Promise<Live
     .finally(() => {
       controller.abort();
       // Ends the session server-side when it kept one. Best effort.
-      if (session) fetch(url, { method: 'DELETE', headers: { ...headers, 'mcp-session-id': session } }).catch(() => {});
+      if (session) fetch(url, { method: 'DELETE', redirect: 'error', signal: AbortSignal.timeout(3000), headers: { ...headers, 'mcp-session-id': session } }).catch(() => {});
     });
 }
 
