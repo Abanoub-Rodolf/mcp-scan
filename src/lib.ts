@@ -19,6 +19,8 @@ import { scanNetworkEgress } from './scanners/network-egress-scanner.js';
 import { scanDataFlow } from './scanners/data-flow-scanner.js';
 import { scanDependencyCves } from './scanners/osv-scanner.js';
 import { PolicyError } from './utils/policy-file.js';
+import { introspect } from './utils/mcp-client.js';
+import { scanLive } from './scanners/live-scanner.js';
 
 export {
   runScan,
@@ -44,6 +46,9 @@ export {
   scanAst,
   scanSecrets,
   scanToolPoisoning,
+  // --live building blocks: connect to a server and judge what it serves.
+  introspect,
+  scanLive,
   scanPromptInjection,
   scanTransport,
   scanEnvLeak,
