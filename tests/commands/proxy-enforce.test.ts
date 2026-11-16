@@ -47,6 +47,22 @@ describe('hash-chained decision log', () => {
     expect(v.ok === false && v.reason).toMatch(/head file records entry 4/);
   });
 
+  it('two writers on one log keep one chain', () => {
+    const a = AuditChain.open(file);
+    const b = AuditChain.open(file);
+    a.append({ w: 'a' }); b.append({ w: 'b' }); a.append({ w: 'a' }); b.append({ w: 'b' });
+    expect(verifyChain(file)).toMatchObject({ ok: true, entries: 4 });
+  });
+
+  it('reports a malformed log instead of throwing', () => {
+    const c = AuditChain.open(file);
+    c.append({ n: 1 });
+    fs.writeFileSync(file, 'null\n');
+    expect(verifyChain(file).ok).toBe(false);
+    fs.writeFileSync(file, JSON.stringify({ seq: 1, mac: '\u00e9'.repeat(64), event: {}, prev: '', hash: '' }) + '\n');
+    expect(verifyChain(file).ok).toBe(false);
+  });
+
   it('rejects a head file that was forged to match a truncated log', () => {
     const c = AuditChain.open(file);
     c.append({ n: 1 }); c.append({ n: 2 });
@@ -135,6 +151,22 @@ describe('enforcing proxy', () => {
     expect(out[0]).not.toContain('shell');
   });
 
+  it('does not forward a refused call that has no usable id (a notification)', () => {
+    const { ic, out, replies } = setup({ deny: ['shell'] });
+    ic.write('{"jsonrpc":"2.0","method":"tools/call","params":{"name":"shell"}}\n{"jsonrpc":"2.0","id":null,"method":"tools/call","params":{"name":"shell"}}\n');
+    expect(out).toHaveLength(0);
+    expect(replies).toHaveLength(0);
+  });
+
+  it('refuses look-alike keys and case or unicode variants of a denied name', () => {
+    const { ic, out, replies } = setup({ deny: ['shell'] });
+    ic.write('{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_file","NAME":"shell"}}\n');
+    ic.write('{"jsonrpc":"2.0","id":2,"Method":"tools/call","params":{"name":"shell"}}\n');
+    ic.write(call(3, 'Shell') + call(4, ' shell\u200b'.trim()) + call(5, '\uFF53hell'));
+    expect(out).toHaveLength(0);
+    expect(replies.map(r => JSON.parse(r).id)).toEqual([1, 2, 3, 4, 5]);
+  });
+
   it('logs every decision with argument keys and a hash, never the values', () => {
     const { ic } = setup({ deny: ['shell'] });
     ic.write(call(1, 'shell', { cmd: 'cat ~/.ssh/id_rsa' }) + call(2, 'read_file', { path: 'secret-value-123' }));
@@ -144,7 +176,7 @@ describe('enforcing proxy', () => {
     const events = lines().map(l => JSON.parse(l).event);
     expect(events.map(e => e.decision)).toEqual(['refused', 'allowed']);
     expect(events[0]).toMatchObject({ tool: 'shell', argKeys: ['cmd'] });
-    expect(events[0].argsSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(events[0].argsHmac).toMatch(/^[0-9a-f]{64}$/);
     expect(verifyChain(file).ok).toBe(true);
   });
 

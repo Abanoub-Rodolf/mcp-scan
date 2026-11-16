@@ -104,7 +104,7 @@ mcp-scan proxy --enforce --allow-tools read_file,list_directory -c ...   # anyth
 mcp-scan verify-chain ~/.mcp-scan/proxy-chain.jsonl
 ```
 
-A refused call never reaches the server; the client gets a JSON-RPC error (`-32001`, "Blocked by mcp-scan policy"). Every `tools/call`, allowed or refused, is appended to a log where each entry carries the hash of the one before it plus an HMAC under this install's baseline key. Editing or deleting an entry, or cutting off the end, makes `verify-chain` fail, and the proxy refuses to extend a log that does not verify. Arguments are not stored: only their key names and a SHA-256 of the whole value, so the log can be shared with an auditor.
+A refused call never reaches the server; the client gets a JSON-RPC error (`-32001`, "Blocked by mcp-scan policy"). Every `tools/call`, allowed or refused, is appended to a log where each entry carries the hash of the one before it plus an HMAC under this install's baseline key. Editing or deleting an entry, or cutting off the end, makes `verify-chain` fail, and the proxy refuses to extend a log that does not verify. Arguments are not stored: only their key names and a keyed hash (HMAC) of the whole value, so the log can be shared with an auditor.
 
 Limits: putting back an older, valid copy of both the log and its head file is not detected (keep a copy of the head somewhere the proxy cannot write); it filters by tool name on `tools/call`, not by what the arguments do; it does not see traffic that bypasses the proxy; and anyone who can read the baseline key can forge a chain, so keep `~/.mcp-scan` private.
 

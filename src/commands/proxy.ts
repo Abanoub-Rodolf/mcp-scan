@@ -187,9 +187,10 @@ export class JsonRpcInterceptor extends Transform {
         const batch = Array.isArray(json);
         const out = screened.refused.map(r => ({ jsonrpc: '2.0', id: r.id, error: { code: -32001, message: `Blocked by mcp-scan policy: tool '${r.tool.slice(0, 80)}' is ${r.reason}.` } }));
         if (this.replyToSender) this.replyToSender(JSON.stringify(batch ? out : out[0]) + '\n');
-        if (screened.forward === null) return;
-        json = screened.forward;
       }
+      // Nothing left to send (every member refused, or a refused notification): there is nothing to forward.
+      if (screened.forward === null) return;
+      json = screened.forward;
       // Forward what was screened, not the raw text: with duplicate keys two parsers can disagree
       // about which tool a call names.
       line = JSON.stringify(json);
