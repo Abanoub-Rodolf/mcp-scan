@@ -70,7 +70,8 @@ if (!snykSkipped) {
   const cacheFile = path.join(here, 'results/snyk-cache.json');
   let cache = {};
   try { cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch (_e) { /* first run */ }
-  const sampleKey = (s) => crypto.createHash('sha256').update(fs.readFileSync(s.file)).digest('hex').slice(0, 16);
+  // The key covers everything the verdict depends on: the sample, the replay server, Snyk's version and the score threshold.
+  const sampleKey = (s) => crypto.createHash('sha256').update(fs.readFileSync(s.file)).update(fs.readFileSync(path.join(here, 'replay-server.mjs'))).update('snyk-agent-scan 0.6.11 score>=300').digest('hex').slice(0, 16);
   scanners['snyk agent-scan 0.6.11'] = async (s) => {
     const hit = cache[s.id];
     if (hit && hit.key === sampleKey(s)) return { flagged: hit.flagged, detail: hit.detail };
@@ -155,7 +156,7 @@ const fps = {};
 for (const [name, rows] of Object.entries(results)) fps[name] = rows.filter(r => r.label === 'benign' && r.flagged).map(r => `${r.id} (${r.detail})`);
 fs.mkdirSync(path.join(here, 'results'), { recursive: true });
 // A partial run (--only, or a competitor not installed) must not replace the full committed results.
-const complete = !snykSkipped && Object.keys(scanners).length === 4;
+const complete = !snykSkipped && Object.keys(scanners).length === 4 && Object.values(table).every(t => !t.errors);
 const outName = complete ? 'latest' : 'latest.partial';
 fs.writeFileSync(path.join(here, `results/${outName}.json`), JSON.stringify({ date: new Date().toISOString(), corpus: { poisoned: poisoned.length, benign: benign.length }, table, categories, rugPulls: { total: pulls.length, detected: pullHits }, falsePositives: fps, snykRun: !snykSkipped, rows: results }, null, 2) + '\n');
 fs.writeFileSync(path.join(here, `results/${outName}.md`), md.join('\n') + '\n');

@@ -123,7 +123,7 @@ Not covered yet: the legacy SSE transport, servers that need OAuth, and per-sess
 
 ## Benchmark
 
-Same catalogs, same verdict rule, three scanners. The corpus is 51 poisoned tool, prompt and resource definitions taken from public write-ups and proof-of-concept repositories (Invariant Labs, Trail of Bits, Elastic, Embrace The Red, Cisco, Snyk, MCPTox and others, each attributed), and 27 benign catalogs recorded from real npm MCP servers. None of the poisoned samples was written or picked by mcp-scan's own checks.
+Same catalogs, each scanner judged by its own verdict (mcp-scan static: a HIGH finding; `--live`: MEDIUM or higher; Cisco: unsafe; Snyk: prompt-injection score of 300 or more), four scanners. The corpus is 51 poisoned tool, prompt and resource definitions taken from public write-ups and proof-of-concept repositories (Invariant Labs, Trail of Bits, Elastic, Embrace The Red, Cisco, Snyk, MCPTox and others, each attributed), and 27 benign catalogs recorded from real npm MCP servers. None of the poisoned samples was written or picked by mcp-scan's own checks.
 
 | Scanner | Precision | Recall | F1 | TP | FP | FN | TN |
 |---|---|---|---|---|---|---|---|
