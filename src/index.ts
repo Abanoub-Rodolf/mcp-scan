@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import { readFileSync } from 'fs';
 import chalk from 'chalk';
 
@@ -54,7 +54,7 @@ program
   .option('--offline', 'Skip all external network calls and use bundled CVE snapshot')
   .option('--live', 'Start each server and scan the tools, prompts and resources it actually serves; detects tool-description poisoning and rug pulls. Executes the configured command.')
   .option('--accept-tool-changes', 'With --live: accept changed tool definitions as the new baseline')
-  .option('--live-timeout <ms>', 'With --live: per-server connect timeout in milliseconds', (v: string) => { const n = Number(v); if (!Number.isInteger(n) || n < 1000) throw new Error('--live-timeout must be an integer of at least 1000'); return n; })
+  .option('--live-timeout <ms>', 'With --live: per-server connect timeout in milliseconds', (v: string) => { const n = Number(v); if (!Number.isInteger(n) || n < 1000) throw new InvalidArgumentError('must be an integer of at least 1000 (milliseconds)'); return n; })
   .addHelpText('after', `
 Examples:
   $ mcp-scan

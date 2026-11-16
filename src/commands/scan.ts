@@ -93,7 +93,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   };
 
   const seenServers = new Set<string>();
-  const liveCatalogs = new Map<string, { name: string; catalog: LiveCatalog }>();
+  const liveCatalogs = new Map<string, { name: string; configPath: string; catalog: LiveCatalog }>();
   
   const minSeverityLevel = (options.severity || policy?.maxSeverity || 'low').toUpperCase() as Severity;
   if (!isSeverity(minSeverityLevel)) {
@@ -177,24 +177,6 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         allFindings.push(...await runScanner(name, fn));
       }
 
-      // --live: the only place we execute the configured server. What it
-      // serves is the text the model actually reads.
-      let liveCatalog: LiveCatalog | undefined;
-      if (options.live) {
-        if (spinner) spinner.text = `Connecting to ${server.name}...`;
-        try {
-          liveCatalog = await introspect(server, { timeoutMs: options.liveTimeout, noNetwork: options.offline });
-          allFindings.push(...await runScanner('live', () => scanLive(liveCatalog!)));
-        } catch (err) {
-          allFindings.push({
-            id: 'live-unreachable',
-            severity: 'MEDIUM',
-            description: `Could not introspect server '${server.name}': ${err instanceof Error ? err.message : String(err)}. Its tool descriptions were not checked.`,
-            fixRecommendation: 'Run the server command by hand to see why it does not answer, or scan it without --live. A server that fails only under a scanner deserves a look.',
-          });
-        }
-      }
-
       // Simple heuristic for package name from supply-chain-scanner
       let packageName = '';
       let candidates: string[] = [];
@@ -245,6 +227,29 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
           description: `Package '${packageName || server.name}' is explicitly blocked by company policy.`,
           fixRecommendation: 'Remove this server or replace it with an approved alternative.'
         });
+      }
+
+      // --live: the only place we execute the configured server. What it
+      // serves is the text the model actually reads.
+      let liveCatalog: LiveCatalog | undefined;
+      // A server the policy blocks, a known-malicious package, or one the user told us to ignore is never started.
+      const skipLive = allFindings.some(f => f.id === 'blocked-package-policy' || f.id === 'malicious-package')
+        || ignoreList.includes(server.name) || ignoreList.some(i => server.configPath.endsWith(i));
+      if (options.live && skipLive) {
+        allFindings.push({ id: 'live-skipped', severity: 'INFO', description: `Server '${server.name}' was not started for --live: it is blocked, known malicious, or ignored.` });
+      } else if (options.live) {
+        if (spinner) spinner.text = `Connecting to ${server.name}...`;
+        try {
+          liveCatalog = await introspect(server, { timeoutMs: options.liveTimeout, noNetwork: options.offline });
+          allFindings.push(...await runScanner('live', () => scanLive(liveCatalog!)));
+        } catch (err) {
+          allFindings.push({
+            id: 'live-unreachable',
+            severity: 'MEDIUM',
+            description: `Could not introspect server '${server.name}': ${err instanceof Error ? err.message : String(err)}. Its tool descriptions were not checked.`,
+            fixRecommendation: 'Run the server command by hand to see why it does not answer, or scan it without --live. A server that fails only under a scanner deserves a look.',
+          });
+        }
       }
 
       // Apply policy: Required Env Var Prefix
@@ -340,7 +345,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
       report.results.push(serverResult);
       report.totalScanned++;
-      if (liveCatalog) liveCatalogs.set(fingerprintKey(serverResult), { name: server.name, catalog: liveCatalog });
+      if (liveCatalog) liveCatalogs.set(fingerprintKey(serverResult), { name: server.name, configPath: server.configPath, catalog: liveCatalog });
 
       for (const finding of findings) {
         if (finding.severity === 'CRITICAL') report.criticalCount++;
@@ -352,6 +357,17 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
     }
   }
 
+  // 17. Server Fingerprinting (Mutation Check)
+  const mutations = checkFingerprints(report.results);
+  for (const result of report.results) {
+    const serverKey = fingerprintKey(result);
+    if (mutations[serverKey]) {
+      result.findings.push(...mutations[serverKey]);
+    }
+  }
+
+  // Runs after the mutation check: creating the snapshot signing key first would make
+  // a fresh install look like one whose baseline was deleted.
   // Live: tool-definition snapshots (rug pulls) and cross-server shadowing.
   if (options.live && liveCatalogs.size > 0) {
     const extra = new Map<string, Finding[]>();
@@ -417,20 +433,12 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       }
     }
 
+    const ignored = (key: string) => { const v = liveCatalogs.get(key); return !!v && (ignoreList.includes(v.name) || ignoreList.some(i => v.configPath.endsWith(i))); };
     for (const result of report.results) {
-      const found = (extra.get(fingerprintKey(result)) ?? [])
+      const found = (ignored(fingerprintKey(result)) ? [] : extra.get(fingerprintKey(result)) ?? [])
         .filter(f => SEVERITY_ORDER[f.severity] >= minSeverity)
         .filter(f => !(policy?.suppressRules ?? []).includes(f.id) && !ignoreList.includes(f.id));
       result.findings.push(...found);
-    }
-  }
-
-  // 17. Server Fingerprinting (Mutation Check)
-  const mutations = checkFingerprints(report.results);
-  for (const result of report.results) {
-    const serverKey = fingerprintKey(result);
-    if (mutations[serverKey]) {
-      result.findings.push(...mutations[serverKey]);
     }
   }
 

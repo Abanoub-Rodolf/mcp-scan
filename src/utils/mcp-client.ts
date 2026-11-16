@@ -27,6 +27,9 @@ export interface IntrospectOptions {
   noNetwork?: boolean;
 }
 
+// A crashing server may print its environment. Keys and long opaque strings never reach a report.
+const redact = (s: string) => s.replace(/\b([A-Za-z][A-Za-z0-9_]{2,})=\S+/g, '$1=[redacted]').replace(/[A-Za-z0-9_\-+/=.]{24,}/g, '[redacted]');
+
 export class IntrospectError extends Error {
   constructor(message: string) {
     // Messages can carry server-controlled text (JSON-RPC errors, stderr): one clean line.
@@ -203,7 +206,7 @@ function introspectStdio(server: ResolvedServer, timeoutMs: number): Promise<Liv
   child.stdin!.on('error', () => {});
   child.on('error', (e) => failAll(new IntrospectError(`could not start '${server.command}': ${e.message}`)));
   child.on('exit', (code, signal) => {
-    const tail = clean(stderrTail).trim().split('\n').slice(-2).join(' | ');
+    const tail = redact(clean(stderrTail)).trim().split('\n').slice(-2).join(' | ');
     failAll(new IntrospectError(`server exited (${signal ?? `code ${code}`}) before answering${tail ? `: ${tail}` : ''}`));
   });
 

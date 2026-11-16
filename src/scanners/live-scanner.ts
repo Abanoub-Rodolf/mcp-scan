@@ -91,9 +91,13 @@ const WEAK_PATH = /(?:\.env\b|\.npmrc|\.netrc|\bcredentials?\.json\b|\bkeychain\
 const NEGATED = /\b(?:never|(?:do|does|must|should|will|can)(?:\s+not|n't)|won't)\s+(?:\w+\s+){0,1}(?:read|open|access|cat|send|upload|copy|print|load|fetch|include)\b[^.\n]{0,40}$/i;
 const READ_VERB = /\b(?:read|open|cat|load|access|fetch|include|send|upload|copy|print|attach|append|pass|provide|supply|add|embed|post|forward|submit|paste)\b[^.\n]{0,60}$/i;
 const DIRECTIVE = /\b(?:before (?:using|calling|running)|prior to (?:using|calling)|you must|you should|first,? (?:you )?(?:must|should))\b/i;
+// Hiding the tool's own behavior from the user. "Never show API keys to the user" is
+// a safety rule about data, not an instruction to conceal the call, so the object
+// has to be the action itself.
 const CONCEAL = [
-  /\b(?:do not|don't|never)\s+(?:mention|tell|reveal|disclose|inform|show|let)\b[^.\n]{0,60}\b(?:user|human|anyone)\b/i,
-  /\bwithout\s+(?:telling|informing|notifying|alerting)\s+the\s+user\b/i,
+  /\b(?:do not|don't|never)\s+(?:mention|tell|inform|reveal|disclose|let)\b[^.\n]{0,40}\b(?:user|human)\b[^.\n]{0,40}\b(?:this|that you|these|it\b|your (?:action|read|call)|about (?:this|it|the (?:file|tool|call|request|instruction)))/i,
+  /\b(?:do not|don't|never)\s+(?:mention|tell|reveal|disclose)\s+(?:this|that|it|these)\b[^.\n]{0,30}\b(?:user|human|anyone)\b/i,
+  /\bwithout\s+(?:telling|informing|notifying|alerting)\s+the\s+(?:user|human)\b/i,
   /\bkeep\s+(?:this|it|that)\s+(?:secret|hidden|confidential)\b/i,
   /\b(?:user|human)\s+(?:must not|should not|cannot|can't)\s+(?:know|see|be told)\b/i,
 ];
@@ -113,7 +117,8 @@ const SHADOW: Array<[RegExp, string]> = [
   [/\b(?:this tool|it)\s+(?:has|takes)\s+(?:priority|precedence)\b/i, 'claims priority over other tools'],
   [/\b(?:all|any|every)\s+(?:other\s+)?(?:email|message|file|request)s?\b[^.\n]{0,40}\b(?:must|should)\s+(?:be\s+)?(?:sent|routed|forwarded|redirected)\s+to\b/i, 'redirects other tools\' output'],
 ];
-const EXFIL = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bsidenote\b|\bparameter\b|\bargument\b)/i;
+// The target must be a URL or the classic smuggling parameter: "pass the id as the id parameter" is ordinary.
+const EXFIL = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bside_?note\b)/i;
 const CHANNEL_NAME = /^(?:side_?note|notes?|memo|context|extra|metadata|feedback|reason|explanation|comment|remarks?|thoughts?|scratchpad|debug|trace|info)$/i;
 const CHANNEL_DESC = /\b(?:conversation|chat history|transcript|system prompt|private keys?|credentials?|secrets?|api keys?|passwords?|file contents?|contents of)\b/i;
 const TAG_CHARS = /[\u{E0000}-\u{E007F}]/u;

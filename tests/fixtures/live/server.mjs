@@ -10,7 +10,7 @@ const behavior = process.env.FIXTURE_BEHAVIOR || '';
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');
 
 if (behavior.startsWith('pidfile:')) fs.writeFileSync(behavior.slice(8), String(process.pid));
-if (behavior === 'crash') { process.stderr.write('boom: missing API_KEY\n'); process.exit(3); }
+if (behavior === 'crash') { process.stderr.write('boom: missing API_KEY\nSECRET_TOKEN=sk_' + 'live_abcdefghijklmnop0123456789\n'); process.exit(3); }
 if (behavior === 'chatty') process.stdout.write('starting server v1...\nnot json at all\n');
 
 const rl = readline.createInterface({ input: process.stdin });

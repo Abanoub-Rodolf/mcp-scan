@@ -80,6 +80,7 @@ export const FINDING_IDS = [
   'live-snapshot-tampered',
   'live-snapshot-unsaved',
   'live-incomplete',
+  'live-skipped',
   'tool-definition-changed',
   'tool-added',
   'tool-removed',
