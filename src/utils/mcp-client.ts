@@ -189,9 +189,11 @@ function introspectStdio(server: ResolvedServer, timeoutMs: number): Promise<Liv
     buffer += decoder.write(chunk);
     let nl: number;
     while ((nl = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, nl).trim();
+      const raw = buffer.slice(0, nl);
       buffer = buffer.slice(nl + 1);
-      if (line.length > MAX_LINE) { failAll(new IntrospectError(`a single message exceeded ${MAX_LINE} bytes`)); killTree(child); return; }
+      // the cap is on the frame as sent, before any trimming
+      if (raw.length > MAX_LINE) { failAll(new IntrospectError(`a single message exceeded ${MAX_LINE} bytes`)); killTree(child); return; }
+      const line = raw.trim();
       if (line) onLine(line);
     }
     if (buffer.length > MAX_LINE) { failAll(new IntrospectError(`a single message exceeded ${MAX_LINE} bytes`)); killTree(child); }

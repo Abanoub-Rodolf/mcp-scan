@@ -391,4 +391,18 @@ describe('review regressions', () => {
   ])('still flags: %s', (_n, description) => {
     expect(live([{ name: 't', description }]).some(x => x.id === 'live-tool-poisoning')).toBe(true);
   });
+
+  it('flags a schema wider than the walk instead of passing silently', () => {
+    const properties = Object.fromEntries(Array.from({ length: 5200 }, (_, i) => [`p${i}`, { type: 'string' }]));
+    expect(live([{ name: 't', description: 'ok', inputSchema: { type: 'object', properties } }]).some(x => x.id === 'live-incomplete')).toBe(true);
+  });
+
+  it('introspects two servers that differ only in env', async () => {
+    const a = serverOf(POISON_ADD, '', 'same');
+    const b = { ...a, env: { ...a.env, EXTRA: '1' } };
+    const cfg = write('mcp.json', { mcpServers: { one: { command: a.command, args: a.args, env: a.env }, two: { command: b.command, args: b.args, env: b.env } } });
+    const r = await scan(cfg);
+    expect(ids(r, 'one')).toContain('live-tool-poisoning');
+    expect(ids(r, 'two')).toContain('live-tool-poisoning');
+  });
 });

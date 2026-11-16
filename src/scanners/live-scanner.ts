@@ -12,7 +12,12 @@ import { findEncodedInstruction } from '../utils/encoded-text.js';
 const MAX_SCAN = 20000;      // chars of one item inspected; more is itself a finding
 const OVERSIZE = 8000;       // well past the longest honest descriptions seen (about 6k)
 
-type Item = { kind: 'tool' | 'prompt' | 'resource' | 'instructions'; name: string; text: string; params: Array<{ name: string; text: string }> };
+type Item = { kind: 'tool' | 'prompt' | 'resource' | 'instructions'; name: string; text: string; params: Array<{ name: string; text: string }>; capped?: boolean };
+
+const WALK_DEPTH = 32;
+const WALK_WIDTH = 5000;
+// Set when a walk dropped something: the caller reports it instead of passing silently.
+let walkCapped = false;
 
 // Text from the server lands in findings, which reach a terminal: no control
 // or escape characters survive.
@@ -27,11 +32,18 @@ const clip = (s: string, n = 80) => {
 // Every string the model can read: description, titles, and nested schema
 // descriptions, enums, defaults, examples.
 function strings(value: unknown, out: string[], depth = 0): void {
-  if (depth > 12 || value == null) return;
+  if (value == null) return;
+  if (depth > WALK_DEPTH) { walkCapped = true; return; }
   if (typeof value === 'string') { out.push(value); return; }
-  if (Array.isArray(value)) { for (const v of value.slice(0, 200)) strings(v, out, depth + 1); return; }
+  if (Array.isArray(value)) {
+    if (value.length > WALK_WIDTH) walkCapped = true;
+    for (const v of value.slice(0, WALK_WIDTH)) strings(v, out, depth + 1);
+    return;
+  }
   if (typeof value === 'object') {
-    for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, 200)) {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length > WALK_WIDTH) walkCapped = true;
+    for (const [k, v] of entries.slice(0, WALK_WIDTH)) {
       // Schema keywords only: a PROPERTY named 'type' holds an object and must be read.
       if ((k === 'type' || k === '$schema') && typeof (value as Record<string, unknown>)[k] === 'string') continue;
       strings(v, out, depth + 1);
@@ -42,7 +54,9 @@ function strings(value: unknown, out: string[], depth = 0): void {
 function paramsOf(schema: unknown): Array<{ name: string; text: string }> {
   const props = (schema as { properties?: Record<string, unknown> } | undefined)?.properties;
   if (!props || typeof props !== 'object') return [];
-  return Object.entries(props).slice(0, 200).map(([name, def]) => {
+  const all = Object.entries(props);
+  if (all.length > WALK_WIDTH) walkCapped = true;
+  return all.slice(0, WALK_WIDTH).map(([name, def]) => {
     const parts: string[] = [];
     strings(def, parts);
     return { name, text: parts.join('\n') };
@@ -51,6 +65,7 @@ function paramsOf(schema: unknown): Array<{ name: string; text: string }> {
 
 export function itemsOf(c: LiveCatalog): Item[] {
   const items: Item[] = [];
+  walkCapped = false;
   const text = (o: Record<string, unknown>, skip: string[]) => {
     const parts: string[] = [];
     for (const [k, v] of Object.entries(o)) if (!skip.includes(k)) strings(v, parts);
@@ -180,6 +195,7 @@ const BUDGET = 4 * 1024 * 1024; // chars of item text analyzed per server
 export function scanLive(catalog: LiveCatalog): Finding[] {
   const findings: Finding[] = [];
   const items = itemsOf(catalog);
+  if (walkCapped) findings.push({ id: 'live-incomplete', severity: 'MEDIUM', description: 'A tool schema is wider or deeper than the scan walks (more than 5000 entries or 32 levels), so part of it was not checked.', fixRecommendation: 'Schemas this large or nested are not typical. Review the server by hand.' });
   let spent = 0;
   const names = new Set<string>();
   for (const t of catalog.tools) {

@@ -113,9 +113,12 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
     for (const server of activeServers) {
       const serverStartTime = Date.now();
       
-      const serverKey = server.url
+      // With --live the env decides which catalog a server serves (tokens, tenants),
+      // so two entries that differ only in env are both introspected.
+      const envKey = options.live && server.env ? ` ${JSON.stringify(Object.entries(server.env).sort())}` : '';
+      const serverKey = (server.url
         ? server.url
-        : `${server.command} ${server.args?.join(' ') || ''}`;
+        : `${server.command} ${server.args?.join(' ') || ''}`) + envKey;
       if (seenServers.has(serverKey)) {
         // Just note duplicate, not a full re-scan
         report.results.push({
