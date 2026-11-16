@@ -93,7 +93,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
   };
 
   const seenServers = new Set<string>();
-  const liveCatalogs = new Map<string, { name: string; configPath: string; catalog: LiveCatalog }>();
+  const liveCatalogs = new Map<string, { name: string; launch: string; configPath: string; catalog: LiveCatalog }>();
   
   const minSeverityLevel = (options.severity || policy?.maxSeverity || 'low').toUpperCase() as Severity;
   if (!isSeverity(minSeverityLevel)) {
@@ -232,11 +232,11 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       // --live: the only place we execute the configured server. What it
       // serves is the text the model actually reads.
       let liveCatalog: LiveCatalog | undefined;
-      // A server the policy blocks, a known-malicious package, or one the user told us to ignore is never started.
-      const skipLive = allFindings.some(f => f.id === 'blocked-package-policy' || f.id === 'malicious-package')
+      // A server the policy blocks, a known-malicious or typosquatted package, or one the user told us to ignore is never started.
+      const skipLive = allFindings.some(f => f.id === 'blocked-package-policy' || f.id === 'known-malicious' || f.id === 'typosquat-detection')
         || ignoreList.includes(server.name) || ignoreList.some(i => server.configPath.endsWith(i));
       if (options.live && skipLive) {
-        allFindings.push({ id: 'live-skipped', severity: 'INFO', description: `Server '${server.name}' was not started for --live: it is blocked, known malicious, or ignored.` });
+        allFindings.push({ id: 'live-skipped', severity: 'INFO', description: `Server '${server.name}' was not started for --live: it is blocked, known malicious, a typosquat, or ignored.` });
       } else if (options.live) {
         if (spinner) spinner.text = `Connecting to ${server.name}...`;
         try {
@@ -245,7 +245,8 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
         } catch (err) {
           allFindings.push({
             id: 'live-unreachable',
-            severity: 'MEDIUM',
+            // A server that needs credentials we deliberately do not hand over is expected, not alarming.
+            severity: /HTTP 40[13]|--offline/.test(err instanceof Error ? err.message : '') ? 'LOW' : 'MEDIUM',
             description: `Could not introspect server '${server.name}': ${err instanceof Error ? err.message : String(err)}. Its tool descriptions were not checked.`,
             fixRecommendation: 'Run the server command by hand to see why it does not answer, or scan it without --live. A server that fails only under a scanner deserves a look.',
           });
@@ -345,7 +346,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
 
       report.results.push(serverResult);
       report.totalScanned++;
-      if (liveCatalog) liveCatalogs.set(fingerprintKey(serverResult), { name: server.name, configPath: server.configPath, catalog: liveCatalog });
+      if (liveCatalog) liveCatalogs.set(fingerprintKey(serverResult), { launch: serverKey.slice(0, serverKey.length - envKey.length), name: server.name, configPath: server.configPath, catalog: liveCatalog });
 
       for (const finding of findings) {
         if (finding.severity === 'CRITICAL') report.criticalCount++;
@@ -373,7 +374,7 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
     const extra = new Map<string, Finding[]>();
     const add = (key: string, ...f: Finding[]) => extra.set(key, [...(extra.get(key) ?? []), ...f]);
 
-    for (const [key, fs_] of crossServerShadows([...liveCatalogs].map(([id, v]) => ({ id, name: v.name, tools: v.catalog.tools.map(t => String(t.name)) })))) add(key, ...fs_);
+    for (const [key, fs_] of crossServerShadows([...liveCatalogs].map(([id, v]) => ({ id, name: v.name, launch: v.launch, tools: v.catalog.tools.map(t => String(t.name)) })))) add(key, ...fs_);
 
     const marker = `${snapshotFile()}.seen`;
     let store = loadSnapshots(fs.existsSync(marker));

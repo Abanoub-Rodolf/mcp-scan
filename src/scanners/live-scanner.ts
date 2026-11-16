@@ -29,8 +29,13 @@ const clip = (s: string, n = 80) => {
   return one.length > n ? one.slice(0, n - 3) + '...' : one;
 };
 
+// JSON Schema vocabulary. A key outside this set is a name somebody chose (a
+// property, a $defs entry) and the model reads it, so it is scanned like text.
+const KEYWORDS = new Set(['type', 'description', 'properties', 'items', 'required', 'enum', 'default', 'additionalProperties', 'title', 'format', 'minimum', 'maximum', 'minLength', 'maxLength', 'pattern', 'oneOf', 'anyOf', 'allOf', 'not', 'const', 'examples', 'nullable', 'deprecated', 'readOnly', 'writeOnly', 'uniqueItems', 'minItems', 'maxItems', 'patternProperties', '$ref', '$id', '$comment', '$schema', '$defs', 'definitions', 'annotations', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'if', 'then', 'else', 'contains', 'propertyNames', 'unevaluatedProperties', 'additionalItems', 'dependentRequired', 'dependentSchemas', 'content', 'mimeType', 'name', 'uri', 'arguments', 'inputSchema', 'outputSchema', 'readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']);
+const TYPE_NAMES = new Set(['string', 'number', 'integer', 'boolean', 'object', 'array', 'null']);
+
 // Every string the model can read: description, titles, and nested schema
-// descriptions, enums, defaults, examples.
+// descriptions, enums, defaults, examples, and the names used as keys.
 function strings(value: unknown, out: string[], depth = 0): void {
   if (value == null) return;
   if (depth > WALK_DEPTH) { walkCapped = true; return; }
@@ -44,8 +49,10 @@ function strings(value: unknown, out: string[], depth = 0): void {
     const entries = Object.entries(value as Record<string, unknown>);
     if (entries.length > WALK_WIDTH) walkCapped = true;
     for (const [k, v] of entries.slice(0, WALK_WIDTH)) {
-      // Schema keywords only: a PROPERTY named 'type' holds an object and must be read.
-      if ((k === 'type' || k === '$schema') && typeof (value as Record<string, unknown>)[k] === 'string') continue;
+      if (!KEYWORDS.has(k)) out.push(k);
+      // 'type' / '$schema' hold a plain type name or URL in honest schemas; anything else is text.
+      if ((k === 'type' || k === '$schema') && typeof v === 'string' && (TYPE_NAMES.has(v) || /^https?:\/\/json-schema\.org\//.test(v))) continue;
+      if (k === 'type' && Array.isArray(v) && v.every(x => typeof x === 'string' && TYPE_NAMES.has(x))) continue;
       strings(v, out, depth + 1);
     }
   }
@@ -95,7 +102,7 @@ const DIRECTIVE = /\b(?:before (?:using|calling|running)|prior to (?:using|calli
 // a safety rule about data, not an instruction to conceal the call, so the object
 // has to be the action itself.
 const CONCEAL = [
-  /\b(?:do not|don't|never)\s+(?:mention|tell|inform|reveal|disclose|let)\b[^.\n]{0,40}\b(?:user|human)\b[^.\n]{0,40}\b(?:this|that you|these|it\b|your (?:action|read|call)|about (?:this|it|the (?:file|tool|call|request|instruction)))/i,
+  /\b(?:do not|don't|never)\s+(?:mention|tell|inform|reveal|disclose|let)\b[^.\n]{0,40}\b(?:user|human)\b[^.\n]{0,40}\b(?:this|that you|these|your (?:action|read|call)|about (?:this|it|the (?:file|tool|call|request|instruction)))/i,
   /\b(?:do not|don't|never)\s+(?:mention|tell|reveal|disclose)\s+(?:this|that|it|these)\b[^.\n]{0,30}\b(?:user|human|anyone)\b/i,
   /\bwithout\s+(?:telling|informing|notifying|alerting)\s+the\s+(?:user|human)\b/i,
   /\bkeep\s+(?:this|it|that)\s+(?:secret|hidden|confidential)\b/i,
@@ -105,24 +112,30 @@ const INJECTION: Array<[RegExp, string]> = [
   [/\bignore\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|rules?|prompts?)\b/i, 'ignore previous instructions'],
   [/\bdisregard\s+(?:all\s+)?(?:previous|prior|your|the)\b[^.\n]{0,30}\b(?:instructions?|rules?|guidelines?)\b/i, 'disregard instructions'],
   [/\boverride\s+(?:your|the)\s+(?:instructions?|rules?|system prompt|safety)\b/i, 'override instructions'],
-  [/\byou\s+are\s+now\s+(?:an?|the|my|in)\b/i, 'you are now'],
+  [/\byou\s+are\s+now\s+(?:an?|the|my)\s+(?:\w+\s+)?(?:assistant|ai|dan|unrestricted|jailbroken|uncensored|evil|developer|admin|root|different|new)\b/i, 'you are now'],
   [/\bnew\s+(?:system\s+)?instructions?\s*:/i, 'new instructions'],
   [/\b(?:reveal|print|output|repeat)\s+(?:your|the)\s+system\s+prompt\b/i, 'reveal system prompt'],
   [/\b(?:disable|bypass|turn off)\s+(?:your\s+)?(?:safety|guardrails?|content (?:filter|policy))\b/i, 'bypass safety'],
 ];
 const FAKE_TAG = /<\s*\/?\s*(?:important|system|instructions?|secret|hidden|admin|override)\s*>|\[\s*(?:system|important|admin)\s*\]/i;
 const SHADOW: Array<[RegExp, string]> = [
-  [/\b(?:when|whenever|if)\b[^.\n]{0,80}\b(?:is|are)\s+(?:available|present|loaded|installed|connected)\b[^.\n]{0,120}\b(?:must|should|always|never)\b/i, 'conditions on other tools being present'],
+  [/\b(?:when|whenever|if)\b[^.\n]{0,80}\b(?:is|are)\s+(?:available|present|loaded|installed|connected)\b[^.\n]{0,120}\b(?:must|always|never)\b/i, 'conditions on other tools being present'],
   [/\b(?:instead of|rather than|in place of)\s+(?:the\s+)?`?[\w-]+`?\s+tool\b/i, 'replaces another tool'],
   [/\b(?:this tool|it)\s+(?:has|takes)\s+(?:priority|precedence)\b/i, 'claims priority over other tools'],
   [/\b(?:all|any|every)\s+(?:other\s+)?(?:email|message|file|request)s?\b[^.\n]{0,40}\b(?:must|should)\s+(?:be\s+)?(?:sent|routed|forwarded|redirected)\s+to\b/i, 'redirects other tools\' output'],
 ];
 // The target must be a URL or the classic smuggling parameter: "pass the id as the id parameter" is ordinary.
-const EXFIL = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bside_?note\b)/i;
+// Data that is private by nature, sent to a URL or the classic smuggling parameter: a finding alone.
+const EXFIL = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:conversation|chat history|history|transcript|credentials?|secrets?|api keys?|passwords?|system prompt|private keys?)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bside_?note\b)/i;
+// Generic data nouns (files, contents, output) are routine in upload tools: only with an order attached.
+const EXFIL_GENERIC = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:tokens?|contents?|files?|data|everything|outputs?|messages?)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bside_?note\b)/i;
+// The same thing aimed at one of the tool's own parameters.
+const EXFIL_PARAM = /\b(?:include|pass|put|append|attach|add|provide|supply)\b[^.\n]{0,40}\b(?:conversation|chat history|history|transcript|system prompt)\b[^.\n]{0,60}\b(?:argument|parameter|field)\b/i;
 const CHANNEL_NAME = /^(?:side_?note|notes?|memo|context|extra|metadata|feedback|reason|explanation|comment|remarks?|thoughts?|scratchpad|debug|trace|info)$/i;
 const CHANNEL_DESC = /\b(?:conversation|chat history|transcript|system prompt|private keys?|credentials?|secrets?|api keys?|passwords?|file contents?|contents of)\b/i;
 const TAG_CHARS = /[\u{E0000}-\u{E007F}]/u;
 // ZWJ/ZWNJ and the soft hyphen are ordinary in emoji and Indic/Persian text: not flagged.
+const VARIATION_SUPP = /[\u{E0100}-\u{E01EF}]/u; // variation selectors supplement: smuggling, never emoji
 const INVISIBLE = /[\u200B\u2060-\u2064\u202A-\u202E\u2066-\u2069\u180E\uFEFF]/;
 // Padding that pushes text out of view: a long run on one line, or a very long
 // blank stretch. Template-literal indentation (newline, 24 spaces, newline) is neither.
@@ -137,7 +150,9 @@ function decodeTags(s: string): string {
   return out;
 }
 
-function checkText(who: string, text: string, push: (sev: Severity, id: string, desc: string, fix: string) => void) {
+function checkText(who: string, text: string, rawPush: (sev: Severity, id: string, desc: string, fix: string) => void) {
+  let highs = 0;
+  const push: typeof rawPush = (sev, ...rest) => { if (sev === 'HIGH') highs++; rawPush(sev, ...rest); };
   const body = text.length > MAX_SCAN ? text.slice(0, MAX_SCAN) : text;
   if (text.length > MAX_SCAN) {
     push('MEDIUM', 'live-oversize-description', `${who} carries ${text.length} characters of text; only the first ${MAX_SCAN} were inspected.`, 'Text this long is not documentation. Read it in full before trusting the server.');
@@ -146,7 +161,7 @@ function checkText(who: string, text: string, push: (sev: Severity, id: string, 
   }
 
   // Linear character-class checks run on the whole text, not just the clipped part.
-  if (TAG_CHARS.test(text)) {
+  if (TAG_CHARS.test(text) || VARIATION_SUPP.test(text)) {
     const hidden = decodeTags(text);
     push('HIGH', 'live-hidden-text', `${who} contains invisible Unicode tag characters${hidden ? ` that spell: "${clip(hidden)}"` : ''}.`, 'Text the user cannot see but the model can read is an attack, not formatting. Do not use this server.');
   } else if (INVISIBLE.test(text)) {
@@ -163,10 +178,6 @@ function checkText(who: string, text: string, push: (sev: Severity, id: string, 
     }
   }
 
-  const tag = FAKE_TAG.exec(body);
-  if (tag) {
-    push('HIGH', 'live-tool-poisoning', `${who} uses a fake ${tag[0]} marker to address the model.`, 'Tool metadata has no authority to issue system-level instructions. Review the full text.');
-  }
   for (const rx of CONCEAL) {
     const m = rx.exec(body);
     if (m) { push('HIGH', 'live-tool-poisoning', `${who} tells the model to hide something from the user: "${clip(m[0])}".`, 'A legitimate tool never needs the model to conceal its behavior from the user.'); break; }
@@ -174,24 +185,32 @@ function checkText(who: string, text: string, push: (sev: Severity, id: string, 
   for (const [rx, label] of INJECTION) {
     if (rx.test(body)) push('HIGH', 'live-tool-poisoning', `${who} contains an instruction-override phrase (${label}).`, 'Review the full text of this tool; instruction overrides do not belong in tool metadata.');
   }
+  const directiveNear = (m: RegExpExecArray) => DIRECTIVE.test(body.slice(Math.max(0, m.index - 100), m.index + 100));
   const strong = STRONG_PATH.exec(body);
   const weak = WEAK_PATH.exec(body);
   const before = (m: RegExpExecArray) => body.slice(Math.max(0, m.index - 80), m.index);
   // A prohibition only counts when nothing after the path turns it around ("never read X, instead ...").
   const negated = (m: RegExpExecArray) => NEGATED.test(before(m)) && !/\b(?:instead|but|then|except|unless|however)\b/i.test(body.slice(m.index, m.index + 80));
   const near = (m: RegExpExecArray) => READ_VERB.test(before(m)) && !negated(m);
-  if (strong && (near(strong) || EXFIL.test(body) || (DIRECTIVE.test(body) && !negated(strong)))) {
+  if (strong && (near(strong) || EXFIL.test(body))) {
     push('HIGH', 'live-tool-poisoning', `${who} directs the model to a sensitive location (${clip(strong[0])}).`, 'Tool descriptions have no reason to reference SSH keys, cloud credentials or other tools\' config. Remove the server.');
-  } else if (weak && (DIRECTIVE.test(body) || EXFIL.test(body)) && near(weak)) {
+  } else if (weak && (directiveNear(weak) || EXFIL.test(body)) && near(weak)) {
     push('HIGH', 'live-tool-poisoning', `${who} directs the model to read ${clip(weak[0])} and act on it.`, 'Review what the instruction does with that file.');
-  } else if (EXFIL.test(body) && DIRECTIVE.test(body)) {
-    push('HIGH', 'live-tool-poisoning', `${who} tells the model to move data into a parameter or URL: "${clip(EXFIL.exec(body)![0])}".`, 'Review what data the instruction moves and where it goes.');
+  } else if (EXFIL.test(body) || ((EXFIL_GENERIC.test(body) || EXFIL_PARAM.test(body)) && DIRECTIVE.test(body))) {
+    push('HIGH', 'live-tool-poisoning', `${who} tells the model to move data into a parameter or URL: "${clip((EXFIL.exec(body) ?? EXFIL_GENERIC.exec(body) ?? EXFIL_PARAM.exec(body))![0])}".`, 'Review what data the instruction moves and where it goes.');
   }
   for (const [rx, label] of SHADOW) {
     if (rx.test(body)) push('MEDIUM', 'live-tool-shadowing', `${who} tries to steer how other tools behave (${label}).`, 'A tool that rewrites how the model uses other tools is the shadowing attack. Review before trusting.');
   }
   if (findEncodedInstruction(body).length > 0) {
     push('HIGH', 'live-tool-poisoning', `${who} contains a long encoded string that decodes to readable text.`, 'Decode and review it; encoded blobs in tool text hide instructions from reviewers.');
+  }
+
+  // <IMPORTANT> is the canonical poisoning wrapper and honest tools do not use it. Other
+  // markup (<system>, [Admin]) is ordinary prompt structure unless something else here is already wrong.
+  const tag = FAKE_TAG.exec(body);
+  if (tag && (/important/i.test(tag[0]) || highs > 0)) {
+    push('HIGH', 'live-tool-poisoning', `${who} uses a fake ${tag[0]} marker to address the model.`, 'Tool metadata has no authority to issue system-level instructions. Review the full text.');
   }
 }
 
@@ -259,14 +278,17 @@ export function scanLive(catalog: LiveCatalog): Finding[] {
 
 // The same tool name served by two different servers: the model picks one by
 // description, which is the cross-server shadowing setup.
-export function crossServerShadows(catalogs: Array<{ id: string; name: string; tools: string[] }>): Map<string, Finding[]> {
-  const owners = new Map<string, Array<{ id: string; name: string }>>();
-  for (const c of catalogs) for (const t of new Set(c.tools)) owners.set(t, [...(owners.get(t) ?? []), { id: c.id, name: c.name }]);
+export function crossServerShadows(catalogs: Array<{ id: string; name: string; launch: string; tools: string[] }>): Map<string, Finding[]> {
+  const owners = new Map<string, Array<{ id: string; name: string; launch: string }>>();
+  for (const c of catalogs) for (const t of new Set(c.tools)) owners.set(t, [...(owners.get(t) ?? []), { id: c.id, name: c.name, launch: c.launch }]);
   const out = new Map<string, Finding[]>();
   for (const [tool, servers] of owners) {
-    if (servers.length < 2) continue;
+    // Two entries of the same package (different env, different tenant) share names by design.
+    const distinct = servers.filter(x => servers.some(y => y.launch !== x.launch));
+    if (distinct.length < 1 || new Set(servers.map(x => x.launch)).size < 2) continue;
     for (const s of servers) {
-      const others = servers.filter(x => x.id !== s.id).map(x => `'${x.name}'`).join(', ');
+      const others = servers.filter(x => x.launch !== s.launch).map(x => `'${oneLine(x.name).slice(0, 80)}'`).join(', ');
+      if (!others) continue;
       out.set(s.id, [...(out.get(s.id) ?? []), {
         id: 'live-tool-shadowing',
         severity: 'MEDIUM',
