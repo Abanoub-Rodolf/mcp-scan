@@ -21,6 +21,7 @@ import { scanDependencyCves } from './scanners/osv-scanner.js';
 import { PolicyError } from './utils/policy-file.js';
 import { introspect } from './utils/mcp-client.js';
 import { scanLive } from './scanners/live-scanner.js';
+import { snapshotOf, diffSnapshots } from './utils/live-snapshot.js';
 
 export {
   runScan,
@@ -49,6 +50,8 @@ export {
   // --live building blocks: connect to a server and judge what it serves.
   introspect,
   scanLive,
+  snapshotOf,
+  diffSnapshots,
   scanPromptInjection,
   scanTransport,
   scanEnvLeak,

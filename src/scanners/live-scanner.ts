@@ -74,7 +74,7 @@ const WEAK_PATH = /(?:\.env\b|\.npmrc|\.netrc|\bcredentials?\.json\b|\bkeychain\
 // "Never read ~/.ssh/id_rsa" is documentation, not an instruction. Two words or more
 // between the negation and the verb ("do not forget to read") stay flagged.
 const NEGATED = /\b(?:never|(?:do|does|must|should|will|can)(?:\s+not|n't)|won't)\s+(?:\w+\s+){0,1}(?:read|open|access|cat|send|upload|copy|print|load|fetch|include)\b[^.\n]{0,40}$/i;
-const READ_VERB = /\b(?:read|open|cat|load|access|fetch|include|send|upload|copy|print)\b[^.\n]{0,60}$/i;
+const READ_VERB = /\b(?:read|open|cat|load|access|fetch|include|send|upload|copy|print|attach|append|pass|provide|supply|add|embed|post|forward|submit|paste)\b[^.\n]{0,60}$/i;
 const DIRECTIVE = /\b(?:before (?:using|calling|running)|prior to (?:using|calling)|you must|you should|first,? (?:you )?(?:must|should))\b/i;
 const CONCEAL = [
   /\b(?:do not|don't|never)\s+(?:mention|tell|reveal|disclose|inform|show|let)\b[^.\n]{0,60}\b(?:user|human|anyone)\b/i,
@@ -91,7 +91,7 @@ const INJECTION: Array<[RegExp, string]> = [
   [/\b(?:reveal|print|output|repeat)\s+(?:your|the)\s+system\s+prompt\b/i, 'reveal system prompt'],
   [/\b(?:disable|bypass|turn off)\s+(?:your\s+)?(?:safety|guardrails?|content (?:filter|policy))\b/i, 'bypass safety'],
 ];
-const FAKE_TAG = /<\s*\/?\s*(?:important|system|secret|hidden|admin|override)\s*>|\[\s*(?:system|important|admin)\s*\]/i;
+const FAKE_TAG = /<\s*\/?\s*(?:important|system|instructions?|secret|hidden|admin|override)\s*>|\[\s*(?:system|important|admin)\s*\]/i;
 const SHADOW: Array<[RegExp, string]> = [
   [/\b(?:when|whenever|if)\b[^.\n]{0,80}\b(?:is|are)\s+(?:available|present|loaded|installed|connected)\b[^.\n]{0,120}\b(?:must|should|always|never)\b/i, 'conditions on other tools being present'],
   [/\b(?:instead of|rather than|in place of)\s+(?:the\s+)?`?[\w-]+`?\s+tool\b/i, 'replaces another tool'],
