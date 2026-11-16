@@ -375,12 +375,15 @@ export async function runScan(options: ScanOptions = {}): Promise<ScanReport> {
       }
     } else {
       for (const [key, { name, catalog }] of liveCatalogs) {
+        const cur = snapshotOf(catalog);
         if (catalog.truncated) {
-          // A partial list would become a baseline that hides everything past the cap.
-          add(key, { id: 'live-incomplete', severity: 'MEDIUM', description: `Server '${name}' served more than the scan reads (page or item cap hit), so only part of its catalog was checked and no baseline was recorded for it.`, fixRecommendation: 'A server with thousands of tools is unusual. Review it by hand.' });
+          // Never baseline a partial list. With a baseline already on file, what was
+          // read is still compared (a rug pull must not hide behind a flood of tools).
+          const prev = store.servers[key];
+          add(key, { id: 'live-incomplete', severity: prev ? 'HIGH' : 'MEDIUM', description: `Server '${name}' served more than the scan reads (page or item cap hit), so only part of its catalog was checked${prev ? ' although an earlier scan saw it complete' : ''}. No baseline was ${prev ? 'changed' : 'recorded'}.`, fixRecommendation: 'A server with thousands of tools is unusual. Review it by hand.' });
+          if (prev && !options.acceptToolChanges) add(key, ...diffSnapshots(name, prev, cur).filter(f => f.id !== 'tool-removed'));
           continue;
         }
-        const cur = snapshotOf(catalog);
         const prev = store.servers[key];
         if (!prev) {
           next[key] = cur;

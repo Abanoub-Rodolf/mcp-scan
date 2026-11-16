@@ -16,7 +16,9 @@ type Item = { kind: 'tool' | 'prompt' | 'resource' | 'instructions'; name: strin
 
 // Text from the server lands in findings, which reach a terminal: no control
 // or escape characters survive.
-export const clean = (s: string) => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
+export const clean = (s: string) => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029\u202A-\u202E\u2066-\u2069]/g, '');
+// One line, for names and labels: no newlines or tabs either.
+export const oneLine = (s: string) => clean(s).replace(/\s+/g, ' ').trim();
 const clip = (s: string, n = 80) => {
   const one = clean(s).replace(/\s+/g, ' ').trim();
   return one.length > n ? one.slice(0, n - 3) + '...' : one;
@@ -153,8 +155,10 @@ function checkText(who: string, text: string, push: (sev: Severity, id: string, 
   const strong = STRONG_PATH.exec(body);
   const weak = WEAK_PATH.exec(body);
   const before = (m: RegExpExecArray) => body.slice(Math.max(0, m.index - 80), m.index);
-  const near = (m: RegExpExecArray) => READ_VERB.test(before(m)) && !NEGATED.test(before(m));
-  if (strong && !NEGATED.test(before(strong)) && (near(strong) || DIRECTIVE.test(body) || EXFIL.test(body))) {
+  // A prohibition only counts when nothing after the path turns it around ("never read X, instead ...").
+  const negated = (m: RegExpExecArray) => NEGATED.test(before(m)) && !/\b(?:instead|but|then|except|unless|however)\b/i.test(body.slice(m.index, m.index + 80));
+  const near = (m: RegExpExecArray) => READ_VERB.test(before(m)) && !negated(m);
+  if (strong && (near(strong) || EXFIL.test(body) || (DIRECTIVE.test(body) && !negated(strong)))) {
     push('HIGH', 'live-tool-poisoning', `${who} directs the model to a sensitive location (${clip(strong[0])}).`, 'Tool descriptions have no reason to reference SSH keys, cloud credentials or other tools\' config. Remove the server.');
   } else if (weak && (DIRECTIVE.test(body) || EXFIL.test(body)) && near(weak)) {
     push('HIGH', 'live-tool-poisoning', `${who} directs the model to read ${clip(weak[0])} and act on it.`, 'Review what the instruction does with that file.');
@@ -176,7 +180,7 @@ export function scanLive(catalog: LiveCatalog): Finding[] {
   const seen = new Set<string>();
 
   for (const item of items) {
-    const who = item.kind === 'instructions' ? 'The server instructions' : `${item.kind[0].toUpperCase()}${item.kind.slice(1)} '${clean(item.name).slice(0, 80)}'`;
+    const who = item.kind === 'instructions' ? 'The server instructions' : `${item.kind[0].toUpperCase()}${item.kind.slice(1)} '${oneLine(item.name).slice(0, 80)}'`;
     const push = (severity: Severity, id: string, description: string, fixRecommendation: string) => {
       const key = `${id}|${description}`;
       if (seen.has(key)) return;
@@ -201,7 +205,7 @@ export function scanLive(catalog: LiveCatalog): Finding[] {
         const hit = rx.exec(hay);
         // Naming a sibling is normal ("prefer this over 'click'"); redirecting it is not.
         if (hit && /\b(?:instead|replace|override|ignore|redirect|route|forward|send|rather than|(?:before|after) (?:calling|using))\b/i.test(hit[0])) {
-          push('MEDIUM', 'live-tool-shadowing', `${who} gives instructions about another tool of this server ('${clean(other).slice(0, 80)}').`, 'Cross-tool directives in a description are how one tool hijacks another. Review them.');
+          push('MEDIUM', 'live-tool-shadowing', `${who} gives instructions about another tool of this server ('${oneLine(other).slice(0, 80)}').`, 'Cross-tool directives in a description are how one tool hijacks another. Review them.');
           break;
         }
       }
