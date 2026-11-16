@@ -2,8 +2,8 @@
 
 > Formerly published as `mcp-scan`. The `mcp-scan` command still works as an alias for this package. The old name is easy to confuse with Snyk's `agent-scan` (formerly Invariant Labs' `mcp-scan`), which is a different project.
 
-[![npm version](https://badge.fury.io/js/mcp-scan.svg)](https://badge.fury.io/js/mcp-scan)
-[![npm downloads](https://img.shields.io/npm/dw/mcp-scan)](https://www.npmjs.com/package/mcp-scan)
+[![npm version](https://badge.fury.io/js/mcp-tripwire.svg)](https://badge.fury.io/js/mcp-tripwire)
+[![npm downloads](https://img.shields.io/npm/dw/mcp-tripwire)](https://www.npmjs.com/package/mcp-tripwire)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/gitlab.com/abanoub.rodolf/mcp-scan/badge)](https://securityscorecards.dev/viewer/?uri=gitlab.com/abanoub.rodolf/mcp-scan)
 [![npm provenance](https://img.shields.io/badge/npm%20provenance-signed-brightgreen)](https://docs.npmjs.com/generating-provenance-statements)
