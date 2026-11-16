@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- The npm package is renamed `mcp-tripwire`, to stop it being confused with Snyk's `agent-scan` (formerly `mcp-scan`). Both `mcp-tripwire` and `mcp-scan` commands are installed.
+
 ### Added
 - `bench/`: reproducible precision/recall benchmark against Cisco mcp-scanner and Snyk agent-scan on a labeled corpus of published poisoned servers and real benign servers (`node bench/run.mjs`), with results in the README.
 - `scan --live`: starts each configured server (stdio or streamable HTTP), reads its real `tools/list`, `prompts/list`, `resources/list` and instructions, and checks every item individually for tool-description poisoning (`live-tool-poisoning`, `live-hidden-text`, `live-tool-shadowing`, `live-oversize-description`). Servers that cannot be reached report `live-unreachable` instead of passing. It executes the configured command, with a minimal environment, a hard timeout, output caps and process-group cleanup.

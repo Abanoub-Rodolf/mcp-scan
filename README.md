@@ -1,4 +1,6 @@
-# mcp-scan
+# mcp-tripwire
+
+> Formerly published as `mcp-scan`. The `mcp-scan` command still works as an alias for this package. The old name is easy to confuse with Snyk's `agent-scan` (formerly Invariant Labs' `mcp-scan`), which is a different project.
 
 [![npm version](https://badge.fury.io/js/mcp-scan.svg)](https://badge.fury.io/js/mcp-scan)
 [![npm downloads](https://img.shields.io/npm/dw/mcp-scan)](https://www.npmjs.com/package/mcp-scan)
@@ -14,7 +16,7 @@
 MCP servers run with full access to your filesystem, API keys, and network. mcp-scan audits every MCP server configuration on your system, detecting leaked secrets, prompt injection risks, supply-chain vulnerabilities, and data flow issues before they become incidents.
 
 ```bash
-npx mcp-scan@latest
+npx mcp-tripwire@latest
 ```
 
 > **Not the same project as Snyk's `agent-scan`.** Invariant Labs published a Python tool also called `mcp-scan` on PyPI; Snyk acquired Invariant and it now ships as [`agent-scan`](https://github.com/snyk/agent-scan). This package is an independent, MIT-licensed Node.js project on npm. It shares no code with that one, is not affiliated with Snyk, Invariant Labs or Cisco, and never sends your configuration contents or tool text to a hosted analysis service (supply-chain checks look up package names on npm, OSV and GitHub; `--offline` stops all lookups).
@@ -28,7 +30,7 @@ No installation. No sign-up. No telemetry. No data leaves your machine. Supply c
 Publish an MCP server yourself? Get a public badge for its README:
 
 ```bash
-npx mcp-scan badge <your-npm-package-name>
+npx mcp-tripwire badge <your-npm-package-name>
 ```
 
 Prints a ready-to-paste Markdown snippet linking to a hosted scan report at thynkq.com. The command itself makes no network calls and needs no account, but the badge image is served by thynkq.com and loads whenever someone views the README. Every scan also prints a public report link for each server it found, whether or not you publish it yourself.
@@ -39,7 +41,7 @@ Prints a ready-to-paste Markdown snippet linking to a hosted scan report at thyn
 
 | | mcp-scan (this project) | Snyk `agent-scan` | Cisco `mcp-scanner` |
 |---|---|---|---|
-| Language, install | Node.js, `npx mcp-scan` | Python, `uvx` | Python, `pip` |
+| Language, install | Node.js, `npx mcp-tripwire` | Python, `uvx` | Python, `pip` |
 | Needs an account or token | No | Yes, analysis runs on Snyk's API | No for the YARA analyzer; LLM and API analyzers need keys |
 | Where analysis runs | On your machine | Snyk backend | Local YARA, or remote analyzers if enabled |
 | License | MIT | see its repository | see its repository |
@@ -114,9 +116,9 @@ mcp-scan automatically detects configurations for **17 AI tool clients**:
 Config scanning reads what a server is *configured* to do. The tool-poisoning attack lives in what the server *says* once it runs: tool descriptions, parameter descriptions, prompts and resources are all read by the model. `--live` connects to each server over stdio or streamable HTTP, runs `initialize`, then pages through `tools/list`, `prompts/list`, `resources/list` and `resources/templates/list`, and checks every item on its own. It reads the catalog, not what a tool returns when called: `resources/read` contents are not fetched, so a resource whose listing is clean but whose body is poisoned is out of scope.
 
 ```bash
-npx mcp-scan@latest --live
-npx mcp-scan@latest --live --live-timeout 60000   # slow npx cold starts
-npx mcp-scan@latest --live --accept-tool-changes   # I reviewed a change, make it the baseline
+npx mcp-tripwire@latest --live
+npx mcp-tripwire@latest --live --live-timeout 60000   # slow npx cold starts
+npx mcp-tripwire@latest --live --accept-tool-changes   # I reviewed a change, make it the baseline
 ```
 
 **This executes the server command from your config.** It is not a sandbox. Only run it on servers you would start anyway. The child gets a minimal environment (PATH, HOME, proxy and CA settings, plus the `env` from its own config entry), never the rest of your shell. It is killed with its whole process group when the scan ends, and its output, message count and paging are capped. Server requests back to the client (sampling, roots) are refused. `--offline` skips servers reached over a URL; stdio servers still start (and `npx` may fetch the package).
@@ -165,36 +167,36 @@ Reproduce it with `bench/setup.sh` and `node bench/run.mjs`; methodology, per-ca
 
 ```bash
 # Full security scan (auto-detects all AI tool configs)
-npx mcp-scan@latest
+npx mcp-tripwire@latest
 
 # Output as JSON for CI/CD pipelines
-npx mcp-scan@latest --json
+npx mcp-tripwire@latest --json
 
 # Live introspection: start each server, read its real tools/prompts/resources
 # (tools/list etc.), flag poisoned descriptions, and detect rug pulls
-npx mcp-scan@latest --live
+npx mcp-tripwire@latest --live
 
 # Privacy impact assessment and data map
-npx mcp-scan@latest privacy
+npx mcp-tripwire@latest privacy
 
 # Compliance report (SOC 2, GDPR, HIPAA, PCI-DSS, NIST 800-53)
-npx mcp-scan@latest compliance
+npx mcp-tripwire@latest compliance
 
 # Software Bill of Materials (CycloneDX or SPDX)
-npx mcp-scan@latest sbom
+npx mcp-tripwire@latest sbom
 
 # Public scan badge and report link for an npm package
-npx mcp-scan@latest badge <package-name>
+npx mcp-tripwire@latest badge <package-name>
 
 # Validate custom security policies
-npx mcp-scan@latest policy validate
+npx mcp-tripwire@latest policy validate
 
 # CI mode: exit 1 on CRITICAL or HIGH findings (plain scans report without failing)
-npx mcp-scan@latest --ci --severity high
+npx mcp-tripwire@latest --ci --severity high
 
 # Interactive TUI dashboard (blessed/blessed-contrib install as optional
 # dependencies; if the install was skipped, this prints an install hint)
-npx mcp-scan@latest dashboard
+npx mcp-tripwire@latest dashboard
 ```
 
 ---
@@ -210,13 +212,13 @@ steps:
   - uses: actions/setup-node@v4
     with:
       node-version: 20
-  - run: npx mcp-scan@latest --sarif mcp-scan.sarif --severity medium
+  - run: npx mcp-tripwire@latest --sarif mcp-scan.sarif --severity medium
   - uses: github/codeql-action/upload-sarif@v3
     with:
       sarif_file: mcp-scan.sarif
 ```
 
-GitLab CI, CircleCI, or any runner works. `npx mcp-scan` is the portable entrypoint.
+GitLab CI, CircleCI, or any runner works. `npx mcp-tripwire` is the portable entrypoint.
 
 ---
 
@@ -316,7 +318,7 @@ What this does not stop: anyone running as your user can read `baseline.key`, so
 Use without installing (always latest version):
 
 ```bash
-npx mcp-scan@latest
+npx mcp-tripwire@latest
 ```
 
 Install globally:
