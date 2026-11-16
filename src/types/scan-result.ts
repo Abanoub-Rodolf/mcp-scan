@@ -71,6 +71,16 @@ export const FINDING_IDS = [
   'dependency-known-vulnerability-unresolved',
   'dependency-osv-lookup-incomplete',
   'github-metadata-unverified',
+  'live-tool-poisoning',
+  'live-tool-shadowing',
+  'live-hidden-text',
+  'live-oversize-description',
+  'live-unreachable',
+  'live-baseline-recorded',
+  'live-snapshot-tampered',
+  'tool-definition-changed',
+  'tool-added',
+  'tool-removed',
 ] as const;
 
 export type FindingId = typeof FINDING_IDS[number];
