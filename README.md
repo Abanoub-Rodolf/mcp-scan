@@ -17,6 +17,8 @@ MCP servers run with full access to your filesystem, API keys, and network. mcp-
 npx mcp-scan@latest
 ```
 
+> **Not the same project as Snyk's `agent-scan`.** Invariant Labs published a Python tool also called `mcp-scan` on PyPI; Snyk acquired Invariant and it now ships as [`agent-scan`](https://github.com/snyk/agent-scan). This package is an independent, MIT-licensed Node.js project on npm. It shares no code with that one, is not affiliated with Snyk, Invariant Labs or Cisco, and never sends your configuration or tool text to a hosted service.
+
 No installation. No sign-up. No telemetry. No data leaves your machine. Supply chain scanning makes registry lookups (npm, OSV.dev, GitHub API) - disable with `--offline`.
 
 ---
@@ -30,6 +32,19 @@ npx mcp-scan badge <your-npm-package-name>
 ```
 
 Prints a ready-to-paste Markdown snippet linking to a hosted scan report at thynkq.com. The command itself makes no network calls and needs no account, but the badge image is served by thynkq.com and loads whenever someone views the README. Every scan also prints a public report link for each server it found, whether or not you publish it yourself.
+
+---
+
+## How it differs from the other MCP scanners
+
+| | mcp-scan (this project) | Snyk `agent-scan` | Cisco `mcp-scanner` |
+|---|---|---|---|
+| Language, install | Node.js, `npx mcp-scan` | Python, `uvx` | Python, `pip` |
+| Needs an account or token | No | Yes, analysis runs on Snyk's API | No for the YARA analyzer; LLM and API analyzers need keys |
+| Where analysis runs | On your machine | Snyk backend | Local YARA, or remote analyzers if enabled |
+| License | MIT | see its repository | see its repository |
+
+Measured, not claimed: the [benchmark](#benchmark) below runs all three on the same labeled corpus. The rows above are limited to what the pinned versions in `bench/setup.sh` showed in November 2026; for anything else, read their docs.
 
 ---
 
