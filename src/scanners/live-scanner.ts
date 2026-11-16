@@ -89,14 +89,14 @@ export function itemsOf(c: LiveCatalog): Item[] {
 }
 
 // Locations no tool description has a reason to send the model to.
-const STRONG_PATH = /(?:~\/\.(?:ssh|aws|gnupg|kube|docker)\b|\bid_(?:rsa|ed25519|ecdsa)\b|\bmcp\.json\b|claude_desktop_config|\.cursor\/mcp|\/etc\/(?:passwd|shadow)|\bwallet\.dat\b)/i;
+const STRONG_PATH = /(?:~\/\.(?:ssh|aws|gnupg|kube|docker)\b|\/\.ssh\/|\.aws\/credentials|\bid_(?:rsa|ed25519|ecdsa)\b|\bmcp\.json\b|claude_desktop_config|\.cursor\/mcp|\/etc\/(?:passwd|shadow)|\bwallet\.dat\b)/i;
 // Ordinary words in many honest tools (a dotenv loader, a keychain helper):
 // only a finding when paired with a directive or a transfer.
 const WEAK_PATH = /(?:\.env\b|\.npmrc|\.netrc|\bcredentials?\.json\b|\bkeychain\b)/i;
 // "Never read ~/.ssh/id_rsa" is documentation, not an instruction. Two words or more
 // between the negation and the verb ("do not forget to read") stay flagged.
 const NEGATED = /\b(?:never|(?:do|does|must|should|will|can)(?:\s+not|n't)|won't)\s+(?:\w+\s+){0,1}(?:read|open|access|cat|send|upload|copy|print|load|fetch|include)\b[^.\n]{0,40}$/i;
-const READ_VERB = /\b(?:read|open|cat|load|access|fetch|include|send|upload|copy|print|attach|append|pass|provide|supply|add|embed|post|forward|submit|paste)\b[^.\n]{0,60}$/i;
+const READ_VERB = /\b(?:read_?file|call|invoke|read|open|cat|load|access|fetch|include|send|upload|copy|print|attach|append|pass|provide|supply|add|embed|post|forward|submit|paste)\b[^.\n]{0,60}$/i;
 const DIRECTIVE = /\b(?:before (?:using|calling|running)|prior to (?:using|calling)|you must|you should|first,? (?:you )?(?:must|should))\b/i;
 // Hiding the tool's own behavior from the user. "Never show API keys to the user" is
 // a safety rule about data, not an instruction to conceal the call, so the object
@@ -126,9 +126,9 @@ const SHADOW: Array<[RegExp, string]> = [
 ];
 // The target must be a URL or the classic smuggling parameter: "pass the id as the id parameter" is ordinary.
 // Data that is private by nature, sent to a URL or the classic smuggling parameter: a finding alone.
-const EXFIL = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:conversation|chat history|history|transcript|credentials?|secrets?|api keys?|passwords?|system prompt|private keys?)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bside_?note\b)/i;
+const EXFIL = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:conversation|chat history|history|transcript|system prompt|private keys?)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bside_?note\b)/i;
 // Generic data nouns (files, contents, output) are routine in upload tools: only with an order attached.
-const EXFIL_GENERIC = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:tokens?|contents?|files?|data|everything|outputs?|messages?)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bside_?note\b)/i;
+const EXFIL_GENERIC = /\b(?:send|forward|post|upload|transmit|exfiltrate|email|include|append|attach|pass)\b[^.\n]{0,60}\b(?:credentials?|secrets?|passwords?|api keys?|tokens?|contents?|files?|data|everything|outputs?|messages?)\b[^.\n]{0,60}\b(?:to|in|into|as)\b[^.\n]{0,40}(?:https?:\/\/|\bside_?note\b)/i;
 // The same thing aimed at one of the tool's own parameters.
 const EXFIL_PARAM = /\b(?:include|pass|put|append|attach|add|provide|supply)\b[^.\n]{0,40}\b(?:conversation|chat history|history|transcript|system prompt)\b[^.\n]{0,60}\b(?:argument|parameter|field)\b/i;
 const CHANNEL_NAME = /^(?:side_?note|notes?|memo|context|extra|metadata|feedback|reason|explanation|comment|remarks?|thoughts?|scratchpad|debug|trace|info)$/i;
@@ -186,6 +186,13 @@ function checkText(who: string, text: string, rawPush: (sev: Severity, id: strin
     if (rx.test(body)) push('HIGH', 'live-tool-poisoning', `${who} contains an instruction-override phrase (${label}).`, 'Review the full text of this tool; instruction overrides do not belong in tool metadata.');
   }
   const directiveNear = (m: RegExpExecArray) => DIRECTIVE.test(body.slice(Math.max(0, m.index - 100), m.index + 100));
+  // The data-moving rules fire only when the order sits next to the data, not anywhere in the text.
+  const concealed = CONCEAL.some(rx => rx.test(body));
+  // Ordinary phrases ("you must provide a path") are not an order to move data: the order has to be the
+  // attack's own ("before using this tool", "first") or come with concealment.
+  const BEFORE = /\b(?:(?:before|prior to) (?:using|calling|running|invoking)|first)\b/i;
+  const exfilGeneric = (() => { const m = EXFIL_GENERIC.exec(body); return !!m && (concealed || BEFORE.test(body.slice(Math.max(0, m.index - 100), m.index + 100))); })();
+  const exfilParam = (() => { const m = EXFIL_PARAM.exec(body); return !!m && directiveNear(m); })();
   const strong = STRONG_PATH.exec(body);
   const weak = WEAK_PATH.exec(body);
   const before = (m: RegExpExecArray) => body.slice(Math.max(0, m.index - 80), m.index);
@@ -193,10 +200,13 @@ function checkText(who: string, text: string, rawPush: (sev: Severity, id: strin
   const negated = (m: RegExpExecArray) => NEGATED.test(before(m)) && !/\b(?:instead|but|then|except|unless|however)\b/i.test(body.slice(m.index, m.index + 80));
   const near = (m: RegExpExecArray) => READ_VERB.test(before(m)) && !negated(m);
   if (strong && (near(strong) || EXFIL.test(body))) {
-    push('HIGH', 'live-tool-poisoning', `${who} directs the model to a sensitive location (${clip(strong[0])}).`, 'Tool descriptions have no reason to reference SSH keys, cloud credentials or other tools\' config. Remove the server.');
+    // Reading a private location is HIGH once an order, a transfer or concealment comes with it;
+    // alone it is how ssh and config tools describe themselves.
+    const sev: Severity = EXFIL.test(body) || exfilGeneric || directiveNear(strong) || concealed ? 'HIGH' : 'MEDIUM';
+    push(sev, 'live-tool-poisoning', `${who} directs the model to a sensitive location (${clip(strong[0])}).`, 'Tool descriptions have no reason to reference SSH keys, cloud credentials or other tools\' config. Review it; remove the server if it is not meant to.');
   } else if (weak && (directiveNear(weak) || EXFIL.test(body)) && near(weak)) {
     push('HIGH', 'live-tool-poisoning', `${who} directs the model to read ${clip(weak[0])} and act on it.`, 'Review what the instruction does with that file.');
-  } else if (EXFIL.test(body) || ((EXFIL_GENERIC.test(body) || EXFIL_PARAM.test(body)) && DIRECTIVE.test(body))) {
+  } else if (EXFIL.test(body) || exfilGeneric || exfilParam) {
     push('HIGH', 'live-tool-poisoning', `${who} tells the model to move data into a parameter or URL: "${clip((EXFIL.exec(body) ?? EXFIL_GENERIC.exec(body) ?? EXFIL_PARAM.exec(body))![0])}".`, 'Review what data the instruction moves and where it goes.');
   }
   for (const [rx, label] of SHADOW) {
