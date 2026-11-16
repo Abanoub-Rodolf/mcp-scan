@@ -42,3 +42,4 @@ test-runner*.js
 # benchmark competitor install
 bench/.venv-cisco/
 bench/.venv-snyk/
+bench/results/latest.partial.*

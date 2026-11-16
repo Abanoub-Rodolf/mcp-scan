@@ -20,4 +20,6 @@ Recall by category:
 | tool-poisoning | 24 | 20.8% | 62.5% | 45.8% | 50.0% |
 | tool-shadowing | 9 | 0.0% | 88.9% | 44.4% | 44.4% |
 
+Holdout benign servers (recorded after the rules were written): 14; mcp-scan --live flagged 0.
+
 Rug pulls (changed definition after approval): snapshot diff reported 4 of 4 (no benign control, so this shows the diff works, not its false-positive rate).

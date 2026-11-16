@@ -129,7 +129,6 @@ Same catalogs, same verdict rule, three scanners. The corpus is 51 poisoned tool
 |---|---|---|---|---|---|---|---|
 | mcp-scan static checks (2.3.0) | 53.8% | 13.7% | 0.22 | 7 | 6 | 44 | 21 |
 | **mcp-scan `--live`** | **100%** | **66.7%** | **0.80** | 34 | 0 | 17 | 27 |
-| mcp-scan `--live`, 14 holdout benign servers only | 100% (0 FP of 14) | n/a | | | 0 | 14 | |
 | Cisco mcp-scanner 4.8.7 (YARA analyzer) | 69.0% | 39.2% | 0.50 | 20 | 9 | 31 | 18 |
 | Snyk agent-scan 0.6.11 | 100% | 45.1% | 0.62 | 23 | 0 | 28 | 27 |
 

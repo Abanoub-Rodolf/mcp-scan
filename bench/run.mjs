@@ -5,6 +5,7 @@
 // Needs `npm run build` first. Competitors need `bench/setup.sh`. Snyk needs
 // SNYK_TOKEN; without it Snyk is reported as "not run", never as a score.
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -13,6 +14,8 @@ import { fileURLToPath } from 'node:url';
 import { scanLive, scanToolPoisoning, scanPromptInjection, snapshotOf, diffSnapshots } from '../dist/lib.js';
 
 const run = promisify(execFile);
+// Nothing a child process echoes may carry the Snyk token or the home directory into results/.
+const redact = (t) => [process.env.SNYK_TOKEN, os.homedir()].filter(Boolean).reduce((x, v) => x.split(v).join('***'), t);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(n); return i === -1 ? d : args[i + 1]; };
@@ -62,21 +65,36 @@ if (only.has('cisco') && fs.existsSync(cisco)) {
 const snyk = path.join(here, '.venv-snyk/bin/snyk-agent-scan');
 const snykSkipped = !(only.has('snyk') && fs.existsSync(snyk) && process.env.SNYK_TOKEN);
 if (!snykSkipped) {
+  // Snyk's free tier stops at a daily cap. Verdicts that came back clean are kept, keyed by the sample's
+  // content hash, so a run cut short by the cap can be finished the next day instead of restarted.
+  const cacheFile = path.join(here, 'results/snyk-cache.json');
+  let cache = {};
+  try { cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch (_e) { /* first run */ }
+  const sampleKey = (s) => crypto.createHash('sha256').update(fs.readFileSync(s.file)).digest('hex').slice(0, 16);
   scanners['snyk agent-scan 0.6.11'] = async (s) => {
+    const hit = cache[s.id];
+    if (hit && hit.key === sampleKey(s)) return { flagged: hit.flagged, detail: hit.detail };
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bench-snyk-'));
     try {
       const cfg = path.join(tmp, 'mcp.json');
       fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { [s.id]: { command: process.execPath, args: [path.join(here, 'replay-server.mjs'), s.file] } } }));
-      const { stdout } = await run(snyk, ['scan', '--json', '--no-skills', '--dangerously-run-mcp-servers', cfg], { maxBuffer: 64 * 1024 * 1024, timeout: 180000 });
+      // A minimal env: the token is the one secret this process holds, and a failing child can echo its environment.
+      const { stdout } = await run(snyk, ['scan', '--json', '--no-skills', '--dangerously-run-mcp-servers', cfg], { maxBuffer: 64 * 1024 * 1024, timeout: 180000, env: { PATH: process.env.PATH, HOME: process.env.HOME, SNYK_TOKEN: process.env.SNYK_TOKEN } });
       const out = JSON.parse(stdout);
       const risks = (out.scan_path_responses || []).flatMap(r => r.server_risks || []);
+      const pathErr = (out.scan_path_responses || []).find(r => r.error);
+      if (pathErr) throw new Error(`snyk scan failed: ${String(pathErr.error.message || '').slice(0, 100)}`);
+      if (risks.length === 0) throw new Error('snyk returned no server_risks (the replay server may not have started)');
       const err = risks.find(r => r.error);
       if (err) throw new Error(`snyk reported an error: ${JSON.stringify(err.error).slice(0, 120)}`);
       // 0.6.11 reports risk scores, not issue codes. prompt_injection_tool_desc is the poisoning verdict;
       // private_data, untrusted_content and destructive_capabilities describe what a tool can do, so they are not counted.
       // Scores up to 299 are the lowest band in its own printer, so a flag needs 300 or more.
       const hits = risks.map(r => r.risk_indexes?.prompt_injection_tool_desc).filter(x => x && x.score >= 300);
-      return { flagged: hits.length > 0, detail: hits.map(h => `prompt_injection_tool_desc:${h.score}`).join(',') };
+      const verdict = { flagged: hits.length > 0, detail: hits.map(h => `prompt_injection_tool_desc:${h.score}`).join(',') };
+      cache[s.id] = { key: sampleKey(s), ...verdict };
+      fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 1) + '\n');
+      return verdict;
     } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   };
 }
@@ -91,8 +109,8 @@ const results = {};
 for (const [name, fn] of Object.entries(scanners)) {
   const parallel = name.startsWith('mcp-scan') ? 1 : jobs;
   const rows = await pool(samples, parallel, async (s) => {
-    try { return { id: s.id, label: s.label, category: s.category || 'benign', ...(await fn(s)) }; }
-    catch (e) { return { id: s.id, label: s.label, category: s.category || 'benign', error: String(e.message || e).slice(0, 200) }; }
+    try { return { id: s.id, label: s.label, set: s.set, category: s.category || 'benign', ...(await fn(s)) }; }
+    catch (e) { return { id: s.id, label: s.label, category: s.category || 'benign', error: redact(String(e.message || e)).slice(0, 200) }; }
   });
   results[name] = rows;
   process.stderr.write(`${name}: ${rows.length} samples${rows.some(r => r.error) ? `, ${rows.filter(r => r.error).length} errors` : ''}\n`);
@@ -123,18 +141,23 @@ const md = [];
 md.push(`Corpus: ${poisoned.length} poisoned (published proofs of concept), ${benign.length} benign (real npm servers). Generated ${new Date().toISOString().slice(0, 10)}.`, '');
 for (const [name, s] of Object.entries(table)) if (s.errors) md.push(`WARNING: ${name} errored on ${s.errors} samples; they are left out of its numbers.`, '');
 md.push('| Scanner | Precision | Recall | F1 | TP | FP | FN | TN |', '|---|---|---|---|---|---|---|---|');
-for (const [name, s] of Object.entries(table)) md.push(`| ${name} | ${pct(s.tp, s.tp + s.fp)} | ${pct(s.tp, s.tp + s.fn)} | ${Number.isNaN(s.f1) ? 'n/a' : s.f1.toFixed(2)} | ${s.tp} | ${s.fp} | ${s.fn} | ${s.tn} |`);
+for (const [name, s] of Object.entries(table)) if (s.errors) md.push(`| ${name} | incomplete: ${s.errors} of ${results[name].length} samples errored, so no score is given | | | | | | |`); else md.push(`| ${name} | ${pct(s.tp, s.tp + s.fp)} | ${pct(s.tp, s.tp + s.fn)} | ${Number.isNaN(s.f1) ? 'n/a' : s.f1.toFixed(2)} | ${s.tp} | ${s.fp} | ${s.fn} | ${s.tn} |`);
 if (snykSkipped) md.push('| snyk agent-scan 0.6.11 | not run | not run | | | | | |');
 md.push('', 'Recall by category:', '', `| Category | n | ${Object.keys(table).join(' | ')} |`, `|---|---|${Object.keys(table).map(() => '---').join('|')}|`);
 for (const c of categories) {
   const n = poisoned.filter(s => s.category === c).length;
   md.push(`| ${c} | ${n} | ${Object.keys(table).map(name => { const rows = results[name].filter(r => r.category === c && !r.error); return pct(rows.filter(r => r.flagged).length, rows.length); }).join(' | ')} |`);
 }
+const hold = (results['mcp-scan --live'] || []).filter(r => r.set === 'holdout' && !r.error);
+if (hold.length) md.push('', `Holdout benign servers (recorded after the rules were written): ${hold.length}; mcp-scan --live flagged ${hold.filter(r => r.flagged).length}.`);
 md.push('', `Rug pulls (changed definition after approval): snapshot diff reported ${pullHits} of ${pulls.length} (no benign control, so this shows the diff works, not its false-positive rate).`);
 const fps = {};
 for (const [name, rows] of Object.entries(results)) fps[name] = rows.filter(r => r.label === 'benign' && r.flagged).map(r => `${r.id} (${r.detail})`);
 fs.mkdirSync(path.join(here, 'results'), { recursive: true });
-fs.writeFileSync(path.join(here, 'results/latest.json'), JSON.stringify({ date: new Date().toISOString(), corpus: { poisoned: poisoned.length, benign: benign.length }, table, categories, rugPulls: { total: pulls.length, detected: pullHits }, falsePositives: fps, snykRun: !snykSkipped, rows: results }, null, 2) + '\n');
-fs.writeFileSync(path.join(here, 'results/latest.md'), md.join('\n') + '\n');
+// A partial run (--only, or a competitor not installed) must not replace the full committed results.
+const complete = !snykSkipped && Object.keys(scanners).length === 4;
+const outName = complete ? 'latest' : 'latest.partial';
+fs.writeFileSync(path.join(here, `results/${outName}.json`), JSON.stringify({ date: new Date().toISOString(), corpus: { poisoned: poisoned.length, benign: benign.length }, table, categories, rugPulls: { total: pulls.length, detected: pullHits }, falsePositives: fps, snykRun: !snykSkipped, rows: results }, null, 2) + '\n');
+fs.writeFileSync(path.join(here, `results/${outName}.md`), md.join('\n') + '\n');
 console.log(md.join('\n'));
 for (const [name, list] of Object.entries(fps)) if (list.length) console.log(`\nFalse positives, ${name}:\n  ${list.join('\n  ')}`);

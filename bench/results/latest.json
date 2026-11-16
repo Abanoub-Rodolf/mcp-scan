@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-16T02:31:31.816Z",
+  "date": "2026-11-16T02:48:17.980Z",
   "corpus": {
     "poisoned": 51,
     "benign": 27
@@ -497,6 +497,7 @@
       {
         "id": "aws-kb",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -505,6 +506,7 @@
       {
         "id": "browser-tools",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": true,
@@ -513,6 +515,7 @@
       {
         "id": "chrome-devtools",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": true,
         "flaggedMedium": true,
@@ -521,6 +524,7 @@
       {
         "id": "circleci",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": true,
@@ -529,6 +533,7 @@
       {
         "id": "context7",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": true,
@@ -537,6 +542,7 @@
       {
         "id": "desktop-commander",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": true,
         "flaggedMedium": true,
@@ -545,6 +551,7 @@
       {
         "id": "duckduckgo",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -553,6 +560,7 @@
       {
         "id": "everything",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -561,6 +569,7 @@
       {
         "id": "exa",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -569,6 +578,7 @@
       {
         "id": "excel",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -577,6 +587,7 @@
       {
         "id": "executeautomation-playwright",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": true,
         "flaggedMedium": true,
@@ -585,6 +596,7 @@
       {
         "id": "firecrawl",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": true,
         "flaggedMedium": true,
@@ -593,6 +605,7 @@
       {
         "id": "fs",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": true,
@@ -601,6 +614,7 @@
       {
         "id": "git-mcp",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -609,6 +623,7 @@
       {
         "id": "github",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -617,6 +632,7 @@
       {
         "id": "heroku",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": true,
@@ -625,6 +641,7 @@
       {
         "id": "kubernetes",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": true,
@@ -633,6 +650,7 @@
       {
         "id": "mapbox",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": true,
@@ -641,6 +659,7 @@
       {
         "id": "memory",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -649,6 +668,7 @@
       {
         "id": "notion",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -657,6 +677,7 @@
       {
         "id": "pinecone",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": true,
@@ -665,6 +686,7 @@
       {
         "id": "playwright",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": true,
         "flaggedMedium": true,
@@ -673,6 +695,7 @@
       {
         "id": "sequential-thinking",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -681,6 +704,7 @@
       {
         "id": "shopify",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": true,
@@ -689,6 +713,7 @@
       {
         "id": "ssh",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": true,
         "flaggedMedium": true,
@@ -697,6 +722,7 @@
       {
         "id": "tavily",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -705,6 +731,7 @@
       {
         "id": "time",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedMedium": false,
@@ -1123,6 +1150,7 @@
       {
         "id": "aws-kb",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1131,6 +1159,7 @@
       {
         "id": "browser-tools",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1139,6 +1168,7 @@
       {
         "id": "chrome-devtools",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1147,6 +1177,7 @@
       {
         "id": "circleci",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1155,6 +1186,7 @@
       {
         "id": "context7",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1163,6 +1195,7 @@
       {
         "id": "desktop-commander",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1171,6 +1204,7 @@
       {
         "id": "duckduckgo",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1179,6 +1213,7 @@
       {
         "id": "everything",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1187,6 +1222,7 @@
       {
         "id": "exa",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1195,6 +1231,7 @@
       {
         "id": "excel",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1203,6 +1240,7 @@
       {
         "id": "executeautomation-playwright",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1211,6 +1249,7 @@
       {
         "id": "firecrawl",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1219,6 +1258,7 @@
       {
         "id": "fs",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1227,6 +1267,7 @@
       {
         "id": "git-mcp",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1235,6 +1276,7 @@
       {
         "id": "github",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1243,6 +1285,7 @@
       {
         "id": "heroku",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1251,6 +1294,7 @@
       {
         "id": "kubernetes",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1259,6 +1303,7 @@
       {
         "id": "mapbox",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1267,6 +1312,7 @@
       {
         "id": "memory",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1275,6 +1321,7 @@
       {
         "id": "notion",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1283,6 +1330,7 @@
       {
         "id": "pinecone",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1291,6 +1339,7 @@
       {
         "id": "playwright",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1299,6 +1348,7 @@
       {
         "id": "sequential-thinking",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1307,6 +1357,7 @@
       {
         "id": "shopify",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1315,6 +1366,7 @@
       {
         "id": "ssh",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1323,6 +1375,7 @@
       {
         "id": "tavily",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1331,6 +1384,7 @@
       {
         "id": "time",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "flaggedHigh": false,
@@ -1698,6 +1752,7 @@
       {
         "id": "aws-kb",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1705,6 +1760,7 @@
       {
         "id": "browser-tools",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1712,6 +1768,7 @@
       {
         "id": "chrome-devtools",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": true,
         "detail": "tool:list_console_messages:CODE EXECUTION"
@@ -1719,6 +1776,7 @@
       {
         "id": "circleci",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": true,
         "detail": "tool:get_build_failure_logs:CREDENTIAL HARVESTING,tool:list_followed_projects:PROMPT INJECTION,tool:download_usage_api_data:CREDENTIAL HARVESTING,tool:find_underused_resource_classes:PROMPT INJECTION+CREDENTIAL HARVESTING,tool:list_component_versions:PROMPT INJECTION"
@@ -1726,6 +1784,7 @@
       {
         "id": "context7",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": true,
         "detail": "tool:resolve-library-id:PROMPT INJECTION,tool:query-docs:PROMPT INJECTION"
@@ -1733,6 +1792,7 @@
       {
         "id": "desktop-commander",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": true,
         "detail": "tool:start_search:CREDENTIAL HARVESTING,tool:start_process:SYSTEM MANIPULATION"
@@ -1740,6 +1800,7 @@
       {
         "id": "duckduckgo",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1747,6 +1808,7 @@
       {
         "id": "everything",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1754,6 +1816,7 @@
       {
         "id": "exa",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1761,6 +1824,7 @@
       {
         "id": "excel",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1768,6 +1832,7 @@
       {
         "id": "executeautomation-playwright",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": true,
         "detail": "tool:playwright_assert_response:CODE EXECUTION,tool:playwright_get_visible_html:INJECTION ATTACK"
@@ -1775,6 +1840,7 @@
       {
         "id": "firecrawl",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1782,6 +1848,7 @@
       {
         "id": "fs",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1789,6 +1856,7 @@
       {
         "id": "git-mcp",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1796,6 +1864,7 @@
       {
         "id": "github",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1803,6 +1872,7 @@
       {
         "id": "heroku",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1810,6 +1880,7 @@
       {
         "id": "kubernetes",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": true,
         "detail": "tool:kubectl_apply:TOOL POISONING,tool:kubectl_create:TOOL POISONING,tool:kubectl_patch:TOOL POISONING"
@@ -1817,6 +1888,7 @@
       {
         "id": "mapbox",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": true,
         "detail": "tool:directions_tool:PROMPT INJECTION,tool:reverse_geocode_tool:PROMPT INJECTION"
@@ -1824,6 +1896,7 @@
       {
         "id": "memory",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1831,6 +1904,7 @@
       {
         "id": "notion",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1838,6 +1912,7 @@
       {
         "id": "pinecone",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1845,6 +1920,7 @@
       {
         "id": "playwright",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1852,6 +1928,7 @@
       {
         "id": "sequential-thinking",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1859,6 +1936,7 @@
       {
         "id": "shopify",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": true,
         "detail": "tool:learn_shopify_api:PROMPT INJECTION"
@@ -1866,6 +1944,7 @@
       {
         "id": "ssh",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": true,
         "detail": "tool:read-command:PROMPT INJECTION,tool:sftp-upload:DATA EXFILTRATION,tool:sftp-upload-file:PROMPT INJECTION+SYSTEM MANIPULATION,tool:sftp-download-file:PROMPT INJECTION"
@@ -1873,6 +1952,7 @@
       {
         "id": "tavily",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -1880,6 +1960,7 @@
       {
         "id": "time",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2246,6 +2327,7 @@
       {
         "id": "aws-kb",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2253,6 +2335,7 @@
       {
         "id": "browser-tools",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2260,6 +2343,7 @@
       {
         "id": "chrome-devtools",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2267,6 +2351,7 @@
       {
         "id": "circleci",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2274,6 +2359,7 @@
       {
         "id": "context7",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2281,6 +2367,7 @@
       {
         "id": "desktop-commander",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2288,6 +2375,7 @@
       {
         "id": "duckduckgo",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2295,6 +2383,7 @@
       {
         "id": "everything",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2302,6 +2391,7 @@
       {
         "id": "exa",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2309,6 +2399,7 @@
       {
         "id": "excel",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2316,6 +2407,7 @@
       {
         "id": "executeautomation-playwright",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2323,6 +2415,7 @@
       {
         "id": "firecrawl",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2330,6 +2423,7 @@
       {
         "id": "fs",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2337,6 +2431,7 @@
       {
         "id": "git-mcp",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2344,6 +2439,7 @@
       {
         "id": "github",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2351,6 +2447,7 @@
       {
         "id": "heroku",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2358,6 +2455,7 @@
       {
         "id": "kubernetes",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2365,6 +2463,7 @@
       {
         "id": "mapbox",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2372,6 +2471,7 @@
       {
         "id": "memory",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2379,6 +2479,7 @@
       {
         "id": "notion",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2386,6 +2487,7 @@
       {
         "id": "pinecone",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2393,6 +2495,7 @@
       {
         "id": "playwright",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2400,6 +2503,7 @@
       {
         "id": "sequential-thinking",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2407,6 +2511,7 @@
       {
         "id": "shopify",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2414,6 +2519,7 @@
       {
         "id": "ssh",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2421,6 +2527,7 @@
       {
         "id": "tavily",
         "label": "benign",
+        "set": "holdout",
         "category": "benign",
         "flagged": false,
         "detail": ""
@@ -2428,6 +2535,7 @@
       {
         "id": "time",
         "label": "benign",
+        "set": "tuning",
         "category": "benign",
         "flagged": false,
         "detail": ""
