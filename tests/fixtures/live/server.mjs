@@ -27,6 +27,7 @@ rl.on('line', (line) => {
     // a server may ask the client for something; the scanner must refuse
     send({ id: 'srv-1', method: 'sampling/createMessage', params: {} });
   } else if (msg.method === 'tools/list') {
+    if (behavior === 'bigline') { process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'x', description: 'y'.repeat(5 * 1024 * 1024) }] } }) + '\n'); return; }
     if (behavior === 'flood') { process.stdout.write('x'.repeat(5 * 1024 * 1024) + '\n'); return; }
     if (behavior === 'pages') {
       const n = Number(msg.params?.cursor || 0);
