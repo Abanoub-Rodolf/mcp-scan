@@ -48,13 +48,20 @@ export class AuditChain {
   // lock and continues from the file's own last entry, not from what this process remembers.
   append(event: Record<string, unknown>): ChainEntry {
     const lock = this.file + '.lock';
-    let fd = -1;
-    for (let i = 0; fd < 0; i++) {
-      try { fd = fs.openSync(lock, 'wx', 0o600); } catch (e) {
+    const token = crypto.randomBytes(16).toString('hex');
+    for (let i = 0; ; i++) {
+      try { fs.writeFileSync(lock, token, { flag: 'wx', mode: 0o600 }); break; } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-        // a lock left by a killed process is stale after 10 seconds
-        try { if (Date.now() - fs.statSync(lock).mtimeMs > 10000) fs.rmSync(lock, { force: true }); } catch (_e) { /* raced with its owner */ }
-        if (i > 400) throw new ChainError('the log is locked by another process');
+        // A lock older than 10 seconds belongs to a process that died. Renaming it away is atomic, so
+        // only one waiter takes it over, and nobody deletes a lock that a new owner just created.
+        try {
+          if (Date.now() - fs.statSync(lock).mtimeMs > 10000) {
+            const gone = `${lock}.stale-${token}`;
+            fs.renameSync(lock, gone);
+            fs.rmSync(gone, { force: true });
+          }
+        } catch (_e) { /* someone else took it over first */ }
+        if (i > 1300) throw new ChainError('the log is locked by another process');
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
       }
     }
@@ -66,11 +73,13 @@ export class AuditChain {
       const hash = sha(prev + '\n' + bodyOf(seq, ts, event, prev));
       const entry: ChainEntry = { seq, ts, event, prev, hash, mac: macOf(hash, true) };
       fs.appendFileSync(this.file, JSON.stringify(entry) + '\n', { mode: 0o600 });
-      fs.writeFileSync(this.file + '.head', JSON.stringify({ seq, hash, mac: macOf(`head:${seq}:${hash}`, true) } satisfies Head), { mode: 0o600 });
+      // temp file then rename: a reader never sees half a head
+      const tmp = `${this.file}.head.${token}`;
+      fs.writeFileSync(tmp, JSON.stringify({ seq, hash, mac: macOf(`head:${seq}:${hash}`, true) } satisfies Head), { mode: 0o600 });
+      fs.renameSync(tmp, this.file + '.head');
       return entry;
     } finally {
-      fs.closeSync(fd);
-      fs.rmSync(lock, { force: true });
+      try { if (fs.readFileSync(lock, 'utf8') === token) fs.rmSync(lock, { force: true }); } catch (_e) { /* already gone */ }
     }
   }
 }

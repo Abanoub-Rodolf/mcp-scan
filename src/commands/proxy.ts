@@ -183,6 +183,10 @@ export class JsonRpcInterceptor extends Transform {
         this.answerDropped(this.snapshotIds(json));
         return;
       }
+      if (screened.invalid) {
+        this.replyToSender?.(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid request: nested or empty batches are not accepted while enforcement is on.' } }) + '\n');
+        return;
+      }
       if (screened.refused.length > 0) {
         const batch = Array.isArray(json);
         const out = screened.refused.map(r => ({ jsonrpc: '2.0', id: r.id, error: { code: -32001, message: `Blocked by mcp-scan policy: tool '${r.tool.slice(0, 80)}' is ${r.reason}.` } }));
@@ -193,7 +197,13 @@ export class JsonRpcInterceptor extends Transform {
       json = screened.forward;
       // Forward what was screened, not the raw text: with duplicate keys two parsers can disagree
       // about which tool a call names.
-      line = JSON.stringify(json);
+      try {
+        line = JSON.stringify(json);
+      } catch (_e) {
+        // an absurdly nested message parses but cannot be written back: refuse it rather than crash
+        this.answerDropped(this.snapshotIds(json));
+        return;
+      }
     }
 
     // Masking off: the line goes through byte for byte. Re-serializing it
@@ -385,9 +395,23 @@ export async function runProxy(options: { command?: string, args?: string, ui?: 
     logger.warn(`Proxy logging disabled: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  // A security flag that is silently ignored is worse than an error.
+  if (!options.enforce && (options.allowTools !== undefined || options.denyTools !== undefined || options.auditChain !== undefined)) {
+    logger.error('Not starting: --allow-tools, --deny-tools and --audit-chain only work with --enforce.');
+    process.exitCode = 1;
+    return;
+  }
   let enforcer: Enforcer | undefined;
   if (options.enforce) {
     const list = (v?: string) => (v ? v.split(',').map(x => x.trim()).filter(Boolean) : undefined);
+    // Only a trailing * is a wildcard; a pattern with one anywhere else would never match and so never deny.
+    for (const name of [...(list(options.allowTools) ?? []), ...(list(options.denyTools) ?? [])]) {
+      if (name.slice(0, -1).includes('*')) {
+        logger.error(`Not starting: '${name}': only a trailing * is a wildcard.`);
+        process.exitCode = 1;
+        return;
+      }
+    }
     // An allow list that parses to nothing would silently allow everything: refuse to start instead.
     for (const [flag, v] of [['--allow-tools', options.allowTools], ['--deny-tools', options.denyTools]] as const) {
       if (v !== undefined && !list(v)?.length) {

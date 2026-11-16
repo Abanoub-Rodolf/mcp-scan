@@ -30,8 +30,10 @@ export class Enforcer {
 
   // Takes one parsed client message (or batch). Returns what to forward and
   // the refused requests, each as the id the client used and the reason.
-  screen(json: unknown): { forward: unknown | null; refused: { id: string | number; tool: string; reason: string }[] } {
+  screen(json: unknown): { forward: unknown | null; refused: { id: string | number; tool: string; reason: string }[]; invalid?: boolean } {
     const batch = Array.isArray(json);
+    // A batch member that is not a plain object (a nested array, say) might be unrolled by a lenient server, so none of it passes.
+    if (batch && ((json as unknown[]).length === 0 || (json as unknown[]).some(m => !m || typeof m !== 'object' || Array.isArray(m)))) return { forward: null, refused: [], invalid: true };
     const kept: unknown[] = [];
     const refused: { id: string | number; tool: string; reason: string }[] = [];
     for (const m of (batch ? json as unknown[] : [json])) {

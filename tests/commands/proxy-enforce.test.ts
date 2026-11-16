@@ -198,3 +198,48 @@ describe('runProxy --enforce flags', () => {
     process.exitCode = undefined;
   });
 });
+
+describe('enforcement edge cases', () => {
+  const setup2 = () => {
+    const replies: string[] = [];
+    const ic = new JsonRpcInterceptor('CLIENT -> SERVER', null, undefined, undefined, l => replies.push(l));
+    ic.enforcer = new Enforcer({ deny: ['shell'] }, AuditChain.open(file));
+    const out: string[] = [];
+    ic.on('data', d => out.push(String(d)));
+    return { ic, out, replies };
+  };
+
+  it('refuses nested and empty batches outright', () => {
+    const { ic, out, replies } = setup2();
+    ic.write('[[{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"shell"}}]]\n[]\n');
+    expect(out).toHaveLength(0);
+    expect(replies.map(r => JSON.parse(r).error.code)).toEqual([-32600, -32600]);
+  });
+
+  it('does not crash on a message too deep to write back', () => {
+    const { ic, out } = setup2();
+    const deep = '['.repeat(60000) + ']'.repeat(60000);
+    expect(() => ic.write(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_file","arguments":{"x":${deep}}}}\n`)).not.toThrow();
+    expect(out).toHaveLength(0);
+  });
+
+  it('refuses to start when allow, deny or chain flags are given without --enforce, or a wildcard is misplaced', async () => {
+    const { runProxy } = await import('../../src/commands/proxy.js');
+    for (const o of [{ allowTools: 'a' }, { denyTools: 'a' }, { auditChain: path.join(dir, 'x.jsonl') }, { enforce: true, denyTools: '*_delete' }]) {
+      process.exitCode = undefined;
+      await runProxy({ command: 'node', ...o });
+      expect(process.exitCode).toBe(1);
+    }
+    process.exitCode = undefined;
+  });
+
+  it('a stale lock from a dead process is taken over, and a live one is never deleted by a waiter', () => {
+    const c = AuditChain.open(file);
+    fs.writeFileSync(file + '.lock', 'dead-owner');
+    const old = new Date(Date.now() - 60000);
+    fs.utimesSync(file + '.lock', old, old);
+    c.append({ n: 1 });
+    expect(verifyChain(file).ok).toBe(true);
+    expect(fs.existsSync(file + '.lock')).toBe(false);
+  });
+});
